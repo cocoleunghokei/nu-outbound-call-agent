@@ -218,3 +218,21 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Project additions ---
+# Secrets (Twilio / voice AI / LLM keys). Never commit real keys.
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.next/
+.turbo/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
