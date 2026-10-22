@@ -59,10 +59,10 @@ One-time setup:
 ```bash
 brew install supabase/tap/supabase
 supabase login
-supabase link --project-ref <project-ref>
+supabase link --project-ref tenmxbpwuxkicmgvmfym
 ```
 
-Ask Coco for the project ref and the database password.
+Ask Coco for the database password. `supabase link` and `supabase db push` ask for it, or you can put it in a `.env` file at the repo root as `SUPABASE_DB_PASSWORD=...` (git ignores `.env`).
 
 To make a change:
 
