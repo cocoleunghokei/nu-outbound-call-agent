@@ -2,6 +2,8 @@
 
 You are the front desk at Dr. Lee's office. An AI assistant will call to move Alex Chen's (fake test data) Thursday appointment to Thursday morning. Alex wants a time before 3pm.
 
+On a trial account you will first hear a short Twilio trial notice; wait for it to finish, then answer normally.
+
 Open the same way in every variant:
 
 1. On answering: "Dr. Lee's office, how can I help?"

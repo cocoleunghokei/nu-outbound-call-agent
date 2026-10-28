@@ -164,6 +164,7 @@ def _cmd_listen(args, runs_dir: Path) -> int:
     out_path = args.out or runs_dir / f"{args.call_id}.pcm"
     stop = threading.Event()
     print(f"Recording to {out_path}; Ctrl-C to stop.", flush=True)
+    before = _file_id(out_path)
     started = time.monotonic()
     try:
         try:
@@ -173,10 +174,25 @@ def _cmd_listen(args, runs_dir: Path) -> int:
             count = out_path.stat().st_size if out_path.exists() else 0
     except (ConnectionError, OSError) as exc:
         print(f"error: listen failed: {exc}", file=sys.stderr)
+        after = _file_id(out_path)
+        if after is not None and after != before:  # connected and opened the file first
+            _print_listen_stats(after[2], time.monotonic() - started)
         return 1
-    seconds = time.monotonic() - started
-    print(f"{count} bytes in {seconds:.1f} s; likely {infer_pcm_format(count, seconds)}")
+    _print_listen_stats(count, time.monotonic() - started)
     return 0
+
+
+def _file_id(path: Path) -> tuple[int, int, int] | None:
+    """(inode, mtime_ns, size) of `path`, or None if it does not exist."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_ino, st.st_mtime_ns, st.st_size
+
+
+def _print_listen_stats(count: int, seconds: float) -> None:
+    print(f"{count} bytes in {seconds:.1f} s; likely {infer_pcm_format(count, seconds)}")
 
 
 def _cmd_report(args, settings: Settings, runs_dir: Path, transport: Transport,

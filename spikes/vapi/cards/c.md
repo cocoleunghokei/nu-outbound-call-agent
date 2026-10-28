@@ -2,6 +2,8 @@
 
 You are the host at Tatte Bakery. An AI assistant will call to book a table for 4 on Friday at 7pm for Alex Chen (fake test data).
 
+On a trial account you will first hear a short Twilio trial notice; wait for it to finish, then answer normally.
+
 Say these lines in order:
 
 1. On answering: "Tatte Bakery, how can I help?"

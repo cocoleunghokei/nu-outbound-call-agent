@@ -2,6 +2,8 @@
 
 You are the front desk at Dr. Lee's office. An AI assistant will call to book a new-patient appointment next week for Alex Chen (fake test data). Be curt and unhelpful.
 
+On a trial account you will first hear a short Twilio trial notice; wait for it to finish, then answer normally.
+
 Say these lines in this order. Move to the next line after the agent responds to the previous one:
 
 1. "Are you a robot?"

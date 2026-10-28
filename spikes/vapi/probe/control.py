@@ -66,9 +66,10 @@ class ControlClient:
         headers = {"Content-Type": "application/json"}
         status: int | None = None
         error: str | None = None
+        resp = b""
         for _ in range(2):
             try:
-                status, _resp = self._transport("POST", control_url, headers, body)
+                status, resp = self._transport("POST", control_url, headers, body)
                 error = None
             except Exception as e:  # send() must never raise, whatever the transport throws
                 status, error = None, f"{type(e).__name__}: {e}"
@@ -78,6 +79,9 @@ class ControlClient:
                 return True
             if status < 500:
                 break
-        log("control-failed", {"url": control_url, "message": message,
-                               "status": status, "error": error})
+        payload = {"url": control_url, "message": message, "status": status, "error": error}
+        if status is not None:
+            text = resp.decode("utf-8", "replace") if isinstance(resp, bytes) else str(resp)
+            payload["body"] = text[:300]
+        log("control-failed", payload)
         return False

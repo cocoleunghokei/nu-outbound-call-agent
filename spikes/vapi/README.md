@@ -55,7 +55,7 @@ Per call:
 1. Hand the receptionist the card. Tell them the variant (scenario b only).
 2. Place the call from a third terminal: `python3 -m probe call <scenario-id> --to <receptionist number>`. It prints the call ID. Note it.
 3. Answer pings in the `serve` terminal. Type a reply and press Enter, only while a ping is open.
-4. When the call ends, run `python3 -m probe report <call-id>` and note the output. Check that it prints a dollar cost (`cost: $...`). If it shows `cost: n/a` or `api error`, nothing was saved: wait 30 s and re-run it, and do not place the next call until a cost is saved. Plain `python3 -m probe report` then shows "spent $X of $Y cap".
+4. When the call ends, run `python3 -m probe report <call-id>` and note the output. Check that it prints a non-zero dollar cost (`cost: $...`). Vapi may return 0 before the cost is finalised. If it shows `cost: $0.0000`, `cost: n/a` or `api error`, wait 30 s and re-run it, and do not place the next call until a non-zero cost is saved. Plain `python3 -m probe report` then shows "spent $X of $Y cap".
 
 Exit codes for every subcommand: 0 ok, 1 runtime failure (Vapi refused, control or listen failed), 2 configuration or input error (bad or non-allowlisted number, unknown scenario or call, spend cap reached).
 
@@ -139,7 +139,7 @@ After setup, load `.env` into your shell (`set -a; . ./.env; set +a`), then run 
 
 ## Stop rules
 
-- **Spend cap.** The cap is `PROBE_SPEND_CAP_USD` (default $20). New calls are refused (exit 2) once saved cost reaches it, and the session stops there. The cap counts only costs saved by `report`: a just-placed call counts as $0 until you run `python3 -m probe report <call-id>`. Run `report <call-id>` after every call, before placing the next, and check that it prints a dollar cost. If it shows `cost: n/a` or `api error`, nothing was saved and the cap is understated: wait 30 s and re-run it, and do not place the next call until a cost is saved. Plain `python3 -m probe report` shows "spent $X of $Y cap".
+- **Spend cap.** The cap is `PROBE_SPEND_CAP_USD` (default $20). New calls are refused (exit 2) once saved cost reaches it, and the session stops there. The cap counts only costs saved by `report`: a just-placed call counts as $0 until you run `python3 -m probe report <call-id>`. Run `report <call-id>` after every call, before placing the next, and check that it prints a non-zero dollar cost. Vapi may return 0 before the cost is finalised. If it shows `cost: $0.0000`, `cost: n/a` or `api error`, the cap is understated: wait 30 s and re-run it, and do not place the next call until a non-zero cost is saved. Plain `python3 -m probe report` shows "spent $X of $Y cap".
 - **One retry.** A failed probe gets one retry after a config fix. Record both runs.
 - **Disclosure NO.** If `report` shows disclosure NO, read the call's transcript (`runs/<call-id>.jsonl`) before recording a fail. The check reads only the first final assistant transcript, and Vapi may split the opening line in two.
 - **MAY have been placed.** If `call` prints "MAY have been placed", open the Vapi dashboard right away and end the call there. Do not retry until you know.

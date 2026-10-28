@@ -1,6 +1,7 @@
 import contextlib
 import io
 import socket
+import struct
 import tempfile
 import threading
 import unittest
@@ -172,6 +173,40 @@ class ListenCliTest(unittest.TestCase):
         self.assertEqual((self.runs / "c2.pcm").read_bytes(), b"abcd")
         self.assertIn("4 bytes", out)
         self.assertIn("16-bit", out)
+
+    def test_reset_mid_stream_exits_1_and_prints_stats(self):
+        listener = socket.socket()
+        self.addCleanup(listener.close)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+
+        def serve_then_reset():
+            conn, _ = listener.accept()
+            with conn:
+                conn.settimeout(5)
+                data = b""
+                while b"\r\n\r\n" not in data:
+                    data += conn.recv(4096)
+                key = next(ln.split(":", 1)[1].strip() for ln in data.decode().split("\r\n")
+                           if ln.lower().startswith("sec-websocket-key"))
+                conn.sendall(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n"
+                              "Connection: Upgrade\r\nSec-WebSocket-Accept: "
+                              f"{ws_accept_key(key)}\r\n\r\n").encode())
+                conn.sendall(b"\x82\x04abcd\x89\x00")  # audio, then a ping
+                conn.recv(4096)                          # the pong: audio was consumed
+                conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                struct.pack("ii", 1, 0))  # close with RST
+
+        t = threading.Thread(target=serve_then_reset)
+        t.start()
+        self.addCleanup(t.join, 5)
+        url = f"ws://127.0.0.1:{listener.getsockname()[1]}/l"
+        save_meta(self.runs, RunMeta("c4", "a", "+16175550101", "https://ctl", url, 0.0))
+        code, out, err = self.run_main(["listen", "c4"])
+        self.assertEqual(code, 1)
+        self.assertTrue(err.startswith("error: listen failed"))
+        self.assertIn("4 bytes in", out)
+        self.assertIn("likely 16-bit", out)
 
     def test_connection_error_exits_1(self):
         s = socket.socket()

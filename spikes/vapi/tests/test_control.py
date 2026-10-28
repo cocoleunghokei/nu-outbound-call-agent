@@ -68,6 +68,20 @@ class ControlClientTest(unittest.TestCase):
         self.assertEqual((payload["url"], payload["message"], payload["status"]), ("https://c/u", msg, 503))
 
 
+    def test_failure_payload_includes_response_body(self):
+        t = FakeTransport([(400, b'{"error": "call not active"}' + b"x" * 400)]); logged = []
+        ControlClient(t).send("https://c/u", say("hi"), lambda k, p: logged.append((k, p)))
+        kind, payload = logged[0]
+        self.assertEqual(kind, "control-failed")
+        self.assertTrue(payload["body"].startswith('{"error": "call not active"}'))
+        self.assertEqual(len(payload["body"]), 300)
+
+    def test_failure_payload_has_no_body_without_a_status(self):
+        t = FakeTransport([OSError("down"), OSError("down")]); logged = []
+        ControlClient(t).send("https://c/u", say("hi"), lambda k, p: logged.append((k, p)))
+        self.assertNotIn("body", logged[0][1])
+
+
 class VapiApiTest(unittest.TestCase):
     def test_create_call_body_and_auth(self):
         t = FakeTransport([(201, b'{"id": "call_1"}')])
