@@ -51,3 +51,8 @@ class FakeControl:
             return False
         log("control-sent", {"url": url, "message": message})
         return True
+
+
+def env_with_runs(runs_dir) -> dict:
+    """FULL_ENV plus PROBE_RUNS_DIR pointing at runs_dir."""
+    return {**FULL_ENV, "PROBE_RUNS_DIR": str(runs_dir)}
