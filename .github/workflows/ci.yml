@@ -1,0 +1,75 @@
+# Quality gate for every pull request and every push to main.
+# Each job calls the same Makefile target a developer runs locally (see docs/devops.md).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      database: ${{ steps.filter.outputs.database }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            database:
+              - 'supabase/**'
+              - 'scripts/check-db.sh'
+              - 'scripts/sql/**'
+              - '.github/workflows/ci.yml'
+
+  hygiene:
+    name: Hygiene and secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # the secret scan reads the full history
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+      - run: python -m pip install pre-commit==4.7.0
+      - run: make hygiene secrets
+
+  build:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Add the toolchain setup here once the stack is picked,
+      # e.g. actions/setup-node or actions/setup-python with dependency caching.
+      - run: make lint test build
+
+  database:
+    name: Database migrations
+    needs: changes
+    if: needs.changes.outputs.database == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.122.0
+      - run: make db-check
