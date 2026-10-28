@@ -40,7 +40,7 @@ CI calls these same targets, so passing locally means passing in CI.
 - Treat existing public APIs, exported types, table and column names as contracts. Change them only when the task requires it, and update every caller in the same PR.
 
 ### Commits and PRs
-- [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`. Scopes: `backend`, `frontend`, `db`, `ci`, `docs`.
+- [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`. Scopes: `backend`, `frontend`, `db`, `ci`, `docs`, `spike`.
 - PRs are squash-merged, so the PR title must also follow the format. CI checks it.
 
 ### Code
