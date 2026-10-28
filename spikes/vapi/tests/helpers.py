@@ -8,3 +8,7 @@ FULL_ENV = {
     "PROBE_RECEPTIONIST_NUMBERS": "+16175550101,+16175550102",
     "PROBE_OPERATOR_NUMBER": "+16175550199",
 }
+
+from pathlib import Path
+
+SCENARIO_DIR = Path(__file__).resolve().parent.parent / "scenarios"
