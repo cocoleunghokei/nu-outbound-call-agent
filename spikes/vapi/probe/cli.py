@@ -15,6 +15,7 @@ from probe.config import ConfigError, Settings, load_settings, parse_dotenv, val
 from probe.control import (ControlClient, ControlError, Transport, add_system_message,
                            mute_assistant, say, transfer_to, unmute_assistant, urllib_transport)
 from probe.eventlog import EventLog, RunMeta, load_meta, running_cost, save_meta
+from probe.listen import infer_pcm_format, listen
 from probe.scenario import Scenario, load_scenario
 from probe.vapi_api import VapiApi
 from probe.webhook import ProbeServer
@@ -61,6 +62,9 @@ def _build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("serve", help="run the webhook server and read operator replies")
     s.add_argument("--port", type=int, default=8787)
     s.add_argument("--user", default="Alex Chen")
+    ls = sub.add_parser("listen", help="record a call's live audio as raw PCM")
+    ls.add_argument("call_id")
+    ls.add_argument("--out", type=Path, default=None, help="default runs/<call-id>.pcm")
     k = sub.add_parser("control", help="send a live instruction to a call")
     k.add_argument("call_id")
     ksub = k.add_subparsers(dest="action", required=True)
@@ -147,6 +151,30 @@ def _cmd_control(args, settings: Settings, runs_dir: Path, transport: Transport)
     return 0 if ok else 1
 
 
+def _cmd_listen(args, runs_dir: Path) -> int:
+    meta = load_meta(runs_dir, args.call_id)
+    if meta is None:
+        raise ConfigError(f"unknown call {args.call_id}")
+    if not meta.listen_url:
+        raise ConfigError(f"call {args.call_id} has no listen URL")
+    out_path = args.out or runs_dir / f"{args.call_id}.pcm"
+    stop = threading.Event()
+    print(f"Recording to {out_path}; Ctrl-C to stop.", flush=True)
+    started = time.monotonic()
+    try:
+        try:
+            count = listen(meta.listen_url, out_path, stop)
+        except KeyboardInterrupt:
+            stop.set()  # Ctrl-C before listen returned: nothing to report
+            count = out_path.stat().st_size if out_path.exists() else 0
+    except (ConnectionError, OSError) as exc:
+        print(f"error: listen failed: {exc}", file=sys.stderr)
+        return 1
+    seconds = time.monotonic() - started
+    print(f"{count} bytes in {seconds:.1f} s; likely {infer_pcm_format(count, seconds)}")
+    return 0
+
+
 def _cmd_serve(args, settings: Settings, runs_dir: Path, transport: Transport,
                stdin: TextIO) -> int:
     server = ProbeServer(secret=settings.webhook_secret, runs_dir=runs_dir,
@@ -184,6 +212,8 @@ def main(argv: list[str], env: Mapping[str, str] | None = None,
         runs_dir = _runs_dir(values)
         if args.command == "call":
             return _cmd_call(args, settings, runs_dir, transport)
+        if args.command == "listen":
+            return _cmd_listen(args, runs_dir)
         if args.command == "control":
             return _cmd_control(args, settings, runs_dir, transport)
         return _cmd_serve(args, settings, runs_dir, transport, stdin or sys.stdin)
