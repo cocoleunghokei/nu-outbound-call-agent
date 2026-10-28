@@ -1,4 +1,5 @@
 import contextlib
+import dataclasses
 import io
 import tempfile
 import unittest
@@ -8,7 +9,7 @@ from probe.cli import main
 from probe.control import add_system_message, say
 from probe.eventlog import Event, RunMeta, load_meta, read_events, save_meta
 from probe.ping import HOLD_LINE_PREFIX, TIMEOUT_MARKER
-from probe.report import (disclosure_ok, first_speech_delay, median, ping_metrics,
+from probe.report import (format_block, disclosure_ok, first_speech_delay, median, ping_metrics,
                           recording_absent, statuses_seen, summarize, transcript_latencies)
 from probe.vapi_api import VapiApi
 from tests.helpers import FakeTransport, env_with_runs
@@ -89,6 +90,17 @@ class ReportTest(unittest.TestCase):
                          ("timeout", True, None))
         self.assertEqual((b.outcome, b.stayed_connected), ("call-ended", False))
 
+    def test_ping_without_outcome_is_unresolved(self):
+        e = [ctl(10, say(f"{HOLD_LINE_PREFIX} Alex Chen, one moment.")),
+             ctl(25, say("Thanks for holding, I'm just checking with Alex Chen."))]
+        (p,) = ping_metrics(e)
+        self.assertEqual((p.outcome, p.stayed_connected, p.fillers), ("unresolved", None, 1))
+        s = {"call_id": "c", "scenario_id": "a", "disclosure_ok": True,
+             "first_speech_delay_s": None, "transcript_latency_median_s": None,
+             "transcript_latencies_s": [], "statuses_seen": [],
+             "pings": [dataclasses.asdict(p)]}
+        self.assertIn("unknown", format_block(s))
+
     def test_median(self):
         self.assertEqual(median([3.0, 1.0, 2.0]), 2.0)
 
@@ -129,6 +141,12 @@ class SummarizeTest(unittest.TestCase):
         s = summarize("c1", self.runs, self.api([(200, b'{"artifact": {"recordingUrl": "r"}}')]))
         self.assertIsNone(s["cost"])
         self.assertFalse(s["recording_absent"])
+
+    def test_missing_cost_keeps_saved_cost(self):
+        save_meta(self.runs, RunMeta("c1", "a", "+16175550101", "", "", 0.0, cost=1.5))
+        s = summarize("c1", self.runs, self.api([(200, b'{"artifact": {}}')]))
+        self.assertIsNone(s["cost"])
+        self.assertEqual(load_meta(self.runs, "c1").cost, 1.5)
 
     def test_api_error_does_not_raise(self):
         for resp in ((500, b"boom"), OSError("down")):

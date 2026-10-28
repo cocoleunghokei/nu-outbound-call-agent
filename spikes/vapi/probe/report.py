@@ -20,9 +20,9 @@ class PingMetrics:
     """How one pause-and-ping wait went."""
     opened_at: float
     fillers: int
-    outcome: Literal["replied", "timeout", "call-ended"]
+    outcome: Literal["replied", "timeout", "call-ended", "unresolved"]
     reply_to_speech_s: float | None
-    stayed_connected: bool
+    stayed_connected: bool | None  # None while unresolved
 
 
 def _is_final_transcript(e: Event) -> bool:
@@ -105,7 +105,7 @@ def ping_metrics(events: list[Event]) -> list[PingMetrics]:
                       if _control_content(e, "say").startswith(_FILLER_PREFIXES))
         outcome: Literal["replied", "timeout", "call-ended"] | None = None
         reply_to_speech = None
-        stayed = True
+        stayed: bool | None = True
         for j, e in enumerate(window):
             if REPLY_MARKER in _control_content(e, "add-message"):
                 outcome = "replied"
@@ -117,8 +117,11 @@ def ping_metrics(events: list[Event]) -> list[PingMetrics]:
                 outcome, stayed = "call-ended", False
             if outcome:
                 break
-        out.append(PingMetrics(events[start].t, fillers, outcome or "call-ended",
-                               reply_to_speech, stayed))
+        if outcome is None:
+            out.append(PingMetrics(events[start].t, fillers, "unresolved", None, None))
+        else:
+            out.append(PingMetrics(events[start].t, fillers, outcome,
+                                   reply_to_speech, stayed))
     return out
 
 
@@ -162,11 +165,12 @@ def summarize(call_id: str, runs_dir: Path, api: VapiApi | None,
         try:
             call = api.get_call(call_id)
             cost = call.get("cost")
-            cost = float(cost) if isinstance(cost, (int, float)) else None
+            real = isinstance(cost, (int, float)) and not isinstance(cost, bool)
+            cost = float(cost) if real else None
             result["ended_reason"] = call.get("endedReason")
             result["cost"] = cost
             result["recording_absent"] = recording_absent(call)
-            if meta is not None:
+            if meta is not None and cost is not None:
                 meta.cost = cost
                 save_meta(runs_dir, meta)
         except Exception as exc:  # ControlError or anything else: report, don't raise
@@ -178,6 +182,10 @@ def _fmt(v, unit: str = "") -> str:
     if v is None:
         return "n/a"
     return f"{v:.2f}{unit}" if isinstance(v, float) else f"{v}{unit}"
+
+
+def _yn(v: bool | None) -> str:
+    return "unknown" if v is None else ("yes" if v else "NO")
 
 
 def format_block(s: dict) -> str:
@@ -192,7 +200,7 @@ def format_block(s: dict) -> str:
     for i, p in enumerate(s["pings"], 1):
         lines.append(f"  ping {i}: {p['outcome']}, fillers {p['fillers']}, "
                      f"reply to speech {_fmt(p['reply_to_speech_s'], ' s')}, "
-                     f"stayed connected {'yes' if p['stayed_connected'] else 'NO'}")
+                     f"stayed connected {_yn(p['stayed_connected'])}")
     if not s["pings"]:
         lines.append("  pings: none")
     if "api_error" in s:
