@@ -70,8 +70,8 @@ class ControlClient:
             try:
                 status, _resp = self._transport("POST", control_url, headers, body)
                 error = None
-            except OSError as e:
-                status, error = None, str(e)
+            except Exception as e:  # send() must never raise, whatever the transport throws
+                status, error = None, f"{type(e).__name__}: {e}"
                 continue
             if 200 <= status < 300:
                 log("control-sent", {"url": control_url, "message": message})

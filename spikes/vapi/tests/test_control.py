@@ -1,3 +1,4 @@
+import http.client
 import json
 import unittest
 
@@ -42,6 +43,18 @@ class ControlClientTest(unittest.TestCase):
         t = FakeTransport([(400, b"bad")])
         self.assertFalse(ControlClient(t).send("https://c/u", say("hi"), lambda k, p: None))
         self.assertEqual(len(t.calls), 1)
+
+    def test_non_oserror_failures_never_raise_and_are_logged(self):
+        t = FakeTransport([ValueError("bad url"), ValueError("bad url")]); logged = []
+        ok = ControlClient(t).send("not a url", say("hi"), lambda k, p: logged.append((k, p)))
+        self.assertFalse(ok); self.assertEqual(len(t.calls), 2)
+        self.assertEqual([k for k, _ in logged], ["control-failed"])
+        self.assertIn("ValueError", logged[0][1]["error"])
+
+    def test_http_exception_is_retried_then_succeeds(self):
+        t = FakeTransport([http.client.IncompleteRead(b""), (200, b"{}")]); logged = []
+        ok = ControlClient(t).send("https://c/u", say("hi"), lambda k, p: logged.append(k))
+        self.assertTrue(ok); self.assertEqual(len(t.calls), 2); self.assertEqual(logged, ["control-sent"])
 
     def test_request_is_json_post_and_failure_payload_has_status_and_error(self):
         t = FakeTransport([(503, b""), (503, b"")]); logged = []
