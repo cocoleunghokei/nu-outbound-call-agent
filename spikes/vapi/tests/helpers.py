@@ -26,3 +26,28 @@ class FakeTransport:
         if isinstance(r, Exception):
             raise r
         return r
+
+
+class FakeClock:
+    """Callable clock with a mutable `.now`."""
+
+    def __init__(self, now: float = 1000.0):
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class FakeControl:
+    """Stands in for ControlClient: records (url, message); `fail` makes sends fail."""
+
+    def __init__(self):
+        self.sent, self.fail = [], False
+
+    def send(self, url, message, log):
+        self.sent.append((url, message))
+        if self.fail:
+            log("control-failed", {"url": url, "message": message})
+            return False
+        log("control-sent", {"url": url, "message": message})
+        return True
