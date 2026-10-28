@@ -39,7 +39,10 @@ class BuildAssistantTest(unittest.TestCase):
         self.assertEqual(self.a["monitorPlan"], {"listenEnabled": True, "controlEnabled": True})
 
     def test_ask_user_tool_is_async_with_schema(self):
-        (tool,) = self.a["model"]["tools"]
+        (tool,) = [
+            t for t in self.a["model"]["tools"]
+            if t.get("function", {}).get("name") == ASK_USER_TOOL_NAME
+        ]
         self.assertEqual(tool["type"], "function")
         self.assertIs(tool["async"], True)
         self.assertNotIn("messages", tool)
@@ -50,6 +53,16 @@ class BuildAssistantTest(unittest.TestCase):
         self.assertEqual(params["properties"]["suggested_replies"]["maxItems"], 4)
         self.assertEqual(tool["server"]["url"], self.a["server"]["url"])
         self.assertEqual(tool["server"]["headers"], {SECRET_HEADER: SETTINGS.webhook_secret})
+
+    def test_end_call_tool_present(self):
+        self.assertIn({"type": "endCall"}, self.a["model"]["tools"])
+
+    def test_never_agree_section_routes_through_ask_user(self):
+        content = self.a["model"]["messages"][0]["content"]
+        section = content.split("NEVER AGREE TO")[1].split("WHEN TO CALL")[0]
+        self.assertIn("pay a fee", section)
+        self.assertIn("ask_user", section)
+        self.assertIn("endCall", content)
 
     def test_fixed_voice_transcriber_and_limits(self):
         self.assertEqual(
