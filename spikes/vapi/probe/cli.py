@@ -1,4 +1,4 @@
-"""Command-line interface: call, serve and control."""
+"""Command-line interface: call, serve, control, listen and report."""
 from __future__ import annotations
 
 import argparse
@@ -16,6 +16,7 @@ from probe.control import (ControlClient, ControlError, Transport, add_system_me
                            mute_assistant, say, transfer_to, unmute_assistant, urllib_transport)
 from probe.eventlog import EventLog, RunMeta, load_meta, running_cost, save_meta
 from probe.listen import infer_pcm_format, listen
+from probe.report import format_block, format_line, summarize
 from probe.scenario import Scenario, load_scenario
 from probe.vapi_api import VapiApi
 from probe.webhook import ProbeServer
@@ -62,6 +63,9 @@ def _build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("serve", help="run the webhook server and read operator replies")
     s.add_argument("--port", type=int, default=8787)
     s.add_argument("--user", default="Alex Chen")
+    r = sub.add_parser("report", help="print metrics for a call, or list all calls")
+    r.add_argument("call_id", nargs="?")
+    r.add_argument("--offline", action="store_true", help="skip the Vapi API (no cost fetch)")
     ls = sub.add_parser("listen", help="record a call's live audio as raw PCM")
     ls.add_argument("call_id")
     ls.add_argument("--out", type=Path, default=None, help="default runs/<call-id>.pcm")
@@ -175,6 +179,24 @@ def _cmd_listen(args, runs_dir: Path) -> int:
     return 0
 
 
+def _cmd_report(args, settings: Settings, runs_dir: Path, transport: Transport,
+                user_name: str = "Alex Chen") -> int:
+    if args.call_id is None:
+        for path in sorted(runs_dir.glob("*.meta.json")):
+            call_id = path.name[:-len(".meta.json")]
+            summary = summarize(call_id, runs_dir, None, user_name)
+            print(format_line(summary | {"cost": load_meta(runs_dir, call_id).cost}))
+        print(f"spent ${running_cost(runs_dir):.2f} of ${settings.spend_cap_usd:.2f} cap")
+        return 0
+    if load_meta(runs_dir, args.call_id) is None:
+        raise ConfigError(f"unknown call {args.call_id}")
+    api = None
+    if not args.offline and settings.api_key:
+        api = VapiApi(settings.api_key, settings.api_base, transport)
+    print(format_block(summarize(args.call_id, runs_dir, api, user_name)))
+    return 0
+
+
 def _cmd_serve(args, settings: Settings, runs_dir: Path, transport: Transport,
                stdin: TextIO) -> int:
     server = ProbeServer(secret=settings.webhook_secret, runs_dir=runs_dir,
@@ -214,6 +236,8 @@ def main(argv: list[str], env: Mapping[str, str] | None = None,
             return _cmd_call(args, settings, runs_dir, transport)
         if args.command == "listen":
             return _cmd_listen(args, runs_dir)
+        if args.command == "report":
+            return _cmd_report(args, settings, runs_dir, transport)
         if args.command == "control":
             return _cmd_control(args, settings, runs_dir, transport)
         return _cmd_serve(args, settings, runs_dir, transport, stdin or sys.stdin)
