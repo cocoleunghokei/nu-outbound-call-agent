@@ -104,6 +104,26 @@ class CliTest(unittest.TestCase):
         self.assertEqual(meta.listen_url, "wss://lst/9")
         self.assertEqual(meta.scenario_id, "b")
 
+    def test_call_transport_timeout_warns_call_may_be_live(self):
+        t = FakeTransport([OSError("timed out")])
+        code, _, err = self.run_main(["call", "a", "--to", "+16175550101"], t)
+        self.assertEqual(code, 1)
+        self.assertIn("may have been placed", err.lower())
+        self.assertIn("OSError", err)
+
+    def test_call_non_json_2xx_warns_call_may_be_live(self):
+        t = FakeTransport([(201, b"not json")])
+        code, _, err = self.run_main(["call", "a", "--to", "+16175550101"], t)
+        self.assertEqual(code, 1)
+        self.assertIn("may have been placed", err.lower())
+
+    def test_call_vapi_400_says_refused(self):
+        t = FakeTransport([(400, b'{"message":"bad"}')])
+        code, _, err = self.run_main(["call", "a", "--to", "+16175550101"], t)
+        self.assertEqual(code, 1)
+        self.assertIn("refused", err)
+        self.assertNotIn("may have been placed", err.lower())
+
     def test_call_api_error_exits_1(self):
         t = FakeTransport([(500, b"boom")])
         code, _, err = self.run_main(["call", "a", "--to", "+16175550101"], t)

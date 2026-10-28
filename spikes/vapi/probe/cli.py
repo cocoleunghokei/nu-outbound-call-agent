@@ -85,7 +85,11 @@ def _cmd_call(args, settings: Settings, runs_dir: Path, transport: Transport) ->
         resp = api.create_call(build_assistant(scenario, settings),
                                settings.phone_number_id, to)
     except ControlError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"error: Vapi refused the call: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # timeout or bad body: Vapi may already have accepted the POST
+        print(f"error: the call MAY have been placed ({type(exc).__name__}: {exc}); "
+              "check the Vapi dashboard and end it there", file=sys.stderr)
         return 1
     call_id = resp.get("id") if isinstance(resp, dict) else None
     if not isinstance(call_id, str) or not call_id:
