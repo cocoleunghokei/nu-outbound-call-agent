@@ -12,3 +12,17 @@ FULL_ENV = {
 from pathlib import Path
 
 SCENARIO_DIR = Path(__file__).resolve().parent.parent / "scenarios"
+
+
+class FakeTransport:
+    """Scripted Transport: pops one response (or raises an Exception) per call."""
+
+    def __init__(self, responses):
+        self.responses, self.calls = list(responses), []
+
+    def __call__(self, method, url, headers, body):
+        self.calls.append((method, url, headers, body))
+        r = self.responses.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
