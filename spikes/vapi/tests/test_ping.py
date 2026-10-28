@@ -128,6 +128,37 @@ class EventLogTest(unittest.TestCase):
             self.assertEqual(load_meta(Path(d), "c1"), meta)
             self.assertIsNone(load_meta(Path(d), "nope"))
 
+    def test_save_meta_is_atomic_and_leaves_no_tmp(self):
+        with tempfile.TemporaryDirectory() as d:
+            meta = RunMeta("c1", "a_restaurant", "+16175550101", "http://c", "ws://l", 5.0)
+            save_meta(Path(d), meta)
+            save_meta(Path(d), meta)
+            self.assertEqual(sorted(p.name for p in Path(d).iterdir()), ["c1.meta.json"])
+            self.assertEqual(load_meta(Path(d), "c1"), meta)
+
+    def test_load_meta_on_empty_or_torn_file_returns_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "c1.meta.json").write_text("", encoding="utf-8")
+            (Path(d) / "c2.meta.json").write_text('{"call_id": "c2", ', encoding="utf-8")
+            self.assertIsNone(load_meta(Path(d), "c1"))
+            self.assertIsNone(load_meta(Path(d), "c2"))
+
+    def test_read_events_skips_torn_final_line(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "c1.jsonl"
+            EventLog(path, clock=lambda: 1.0).append("a", {})
+            with path.open("a") as f:
+                f.write('{"t": 2.0, "kind": "b", "pay')
+            self.assertEqual([e.kind for e in read_events(path)], ["a"])
+
+    def test_read_events_raises_on_bad_non_final_line(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "c1.jsonl"
+            path.write_text("not json\n", encoding="utf-8")
+            EventLog(path, clock=lambda: 1.0).append("a", {})
+            with self.assertRaises(ValueError):
+                read_events(path)
+
     def test_running_cost_sums_meta(self):
         with tempfile.TemporaryDirectory() as d:
             for i, c in enumerate([1.25, 0.5, None]):

@@ -203,6 +203,22 @@ class WebhookTest(unittest.TestCase):
                    "message": {**TOOL_CALL_BODY["message"], "call": {"id": "call_2"}}})
         self.assertEqual(self.control.sent[0][0], "https://ctl/2")
 
+    def test_empty_meta_file_does_not_break_tool_calls_or_tick(self):
+        (self.runs / "call_1.meta.json").write_text("", encoding="utf-8")  # torn mid-write
+        resp = self.post(TOOL_CALL_BODY)
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(json.loads(resp.body)["results"][0]["toolCallId"], "tc_1")
+        self.clock.now += 15
+        self.srv.tick()  # must not raise
+        self.assertIn("no control URL for call call_1", self.printed)
+        save_meta(self.runs, RunMeta(call_id="call_1", scenario_id="s1", to="+16175550101",
+                                     control_url="https://ctl/1", listen_url="wss://l/1",
+                                     started_at=0.0))
+        self.clock.now += 15
+        self.srv.tick()
+        self.srv.drain()
+        self.assertEqual([u for u, _ in self.control.sent], ["https://ctl/1"])
+
     def raw_request(self, headers: dict, body: bytes):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         try:

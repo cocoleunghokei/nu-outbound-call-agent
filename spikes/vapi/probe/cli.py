@@ -206,7 +206,10 @@ def _cmd_serve(args, settings: Settings, runs_dir: Path, transport: Transport,
 
     def ticker() -> None:
         while not stop.wait(1.0):
-            server.tick()
+            try:
+                server.tick()
+            except Exception as exc:  # keep fillers and timeouts running for the session
+                print(f"tick failed: {type(exc).__name__}: {exc}", file=sys.stderr)
 
     thread = threading.Thread(target=ticker, daemon=True)
     thread.start()

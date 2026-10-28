@@ -64,6 +64,12 @@ class BuildAssistantTest(unittest.TestCase):
         self.assertIn("ask_user", section)
         self.assertIn("endCall", content)
 
+    def test_prompt_says_stay_quiet_after_ask_user(self):
+        content = self.a["model"]["messages"][0]["content"]
+        self.assertIn("After you call ask_user, say nothing further", content)
+        self.assertIn("Wait until you are told that Alex Chen replied or did not reply.", content)
+        self.assertIn("say only that you are still checking", content)
+
     def test_fixed_voice_transcriber_and_limits(self):
         self.assertEqual(
             self.a["transcriber"], {"provider": "deepgram", "model": "nova-3", "language": "en-US"}
