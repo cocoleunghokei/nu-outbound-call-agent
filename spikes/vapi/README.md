@@ -125,7 +125,7 @@ Handing the call back to the agent is expected to be Partial or Fail. Try `contr
 
 ### Probe 11, phone menus
 
-Try `python3 -m probe call <scenario-id> --to <number>` to a Twilio number on the same account, configured with a short keypad menu (for example a TwiML "press 1 for sales, 2 for support" flow). Add that number to `PROBE_RECEPTIONIST_NUMBERS` first. If the trial account refuses the call, record "not tested" and the error, then take the verdict from [Vapi's IVR docs](https://docs.vapi.ai/ivr-navigation).
+The agent has a keypad tool (Vapi's built-in `dtmf` tool) and its prompt tells it to press the option that reaches a person. Try `python3 -m probe call a --to <number>` (scenario `a`, the restaurant booking) to a Twilio number on the same account, configured with a short keypad menu (for example a TwiML "press 1 for sales, 2 for support" flow). Add that number to `PROBE_RECEPTIONIST_NUMBERS` first. If the trial account refuses the call, record "not tested" and the error, then take the verdict from [Vapi's IVR docs](https://docs.vapi.ai/ivr-navigation).
 
 ### Reading the report
 

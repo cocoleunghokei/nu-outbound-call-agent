@@ -203,6 +203,19 @@ class WebhookTest(unittest.TestCase):
                    "message": {**TOOL_CALL_BODY["message"], "call": {"id": "call_2"}}})
         self.assertEqual(self.control.sent[0][0], "https://ctl/2")
 
+    def test_call_ended_status_closes_open_ping(self):
+        self.post(TOOL_CALL_BODY)
+        self.assertEqual(self.post({"message": {"type": "status-update", "status": "ended",
+                                                "call": {"id": "call_1"}}}).status, 200)
+        self.assertFalse(self.srv.ping_for("call_1").is_open)
+        self.assertTrue(any("ended while waiting" in p for p in self.printed))
+        self.clock.now += 45
+        self.srv.tick()
+        self.srv.reply("Accept 4pm")
+        self.srv.drain()
+        self.assertEqual([m["type"] for _, m in self.control.sent], ["say"])  # hold line only
+        self.assertEqual(sum("call already ended" in p for p in self.printed), 1)
+
     def test_empty_meta_file_does_not_break_tool_calls_or_tick(self):
         (self.runs / "call_1.meta.json").write_text("", encoding="utf-8")  # torn mid-write
         resp = self.post(TOOL_CALL_BODY)

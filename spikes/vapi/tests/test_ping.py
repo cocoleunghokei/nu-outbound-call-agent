@@ -93,6 +93,21 @@ class PingSessionTest(unittest.TestCase):
         self.assertIn("timed out", self.p.notices[2])
         self.assertNotIn("timed out", self.p.notices[0])
 
+    def test_call_ended_closes_open_ping_without_messages(self):
+        self.p.on_ask(ARGS, now=100.0)
+        self.assertEqual(self.p.on_call_ended(now=110.0), [])
+        self.assertFalse(self.p.is_open)
+        self.assertEqual(self.p.notices, ["Call ended while waiting for Alex's reply."])
+        self.assertEqual(self.p.tick(200.0), [])
+        self.assertEqual(self.p.on_reply("Accept 4pm", now=201.0), [])
+        self.assertEqual(self.p.notices[-1], "Reply ignored: the call already ended, nothing was sent.")
+
+    def test_call_ended_with_no_ping_adds_no_notice(self):
+        self.assertEqual(self.p.on_call_ended(now=1.0), [])
+        self.assertEqual(self.p.notices, [])
+        self.p.on_reply("hi", now=2.0)
+        self.assertIn("call already ended", self.p.notices[-1])
+
     def test_second_ask_merges_and_keeps_original_timer(self):
         self.p.on_ask(ARGS, now=100.0)
         self.assertEqual(self.p.on_ask({**ARGS, "question": "Share DOB?"}, now=120.0), [])

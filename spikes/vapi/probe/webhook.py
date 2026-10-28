@@ -169,9 +169,20 @@ class ProbeServer:
         call_id = call_id if isinstance(call_id, str) and _SAFE_ID.match(call_id) else None
         # Log per call even before its meta exists (R13); only sending needs the meta.
         self._log(call_id or UNKNOWN).append(f"vapi:{message.get('type')}", message)
+        if message.get("type") == "status-update" and message.get("status") == "ended":
+            self._on_call_ended(call_id or UNKNOWN)
         if message.get("type") != "tool-calls":
             return 200, {}
         return 200, {"results": self._on_tool_calls(call_id or UNKNOWN, message)}
+
+    def _on_call_ended(self, cid: str) -> None:
+        """Close the call's open ping, if any, so nothing more is sent to it."""
+        with self._lock:
+            s = self._sessions.get(cid)
+            if s is None:
+                return
+            self._dispatch(cid, s.on_call_ended(self.clock()))
+            self._print_notices(cid, s)
 
     def _on_tool_calls(self, cid: str, message: dict) -> list[dict]:
         results = []

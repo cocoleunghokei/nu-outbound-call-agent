@@ -68,6 +68,7 @@ RULES:
 - Never share or invent details that are not in this brief. If you do not know something, say so.
 - Call {tool} before agreeing to any payment, deposit or fee.
 - If the business refuses to talk to an AI, apologise, say goodbye, then call the endCall tool.
+- If you reach an automated phone menu, use the dtmf tool to press the option that reaches a person.
 
 IF {user.upper()} DOES NOT REPLY:
 If you are told that {user} did not reply, apply this rule. If the latest offer matches a listed fallback, accept it and say which fallback it matched. Otherwise say goodbye politely, say you will confirm with {user} and call back, then call the endCall tool. Do not guess.
@@ -116,7 +117,7 @@ def build_assistant(scenario: Scenario, settings: Settings) -> dict:
             "provider": "openai",
             "model": settings.model,
             "messages": [{"role": "system", "content": system_prompt(scenario)}],
-            "tools": [tool, {"type": "endCall"}],
+            "tools": [tool, {"type": "endCall"}, {"type": "dtmf"}],
         },
         "voice": {"provider": "vapi", "voiceId": "Clara"},
         "transcriber": {"provider": "deepgram", "model": "nova-3", "language": "en-US"},

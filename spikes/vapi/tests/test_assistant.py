@@ -57,6 +57,11 @@ class BuildAssistantTest(unittest.TestCase):
     def test_end_call_tool_present(self):
         self.assertIn({"type": "endCall"}, self.a["model"]["tools"])
 
+    def test_dtmf_tool_present_and_prompted(self):
+        self.assertIn({"type": "dtmf"}, self.a["model"]["tools"])
+        self.assertIn("If you reach an automated phone menu, use the dtmf tool to press the "
+                      "option that reaches a person.", self.a["model"]["messages"][0]["content"])
+
     def test_never_agree_section_routes_through_ask_user(self):
         content = self.a["model"]["messages"][0]["content"]
         section = content.split("NEVER AGREE TO")[1].split("WHEN TO CALL")[0]

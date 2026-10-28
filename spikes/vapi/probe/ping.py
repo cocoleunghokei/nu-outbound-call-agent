@@ -88,10 +88,19 @@ class PingSession:
             return [say(line.format(user=self.user))]
         return []
 
+    def on_call_ended(self, now: float) -> list[dict]:
+        """The call hung up: close any open ping (no fillers, timeout or reply after this)."""
+        if self._view is not None:
+            self.notices.append(f"Call ended while waiting for {self.user}'s reply.")
+        self._close("ended")
+        return []
+
     def on_reply(self, text: str, now: float) -> list[dict]:
         """Inject the operator's reply into the call, or note why it was ignored."""
         if self._view is None:
-            if self._last_close == "timeout":
+            if self._last_close == "ended":
+                self.notices.append("Reply ignored: the call already ended, nothing was sent.")
+            elif self._last_close == "timeout":
                 self.notices.append("Reply ignored: the ping timed out, nothing was sent.")
             else:
                 self.notices.append("Reply ignored: no ping is open.")
