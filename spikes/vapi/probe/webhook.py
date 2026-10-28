@@ -19,6 +19,7 @@ from probe.ping import TIMEOUT_S, PingSession
 UNKNOWN = "unknown"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _STOP = object()
+MAX_BODY_BYTES = 1_048_576
 
 
 class ProbeServer:
@@ -122,14 +123,37 @@ class ProbeServer:
 
     # ---- webhook side ----------------------------------------------------
 
-    def handle(self, path: str, headers, body: bytes) -> tuple[int, dict]:
-        """Process one request; return (status, JSON response). Never waits on a send."""
+    def handle(self, path: str, headers,
+               read_body: Callable[[int], bytes]) -> tuple[int, dict]:
+        """Process one request; return (status, JSON response). Never waits on a send.
+
+        Path, secret and Content-Length are checked before `read_body(length)` runs, so an
+        unauthenticated or oversized request never makes the server buffer its body.
+        """
         if path != "/webhook":
             return 404, {}
         got = (headers.get(SECRET_HEADER) or "").encode()
         if not hmac.compare_digest(got, self.secret.encode()):
             self._log(UNKNOWN).append("rejected", {"reason": "bad or missing secret"})
             return 401, {}
+        raw_len = headers.get("Content-Length")
+        try:
+            length = int(raw_len)
+            if length < 0:
+                raise ValueError("negative")
+        except (TypeError, ValueError):
+            self._log(UNKNOWN).append("bad-request", {"error": "bad Content-Length",
+                                                      "content_length": raw_len})
+            return 400, {}
+        if length > MAX_BODY_BYTES:
+            self._log(UNKNOWN).append("bad-request", {"error": "body too large",
+                                                      "content_length": length})
+            return 413, {}
+        try:
+            body = read_body(length) if length else b""
+        except OSError as e:  # includes the handler's socket timeout
+            self._log(UNKNOWN).append("bad-request", {"error": f"body read failed: {e}"})
+            return 400, {}
         try:
             data = json.loads(body)
             message = data["message"]
@@ -143,8 +167,8 @@ class ProbeServer:
         call = message.get("call")
         call_id = call.get("id") if isinstance(call, dict) else None
         call_id = call_id if isinstance(call_id, str) and _SAFE_ID.match(call_id) else None
-        known = call_id is not None and self._control_url(call_id) is not None
-        self._log(call_id if known else UNKNOWN).append(f"vapi:{message.get('type')}", message)
+        # Log per call even before its meta exists (R13); only sending needs the meta.
+        self._log(call_id or UNKNOWN).append(f"vapi:{message.get('type')}", message)
         if message.get("type") != "tool-calls":
             return 200, {}
         return 200, {"results": self._on_tool_calls(call_id or UNKNOWN, message)}
@@ -245,13 +269,10 @@ class ProbeServer:
 class _Handler(BaseHTTPRequestHandler):
     """Thin HTTP adapter over ProbeServer.handle."""
 
+    timeout = 10  # a client that stalls mid-request frees its thread after 10 s
+
     def do_POST(self) -> None:  # noqa: N802
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            length = 0
-        body = self.rfile.read(length) if length > 0 else b""
-        status, payload = self.server.probe.handle(self.path, self.headers, body)
+        status, payload = self.server.probe.handle(self.path, self.headers, self.rfile.read)
         self._respond(status, payload)
 
     def do_GET(self) -> None:  # noqa: N802
@@ -264,9 +285,12 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(data)
+        try:
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(data)
+        except OSError:  # client already gone (e.g. reset after an early 401/413)
+            self.close_connection = True
 
     def log_message(self, format: str, *args) -> None:  # silence default stderr logging
         pass

@@ -1,5 +1,7 @@
+import http.client
 import json
 import tempfile
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -180,8 +182,64 @@ class WebhookTest(unittest.TestCase):
         self.post({**TOOL_CALL_BODY,
                    "message": {**TOOL_CALL_BODY["message"], "call": {"id": "call_x"}}})
         self.assertEqual(self.control.sent, [])
-        self.assertTrue((self.runs / "unknown.jsonl").exists())
+        self.assertEqual([e.kind for e in read_events(self.runs / "call_x.jsonl")],
+                         ["vapi:tool-calls"])
+        self.assertFalse((self.runs / "unknown.jsonl").exists())
         self.assertIn("no control URL for call call_x", self.printed)
+
+    def test_invalid_call_id_logs_to_unknown(self):
+        self.post({"message": {"type": "status-update", "call": {"id": "../x"}}})
+        self.assertEqual([e.kind for e in read_events(self.runs / "unknown.jsonl")],
+                         ["vapi:status-update"])
+
+    def test_early_events_then_meta_recovers_sending(self):
+        # R13: webhooks can arrive before `call` saves the meta.
+        self.post({"message": {"type": "status-update", "call": {"id": "call_2"}}})
+        self.assertTrue((self.runs / "call_2.jsonl").exists())
+        save_meta(self.runs, RunMeta(call_id="call_2", scenario_id="s1", to="+16175550101",
+                                     control_url="https://ctl/2", listen_url="wss://l/2",
+                                     started_at=0.0))
+        self.post({**TOOL_CALL_BODY,
+                   "message": {**TOOL_CALL_BODY["message"], "call": {"id": "call_2"}}})
+        self.assertEqual(self.control.sent[0][0], "https://ctl/2")
+
+    def raw_request(self, headers: dict, body: bytes):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        try:
+            conn.putrequest("POST", "/webhook")
+            for k, v in headers.items():
+                conn.putheader(k, v)
+            conn.endheaders()
+            conn.send(body)
+            start = time.monotonic()
+            resp = conn.getresponse()
+            status = resp.status
+            resp.read()
+            return status, time.monotonic() - start
+        finally:
+            conn.close()
+
+    def test_oversized_declared_length_is_413(self):
+        status, _ = self.raw_request({"x-probe-secret": SECRET,
+                                      "Content-Length": str(300 * 1024 * 1024)}, b"{}")
+        self.assertEqual(status, 413)
+        self.assertEqual(read_events(self.runs / "unknown.jsonl")[0].kind, "bad-request")
+
+    def test_bad_secret_is_401_without_reading_body(self):
+        status, took = self.raw_request({"x-probe-secret": "nope",
+                                         "Content-Length": "100000"}, b"{}")
+        self.assertEqual(status, 401)
+        self.assertLess(took, 2.0)
+
+    def test_non_integer_content_length_is_400(self):
+        status, _ = self.raw_request({"x-probe-secret": SECRET,
+                                      "Content-Length": "lots"}, b"{}")
+        self.assertEqual(status, 400)
+        self.assertEqual(read_events(self.runs / "unknown.jsonl")[0].kind, "bad-request")
+
+    def test_missing_content_length_is_400(self):
+        status, _ = self.raw_request({"x-probe-secret": SECRET}, b"")
+        self.assertEqual(status, 400)
 
     # Review Focus 5
     def test_timeout_still_fires_when_control_sends_fail(self):
