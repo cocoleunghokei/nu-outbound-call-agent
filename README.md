@@ -23,6 +23,8 @@ docs/       One-pager, research notes, specs, tech doc
 - `main` is the shared branch. Keep it working, and don't push to it directly.
 - Do your work on a branch off `main`, then open a pull request.
 - See [CONTRIBUTING.md](CONTRIBUTING.md) for branch names and the PR flow.
+- Run `make setup` once, and `make check` before you push. CI runs the same checks on every PR. See [docs/devops.md](docs/devops.md).
+- AI agents follow [AGENTS.md](AGENTS.md).
 
 ## Timeline
 

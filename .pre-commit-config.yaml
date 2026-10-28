@@ -1,0 +1,50 @@
+# Git hooks shared by the whole team. Install once with `make setup`.
+# CI runs the same hooks (`make hygiene`), so a commit that passes locally passes there.
+# Add language linters (ruff, eslint, prettier, ...) here once the stack is picked.
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  # Blocks API keys and tokens (Twilio, LLM providers, Supabase service key, ...).
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+      # Full-history scan, run by `make secrets` and CI. The hook above only sees staged changes.
+      - id: gitleaks
+        alias: gitleaks-history
+        name: Scan full git history for secrets
+        entry: gitleaks git --redact --verbose
+        pass_filenames: false
+        stages: [manual]
+
+  # Lints GitHub Actions workflows.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+
+  # Enforces Conventional Commits on every local commit message.
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v4.4.0
+    hooks:
+      - id: conventional-pre-commit
+        stages: [commit-msg]
