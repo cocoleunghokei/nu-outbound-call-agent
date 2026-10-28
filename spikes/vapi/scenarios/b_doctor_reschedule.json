@@ -4,7 +4,7 @@
   "business_name": "Dr. Lee's office",
   "user_name": "Alex Chen",
   "goal": "move Alex's Thursday appointment to Thursday morning",
-  "opening_request": "move Alex's Thursday appointment to Thursday morning",
+  "opening_request": "I'm calling to move Alex's Thursday appointment to Thursday morning. Is there an opening?",
   "profile": [
     {
       "name": "name",

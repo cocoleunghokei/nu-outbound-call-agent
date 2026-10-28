@@ -4,7 +4,7 @@
   "business_name": "Dr. Lee's office",
   "user_name": "Alex Chen",
   "goal": "book a new-patient appointment next week",
-  "opening_request": "book a new-patient appointment next week",
+  "opening_request": "I'd like to book a new-patient appointment for next week. Do you have any openings?",
   "profile": [
     {
       "name": "name",

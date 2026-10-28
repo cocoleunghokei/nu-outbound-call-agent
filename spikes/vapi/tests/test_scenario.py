@@ -41,6 +41,13 @@ class LoadScenarioTest(unittest.TestCase):
             with self.assertRaises(ConfigError):
                 load_scenario(path)
 
+    def test_opening_request_is_a_spoken_sentence(self):
+        for path in SCENARIO_DIR.glob("*.json"):
+            s = load_scenario(path)
+            self.assertTrue(s.opening_request[0].isupper(), s.id)
+            self.assertIn(s.opening_request[-1], ".?", s.id)
+            self.assertNotEqual(s.opening_request, s.goal, s.id)
+
 
 if __name__ == "__main__":
     unittest.main()

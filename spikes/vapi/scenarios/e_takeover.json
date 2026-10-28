@@ -4,7 +4,7 @@
   "business_name": "Tatte Bakery",
   "user_name": "Alex Chen",
   "goal": "ask whether a table for 2 is open at 8pm",
-  "opening_request": "ask whether a table for 2 is open at 8pm",
+  "opening_request": "I'm calling to ask whether a table for 2 is open at 8pm. Do you have one available?",
   "profile": [
     {
       "name": "name",

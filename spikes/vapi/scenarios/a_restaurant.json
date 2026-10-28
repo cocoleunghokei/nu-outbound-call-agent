@@ -4,7 +4,7 @@
   "business_name": "Tatte Bakery",
   "user_name": "Alex Chen",
   "goal": "book a table for 6 at 7pm tonight",
-  "opening_request": "book a table for 6 at 7pm tonight",
+  "opening_request": "I'd like to book a table for 6 at 7pm tonight. Do you have anything available?",
   "profile": [
     {
       "name": "name",
