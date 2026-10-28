@@ -16,7 +16,11 @@ Roles: the operator runs the kit and plays Alex Chen (fake user). A teammate is 
    - `PROBE_RECEPTIONIST_NUMBERS`: comma-separated US E.164 numbers (`+1` and 10 digits).
    - `PROBE_OPERATOR_NUMBER`: your own US E.164 number. Also the transfer target in scenario E.
    - Optional: `VAPI_MODEL` (default `gpt-5.4-mini`), `PROBE_SPEND_CAP_USD` (default `20`), `PROBE_RUNS_DIR`.
-4. Import the Twilio number into Vapi. Free Vapi numbers are inbound only, so outbound needs this.
+4. Import the Twilio number into Vapi. Free Vapi numbers are inbound only, so outbound needs this. The CLI reads `.env` itself but your shell does not, so first load it into the shell (run from `spikes/vapi`; do the same in every new terminal that uses `$VAPI_API_KEY` or `$PROBE_OPERATOR_NUMBER`):
+
+   ```bash
+   set -a; . ./.env; set +a
+   ```
 
    ```bash
    curl -X POST https://api.vapi.ai/phone-number \
@@ -51,7 +55,7 @@ Per call:
 1. Hand the receptionist the card. Tell them the variant (scenario b only).
 2. Place the call from a third terminal: `python3 -m probe call <scenario-id> --to <receptionist number>`. It prints the call ID. Note it.
 3. Answer pings in the `serve` terminal. Type a reply and press Enter, only while a ping is open.
-4. When the call ends, run `python3 -m probe report <call-id>` and note the output. Do this after every call, before placing the next (see Stop rules).
+4. When the call ends, run `python3 -m probe report <call-id>` and note the output. Check that it prints a dollar cost (`cost: $...`). If it shows `cost: n/a` or `api error`, nothing was saved: wait 30 s and re-run it, and do not place the next call until a cost is saved. Plain `python3 -m probe report` then shows "spent $X of $Y cap".
 
 Exit codes for every subcommand: 0 ok, 1 runtime failure (Vapi refused, control or listen failed), 2 configuration or input error (bad or non-allowlisted number, unknown scenario or call, spend cap reached).
 
@@ -93,9 +97,29 @@ python3 -m probe listen <call-id>             # --out <file> to change the path;
 python3 -m probe control <call-id> transfer   # rings PROBE_OPERATOR_NUMBER
 ```
 
-Run `listen` in its own terminal right after `call`, listen for a while, then run `transfer` from another terminal and answer your phone. Stop `listen` with Ctrl-C when done.
+`listen` only writes raw PCM to a file; it does not play it. To hear the call live:
 
-`listen` prints the byte count, duration and a format guess (mono or stereo, sample rate) only on a clean close or Ctrl-C. If the call drops abruptly and nothing prints, check the size of `runs/<call-id>.pcm` by hand (`ls -l`) and work out bytes per second from the call duration. The format guess answers "what sample rate is the listen stream", so record it in RESULTS.md.
+1. Install a player: `sudo apt install ffmpeg` (gives `ffplay`; macOS: `brew install ffmpeg`) or `sudo apt install sox` (gives `play`; macOS: `brew install sox`).
+2. Do a first short `listen` (a few seconds, then Ctrl-C) to learn the format. It prints the byte count, duration and a format guess such as "mono 16000". It prints these only on a clean close or Ctrl-C. If the call drops abruptly and nothing prints, check the size of `runs/<call-id>.pcm` by hand (`ls -l`) and divide by the seconds to get bytes per second.
+3. Start the real `listen` in one terminal (it overwrites the file, so use `--out` for the short test if you want to keep it). In a second terminal, play the growing file live, filling in the rate and channels:
+
+   ```bash
+   tail -c +1 -f runs/<call-id>.pcm | ffplay -f s16le -ar <rate> -ac <channels> -nodisp -
+   # or with sox
+   tail -c +1 -f runs/<call-id>.pcm | play -t raw -e signed -b 16 -r <rate> -c <channels> -
+   ```
+
+   Wrong format sounds like fast, slow, or garbled audio; try the next row of the table.
+
+| Bytes per second | Format |
+| --- | --- |
+| 16000 | mono 8 kHz |
+| 32000 | mono 16 kHz (or stereo 8 kHz) |
+| 48000 | mono 24 kHz |
+| 64000 | stereo 16 kHz |
+| 96000 | stereo 24 kHz |
+
+Listen for a while, then run `transfer` from a third terminal and answer your phone. Stop `listen` with Ctrl-C when done. Record the format in RESULTS.md.
 
 Handing the call back to the agent is expected to be Partial or Fail. Try `control <call-id> resume` after the transfer only if time allows, and record what happens.
 
@@ -111,11 +135,11 @@ Try `python3 -m probe call <scenario-id> --to <number>` to a Twilio number on th
 
 Pending: needs accounts. Not yet run.
 
-After setup, run `python3 -m probe call a --to $PROBE_OPERATOR_NUMBER`, answer it, and let the agent finish. Then run `python3 -m probe report <call-id>`. Expect: the disclosure is heard, `disclosure first: yes`, `recording absent: yes` and a printed cost. Do not start the session until this passes.
+After setup, load `.env` into your shell (`set -a; . ./.env; set +a`), then run `python3 -m probe call a --to $PROBE_OPERATOR_NUMBER`, answer it, and let the agent finish. Then run `python3 -m probe report <call-id>`. Expect: the disclosure is heard, `disclosure first: yes`, `recording absent: yes` and a printed cost. Do not start the session until this passes.
 
 ## Stop rules
 
-- **Spend cap.** The cap is `PROBE_SPEND_CAP_USD` (default $20). New calls are refused (exit 2) once saved cost reaches it, and the session stops there. The cap counts only costs saved by `report`: a just-placed call counts as $0 until you run `python3 -m probe report <call-id>`. Run `report <call-id>` after every call, before placing the next.
+- **Spend cap.** The cap is `PROBE_SPEND_CAP_USD` (default $20). New calls are refused (exit 2) once saved cost reaches it, and the session stops there. The cap counts only costs saved by `report`: a just-placed call counts as $0 until you run `python3 -m probe report <call-id>`. Run `report <call-id>` after every call, before placing the next, and check that it prints a dollar cost. If it shows `cost: n/a` or `api error`, nothing was saved and the cap is understated: wait 30 s and re-run it, and do not place the next call until a cost is saved. Plain `python3 -m probe report` shows "spent $X of $Y cap".
 - **One retry.** A failed probe gets one retry after a config fix. Record both runs.
 - **Disclosure NO.** If `report` shows disclosure NO, read the call's transcript (`runs/<call-id>.jsonl`) before recording a fail. The check reads only the first final assistant transcript, and Vapi may split the opening line in two.
 - **MAY have been placed.** If `call` prints "MAY have been placed", open the Vapi dashboard right away and end the call there. Do not retry until you know.

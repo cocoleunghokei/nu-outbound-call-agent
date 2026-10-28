@@ -38,6 +38,17 @@ Model (`VAPI_MODEL`):
 
 Evidence: call IDs and metrics from `report`.
 
+### Probe 9: app state map
+
+| App state | Source (Vapi event or our server state) | Expected source | Observed (yes/no) |
+| --- | --- | --- | --- |
+| Dialing | | Vapi `status-update` queued / ringing | |
+| In phone menu | | | |
+| On hold | | Our server ping state | |
+| Talking | | | |
+| Waiting on you | | Our server ping state | |
+| Ended | | | |
+
 ## Latency and cost
 
 | Call ID | Scenario / variant | Disclosure first | First speech delay (s) | Transcript latency median (s) | Reply to speech (s) | Ended reason | Cost (USD) | Valid run |
@@ -62,9 +73,15 @@ A teammate may be more patient than a busy front desk. The ratings and notes are
 
 ## Probe 10: takeover
 
-Listen stream format (bytes per second and guess):
-Time from `transfer` to the operator's phone ringing:
-Hand-back to the agent:
+| Field | Value |
+| --- | --- |
+| Heard live (yes/no) | |
+| Rough delay vs the phone | |
+| Audio intelligible (yes/no) | |
+| Format inferred (bytes per second, mono or stereo, rate) | |
+| Takeover via transfer worked (yes/no) | |
+| Time from `transfer` to the operator's phone ringing | |
+| Hand-back to the agent | |
 
 ## Go/no-go
 
