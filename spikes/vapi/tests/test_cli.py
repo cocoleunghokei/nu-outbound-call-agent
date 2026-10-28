@@ -41,8 +41,35 @@ class CliTest(unittest.TestCase):
 
     def test_call_refuses_emergency_number(self):
         t = FakeTransport([])
-        self.assertEqual(self.run_main(["call", "a", "--to", "911"], t)[0], 2)
+        code, _, err = self.run_main(["call", "a", "--to", "911"], t)
+        self.assertEqual(code, 2)
+        self.assertIn("emergency", err)
         self.assertEqual(t.calls, [])
+
+    def test_call_refuses_malformed_and_non_us_numbers(self):
+        for number in ("6175550101", "+161755501", "+442071234567"):
+            with self.subTest(number=number):
+                t = FakeTransport([])
+                code, _, err = self.run_main(["call", "a", "--to", number], t)
+                self.assertEqual(code, 2)
+                self.assertIn("not a US E.164 number", err)
+                self.assertEqual(t.calls, [])
+
+    def test_call_response_without_id_exits_1_and_says_may_have_been_placed(self):
+        t = FakeTransport([(201, b'{"status": "queued"}')])
+        code, _, err = self.run_main(["call", "a", "--to", "+16175550101"], t)
+        self.assertEqual(code, 1)
+        self.assertIn("may have been placed", err.lower())
+        self.assertIn("queued", err)
+
+    def test_call_monitor_null_saves_meta_and_warns(self):
+        t = FakeTransport([(201, b'{"id": "call_8", "monitor": null}')])
+        code, out, err = self.run_main(["call", "a", "--to", "+16175550101"], t)
+        self.assertEqual(code, 0)
+        self.assertIn("call_8", out)
+        self.assertIn("live control is unavailable", err)
+        meta = load_meta(self.runs, "call_8")
+        self.assertEqual((meta.control_url, meta.listen_url), ("", ""))
 
     def test_call_refuses_when_spend_cap_reached(self):
         save_meta(self.runs, RunMeta("old", "a", "+16175550101", "u", "l", 0.0, cost=20.0))

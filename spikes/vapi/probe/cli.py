@@ -87,12 +87,28 @@ def _cmd_call(args, settings: Settings, runs_dir: Path, transport: Transport) ->
     except ControlError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    monitor = resp.get("monitor", {})
-    save_meta(runs_dir, RunMeta(
-        call_id=resp["id"], scenario_id=scenario.id, to=to,
-        control_url=monitor.get("controlUrl", ""), listen_url=monitor.get("listenUrl", ""),
-        started_at=time.time()))
-    print(resp["id"])
+    call_id = resp.get("id") if isinstance(resp, dict) else None
+    if not isinstance(call_id, str) or not call_id:
+        print("error: the call MAY have been placed but the response had no call id; "
+              "check the Vapi dashboard and end it there. Response: "
+              f"{str(resp)[:300]}", file=sys.stderr)
+        return 1
+    monitor = resp.get("monitor")
+    if not isinstance(monitor, dict):
+        monitor = {}
+
+    def _url(key: str) -> str:
+        v = monitor.get(key)
+        return v if isinstance(v, str) else ""
+
+    meta = RunMeta(call_id=call_id, scenario_id=scenario.id, to=to,
+                   control_url=_url("controlUrl"), listen_url=_url("listenUrl"),
+                   started_at=time.time())
+    save_meta(runs_dir, meta)
+    print(call_id)
+    if not meta.control_url:
+        print("warning: no control URL in the response; live control is unavailable "
+              "for this call", file=sys.stderr)
     return 0
 
 
