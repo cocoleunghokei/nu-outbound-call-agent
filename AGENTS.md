@@ -63,6 +63,7 @@ CI calls these same targets, so passing locally means passing in CI.
 | What | Where |
 | --- | --- |
 | Product scope, timeline | `README.md`, `docs/Outbound_Call_Agent_Kickoff_OnePager.pdf` |
+| Product requirements and their IDs (`ON-`, `PC-`, `DC-`, `PO-`) | `docs/requirements.md` (snapshot; Notion is the master copy) |
 | System architecture blueprint (components, protocols, delivery rules) | `docs/architecture.md` |
 | Branch and PR workflow, DB setup | `CONTRIBUTING.md` |
 | CI/CD pipeline, required checks, deploys | `docs/devops.md` |
