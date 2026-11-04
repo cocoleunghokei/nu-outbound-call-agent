@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from probe.cli import main
+from probe.control import USER_AGENT
 from probe.eventlog import RunMeta, save_meta
 from probe.listen import (decode_frame, encode_client_frame, infer_pcm_format, listen,
                           ws_accept_key)
@@ -109,6 +110,7 @@ class LoopbackTest(unittest.TestCase):
         self.assertEqual(self.out.read_bytes(), b"abcdef")
         self.assertIn("GET /listen/abc?x=1 HTTP/1.1", seen["request"])
         self.assertIn("Sec-WebSocket-Version: 13", seen["request"])
+        self.assertIn(f"User-Agent: {USER_AGENT}", seen["request"])
         op, payload, _ = decode_frame(seen["reply"])
         self.assertEqual((op, payload), (0xA, b"pp"))
 

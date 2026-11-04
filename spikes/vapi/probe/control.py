@@ -12,14 +12,22 @@ from probe.config import validate_us_number
 Transport = Callable[[str, str, dict[str, str], "bytes | None"], tuple[int, bytes]]
 
 
+# Vapi's API sits behind Cloudflare, which blocks urllib's default User-Agent (error 1010).
+USER_AGENT = "vapi-probe-kit/0.1"
+
+
 class ControlError(RuntimeError):
     """A Vapi API or control request failed."""
 
 
 def urllib_transport(method: str, url: str, headers: dict[str, str],
                      body: bytes | None) -> tuple[int, bytes]:
-    """Real Transport over urllib with a 10 s timeout; URLError/timeouts surface as OSError."""
-    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    """Real Transport over urllib with a 10 s timeout; URLError/timeouts surface as OSError.
+
+    Sends USER_AGENT unless the caller set one.
+    """
+    req = urllib.request.Request(url, data=body, headers={"User-Agent": USER_AGENT, **headers},
+                                 method=method)
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.status, resp.read()

@@ -10,6 +10,8 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from probe.control import USER_AGENT
+
 _GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 # (label, bytes per second of 16-bit PCM), in tie-break order (Ruling R7).
 _FORMATS = (
@@ -96,7 +98,8 @@ def _connect(url: str) -> tuple[socket.socket, bytes]:
         path = (parts.path or "/") + (f"?{parts.query}" if parts.query else "")
         host = parts.netloc.rsplit("@", 1)[-1]
         sock.sendall((f"GET {path} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\n"
-                      f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
+                      f"Connection: Upgrade\r\nUser-Agent: {USER_AGENT}\r\n"
+                      f"Sec-WebSocket-Key: {key}\r\n"
                       "Sec-WebSocket-Version: 13\r\n\r\n").encode("ascii"))
         data = b""
         while b"\r\n\r\n" not in data:

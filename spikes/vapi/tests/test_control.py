@@ -1,10 +1,12 @@
 import http.client
+import http.server
 import json
+import threading
 import unittest
 
 from probe.config import ConfigError
-from probe.control import (ControlClient, ControlError, add_system_message, mute_assistant,
-                           say, transfer_to, unmute_assistant)
+from probe.control import (USER_AGENT, ControlClient, ControlError, add_system_message,
+                           mute_assistant, say, transfer_to, unmute_assistant, urllib_transport)
 from probe.vapi_api import VapiApi
 from tests.helpers import FakeTransport
 
@@ -103,3 +105,40 @@ class VapiApiTest(unittest.TestCase):
         t = FakeTransport([(401, b'{"message":"bad key"}')])
         with self.assertRaisesRegex(ControlError, "401.*bad key"):
             VapiApi("k", "https://api.vapi.ai", t).get_call("call_1")
+
+
+class UrllibTransportTest(unittest.TestCase):
+    """Vapi sits behind Cloudflare, which rejects urllib's default User-Agent (error 1010)."""
+
+    def serve(self):
+        seen: dict = {}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen["ua"] = self.headers.get("User-Agent")
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *args):
+                pass
+
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}/x", seen
+
+    def test_sends_kit_user_agent_by_default(self):
+        url, seen = self.serve()
+        headers = {"Authorization": "Bearer key"}
+        status, _ = urllib_transport("GET", url, headers, None)
+        self.assertEqual(status, 200)
+        self.assertEqual(seen["ua"], USER_AGENT)
+        self.assertNotIn("Python-urllib", seen["ua"])
+        self.assertEqual(headers, {"Authorization": "Bearer key"})  # caller's dict untouched
+
+    def test_keeps_caller_user_agent(self):
+        url, seen = self.serve()
+        urllib_transport("GET", url, {"User-Agent": "custom/1"}, None)
+        self.assertEqual(seen["ua"], "custom/1")
