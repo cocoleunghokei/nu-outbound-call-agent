@@ -6,6 +6,8 @@ A web app that places phone calls for you, such as booking or cancelling a resta
 
 See the kickoff one-pager: [docs/Outbound_Call_Agent_Kickoff_OnePager.pdf](docs/Outbound_Call_Agent_Kickoff_OnePager.pdf)
 
+Product requirements: [docs/requirements.md](docs/requirements.md) (a snapshot of the Notion PRD, which stays the master copy).
+
 ## Status
 
 Research, design and spec phase (Oct 21–31). Requirements, tech doc and stack choice come Nov 2–6, so there's no application code yet.
