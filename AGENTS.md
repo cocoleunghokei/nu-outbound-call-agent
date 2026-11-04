@@ -63,6 +63,7 @@ CI calls these same targets, so passing locally means passing in CI.
 | What | Where |
 | --- | --- |
 | Product scope, timeline | `README.md`, `docs/Outbound_Call_Agent_Kickoff_OnePager.pdf` |
+| System architecture blueprint (components, protocols, delivery rules) | `docs/architecture.md` |
 | Branch and PR workflow, DB setup | `CONTRIBUTING.md` |
 | CI/CD pipeline, required checks, deploys | `docs/devops.md` |
 | Module-specific notes | `backend/README.md`, `frontend/README.md` (add edge cases and patterns there as code lands) |
