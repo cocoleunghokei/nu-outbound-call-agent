@@ -1,0 +1,8 @@
+{"t": 0.0, "kind": "vapi:status-update", "payload": {"type": "status-update", "status": "in-progress"}}
+{"t": 1.0, "kind": "vapi:speech-update", "payload": {"type": "speech-update", "status": "started", "role": "assistant", "turn": 1}}
+{"t": 20.0, "kind": "control-sent", "payload": {"url": "https://ctl/1", "message": {"type": "say", "content": "Let me check with Alex Chen, one moment.", "endCallAfterSpoken": false}}}
+{"t": 35.0, "kind": "control-sent", "payload": {"url": "https://ctl/1", "message": {"type": "say", "content": "Thanks for holding, I'm just checking with Alex Chen.", "endCallAfterSpoken": false}}}
+{"t": 50.0, "kind": "control-sent", "payload": {"url": "https://ctl/1", "message": {"type": "say", "content": "Still here, Alex Chen is looking at this now.", "endCallAfterSpoken": false}}}
+{"t": 58.0, "kind": "control-sent", "payload": {"url": "https://ctl/1", "message": {"type": "add-message", "message": {"role": "system", "content": "Alex Chen replied: yes, take 7 pm"}, "triggerResponseEnabled": true}}}
+{"t": 60.1, "kind": "vapi:speech-update", "payload": {"type": "speech-update", "status": "started", "role": "assistant", "turn": 5}}
+{"t": 90.0, "kind": "vapi:status-update", "payload": {"type": "status-update", "status": "ended"}}

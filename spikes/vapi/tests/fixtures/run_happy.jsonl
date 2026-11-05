@@ -1,0 +1,9 @@
+{"t": 0.0, "kind": "vapi:status-update", "payload": {"type": "status-update", "status": "in-progress"}}
+{"t": 1.2, "kind": "vapi:speech-update", "payload": {"type": "speech-update", "status": "started", "role": "assistant", "turn": 1}}
+{"t": 2.0, "kind": "vapi:transcript", "payload": {"type": "transcript", "role": "assistant", "transcriptType": "partial", "transcript": "Hi, I'm an AI assistant"}}
+{"t": 3.5, "kind": "vapi:speech-update", "payload": {"type": "speech-update", "status": "stopped", "role": "assistant", "turn": 1}}
+{"t": 4.0, "kind": "vapi:transcript", "payload": {"type": "transcript", "role": "assistant", "transcriptType": "final", "transcript": "Hi, I'm an AI assistant calling on behalf of Alex Chen. This call is transcribed. Do you have a table for two at 7 pm?"}}
+{"t": 7.0, "kind": "vapi:speech-update", "payload": {"type": "speech-update", "status": "started", "role": "user", "turn": 2}}
+{"t": 8.0, "kind": "vapi:speech-update", "payload": {"type": "speech-update", "status": "stopped", "role": "user", "turn": 2}}
+{"t": 9.1, "kind": "vapi:transcript", "payload": {"type": "transcript", "role": "user", "transcriptType": "final", "transcript": "Yes, we do."}}
+{"t": 30.0, "kind": "vapi:status-update", "payload": {"type": "status-update", "status": "ended"}}
