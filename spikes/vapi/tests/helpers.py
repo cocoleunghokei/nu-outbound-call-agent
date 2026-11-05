@@ -1,0 +1,58 @@
+"""Shared test fixtures for the probe kit."""
+
+FULL_ENV = {
+    "VAPI_API_KEY": "test-key",
+    "VAPI_PHONE_NUMBER_ID": "pn_test",
+    "VAPI_WEBHOOK_SECRET": "test-secret",
+    "PROBE_PUBLIC_URL": "https://example.trycloudflare.com",
+    "PROBE_RECEPTIONIST_NUMBERS": "+16175550101,+16175550102",
+    "PROBE_OPERATOR_NUMBER": "+16175550199",
+}
+
+from pathlib import Path
+
+SCENARIO_DIR = Path(__file__).resolve().parent.parent / "scenarios"
+
+
+class FakeTransport:
+    """Scripted Transport: pops one response (or raises an Exception) per call."""
+
+    def __init__(self, responses):
+        self.responses, self.calls = list(responses), []
+
+    def __call__(self, method, url, headers, body):
+        self.calls.append((method, url, headers, body))
+        r = self.responses.pop(0)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+
+class FakeClock:
+    """Callable clock with a mutable `.now`."""
+
+    def __init__(self, now: float = 1000.0):
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+
+class FakeControl:
+    """Stands in for ControlClient: records (url, message); `fail` makes sends fail."""
+
+    def __init__(self):
+        self.sent, self.fail = [], False
+
+    def send(self, url, message, log):
+        self.sent.append((url, message))
+        if self.fail:
+            log("control-failed", {"url": url, "message": message})
+            return False
+        log("control-sent", {"url": url, "message": message})
+        return True
+
+
+def env_with_runs(runs_dir) -> dict:
+    """FULL_ENV plus PROBE_RUNS_DIR pointing at runs_dir."""
+    return {**FULL_ENV, "PROBE_RUNS_DIR": str(runs_dir)}
