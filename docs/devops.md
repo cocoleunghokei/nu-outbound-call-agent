@@ -33,7 +33,14 @@ When `backend/` or `frontend/` gets code:
 5. Add `.env.example` with every variable name the app reads, and no values.
 6. Update the stack table in `AGENTS.md`.
 
-App deployment (hosting for the backend and frontend) gets its own workflow once the hosting choice is made in the tech doc.
+## Frontend deploys (Vercel)
+
+Vercel's GitHub integration builds `frontend/`. Every merge to `main` goes to production, and every PR gets its own preview URL posted on the PR. There's no workflow file for this; it's set up in the Vercel dashboard:
+
+- Root directory: `frontend` (Vite is detected automatically)
+- Environment variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, for Production and Preview
+
+Backend hosting gets its own workflow once it's picked in the tech doc.
 
 ## One-time repository setup (admin)
 
