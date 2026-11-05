@@ -1,5 +1,5 @@
-# Weekly PRs that bump pinned GitHub Actions. Add npm/pip entries once
-# backend/ and frontend/ have dependency manifests.
+# Weekly PRs that bump pinned GitHub Actions and frontend npm packages.
+# Add a pip/npm entry for backend/ once it has a dependency manifest.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -11,3 +11,13 @@ updates:
         patterns: ['*']
     commit-message:
       prefix: ci
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    groups:
+      npm:
+        patterns: ['*']
+    commit-message:
+      prefix: build
+      include: scope

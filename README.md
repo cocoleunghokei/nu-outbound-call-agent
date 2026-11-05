@@ -10,7 +10,7 @@ Product requirements: [docs/requirements.md](docs/requirements.md) (a snapshot o
 
 ## Status
 
-Research, design and spec phase (Oct 21–31). Requirements, tech doc and stack choice come Nov 2–6, so there's no application code yet.
+Research, design and spec phase (Oct 21–31). Requirements, tech doc and stack choice come Nov 2–6. The frontend has an empty React + Vite app in `frontend/`, deployed on Vercel.
 
 ## Repo layout
 
