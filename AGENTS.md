@@ -40,7 +40,7 @@ CI calls these same targets, so passing locally means passing in CI.
 - Treat existing public APIs, exported types, table and column names as contracts. Change them only when the task requires it, and update every caller in the same PR.
 
 ### Commits and PRs
-- [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`. Scopes: `backend`, `frontend`, `db`, `ci`, `docs`.
+- [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`. Scopes: `backend`, `frontend`, `db`, `ci`, `docs`, `spike`.
 - PRs are squash-merged, so the PR title must also follow the format. CI checks it.
 
 ### Code
@@ -64,6 +64,7 @@ CI calls these same targets, so passing locally means passing in CI.
 | --- | --- |
 | Product scope, timeline | `README.md`, `docs/Outbound_Call_Agent_Kickoff_OnePager.pdf` |
 | Product requirements and their IDs (`ON-`, `PC-`, `DC-`, `PO-`) | `docs/requirements.md` (snapshot; Notion is the master copy) |
+| System architecture blueprint (components, protocols, delivery rules) | `docs/architecture.md` |
 | Branch and PR workflow, DB setup | `CONTRIBUTING.md` |
 | CI/CD pipeline, required checks, deploys | `docs/devops.md` |
 | Module-specific notes | `backend/README.md`, `frontend/README.md` (add edge cases and patterns there as code lands) |

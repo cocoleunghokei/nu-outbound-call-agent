@@ -4,7 +4,7 @@
 # Makefile with three targets, `lint`, `test` and `build`. The targets below
 # call them automatically; a subproject without a Makefile is skipped.
 
-SUBPROJECTS := backend frontend
+SUBPROJECTS := backend frontend spikes/vapi
 
 .DEFAULT_GOAL := help
 .PHONY: help setup check hygiene secrets lint test build db-check
