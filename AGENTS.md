@@ -12,7 +12,7 @@ A web app that places phone calls for the user, such as booking or cancelling a 
 | --- | --- |
 | Database | Supabase (Postgres 17). Schema lives only in `supabase/migrations/`. |
 | Backend (`backend/`) | Not picked yet (tech doc, Nov 2–6). No code. |
-| Frontend (`frontend/`) | React 19 + TypeScript, built with Vite, npm. Supabase client in `src/lib/supabase.ts`. Hosted on Vercel (root directory `frontend`). |
+| Frontend (`frontend/`) | React 19 + TypeScript, built with Vite, npm. Supabase client in `src/lib/supabase.ts`. Hosted on Vercel (root directory `frontend`). `public/prototype/` is a static design prototype, not app code. |
 | CI/CD | GitHub Actions in `.github/workflows/`, driven by the root `Makefile`. |
 
 Before writing code, read the manifests that exist (`package.json`, `pyproject.toml`, lockfiles), the migrations and any model definitions. Use the package manager and libraries already in the tree. Do not add a dependency for something an existing one already does. When the stack is picked, update the table above.
