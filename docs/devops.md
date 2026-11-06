@@ -29,13 +29,13 @@ When `backend/` or `frontend/` gets code:
 1. Add a `Makefile` in that folder with `lint`, `test` and `build` targets. The root `make lint test build` picks it up automatically, and so does CI.
 2. Add the toolchain setup (for example `actions/setup-node` or `actions/setup-python` with dependency caching) to the `build` job in `.github/workflows/ci.yml`.
 3. Add the language's formatter and linter to `.pre-commit-config.yaml`.
-4. Add an `npm` or `pip` entry to `.github/dependabot.yml`.
+4. Add an `npm` or `pip` entry to `.github/dependabot.yml` (the frontend already has one).
 5. Add `.env.example` with every variable name the app reads, and no values.
 6. Update the stack table in `AGENTS.md`.
 
 ## Frontend deploys (Vercel)
 
-Vercel's GitHub integration builds `frontend/`. Every merge to `main` goes to production, and every PR gets its own preview URL posted on the PR. There's no workflow file for this; it's set up in the Vercel dashboard:
+Vercel's GitHub integration builds `frontend/`. Every merge to `main` goes to production, and every PR gets its own preview URL posted on the PR. The Vercel project is on the Hobby plan, so previews only build for commits by members of the Vercel team. For anyone else, Vercel posts a "not a member of this team" comment and skips the preview. CI still runs, so review those PRs from the diff or a local checkout. There's no workflow file for this; it's set up in the Vercel dashboard:
 
 - Root directory: `frontend` (Vite is detected automatically)
 - Environment variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, for Production and Preview
@@ -66,4 +66,6 @@ The project ref defaults to the one in CONTRIBUTING.md. Set a `SUPABASE_PROJECT_
 ## Maintenance
 
 - Dependabot opens a weekly PR that bumps the pinned GitHub Actions.
+- Dependabot also opens weekly PRs for `frontend/` npm packages: one for all minor and patch bumps, one for eslint majors, one for vite majors, and one per other major bump. TypeScript majors are ignored because `typescript-eslint` doesn't support TypeScript 7 yet; remove the `ignore` entry in `.github/dependabot.yml` once it does.
+- When two Dependabot PRs touch `package.json`, the second one conflicts after the first merges. Comment `@dependabot rebase` on it. If someone has already pushed to that branch, Dependabot won't rebase it: merge `main` in by hand, regenerate `package-lock.json` with `npm install`, and run `make lint test build`.
 - Run `pre-commit autoupdate` now and then to bump hook versions, and commit the result as `ci: update pre-commit hooks`.
