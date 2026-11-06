@@ -2,7 +2,7 @@
 
 > **Read-only snapshot. Notion is the master copy.**
 > Source: the "Product Requirements" section of the [NU Launch Labs Outbound Call Agent](https://app.notion.com/p/NU-Launch-Labs-Outbound-Call-Agent-402b6bc9644c80d7ad0ae5636298240f) Notion page.
-> Snapshot taken 2026-11-04 from the Notion version last updated Oct 26, 2026 (owners: Coco, Lotto · status: draft for team review).
+> Snapshot taken 2026-11-04 from the Notion version last updated Oct 26, 2026 (owners: Coco, Lotto · status: draft for team review). Refreshed 2026-11-05 with per-requirement owners and the System Architecture section.
 >
 > To change a requirement, edit it in Notion first, then refresh this file in a `docs` PR. If the two disagree, Notion wins.
 > Requirement IDs (`ON-`, `PC-`, `DC-`, `PO-`) are stable: specs, tests and code cite them, so never renumber or reuse one.
@@ -38,15 +38,15 @@
 
 **Requirements**
 
-| ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng |
-|---|---|---|---|---|
-| ON-1 | Sign up and sign in | Email sign-in via Supabase Auth. A user only ever sees their own profile and calls (RLS). | P1 | Eng: RLS on every table (see CONTRIBUTING). |
-| ON-2 | Explain how the agent works | Before the profile step, show the user: the agent says it's an AI, says the call is transcribed, calls from our number, and pauses to ask you when unsure. The user acknowledges once. | P1 | Design: short, 1 screen. Sets expectations for pings. |
-| ON-3 | Basic profile | Name, phone, email, date of birth, address. Required: name and phone. | P0 | Collect once, reuse everywhere. |
-| ON-4 | Extended profile | Typical availability windows, default party size, dietary needs, doctors/providers (name, office, phone), insurance (carrier, member ID). All optional, and can be added later or mid-flow. | P1 | Design: progressive. Don't block first call on this. |
-| ON-5 | Per-field sharing setting | Each field is set to **Share freely** or **Ask me first**. Defaults: DOB, address, insurance = Ask me first. Others = Share freely. | P0 | Core trust feature. During a call, ask-first fields always trigger a ping (DC-6). |
-| ON-6 | Browser notification permission | Ask for notification permission with a clear reason ("so we can ask you mid-call"), then send a test notification. If the user denies it, warn that pings only show in the open tab. | P0 | Eng: Web Push / Notification API. Design: handle the denied state. |
-| ON-7 | Edit profile anytime | Profile page to edit fields and sharing settings. Changes apply to future calls. | P0 |  |
+| ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng | Owner |
+|---|---|---|---|---|---|
+| ON-1 | Sign up and sign in | Email sign-in via Supabase Auth. A user only ever sees their own profile and calls (RLS). | P1 | Eng: RLS on every table (see CONTRIBUTING). |  |
+| ON-2 | Explain how the agent works | Before the profile step, show the user: the agent says it's an AI, says the call is transcribed, calls from our number, and pauses to ask you when unsure. The user acknowledges once. | P1 | Design: short, 1 screen. Sets expectations for pings. |  |
+| ON-3 | Basic profile | Name, phone, email, date of birth, address. Required: name and phone. | P0 | Collect once, reuse everywhere. | Steve |
+| ON-4 | Extended profile | Typical availability windows, default party size, dietary needs, doctors/providers (name, office, phone), insurance (carrier, member ID). All optional, and can be added later or mid-flow. | P1 | Design: progressive. Don't block first call on this. |  |
+| ON-5 | Per-field sharing setting | Each field is set to **Share freely** or **Ask me first**. Defaults: DOB, address, insurance = Ask me first. Others = Share freely. | P0 | Core trust feature. During a call, ask-first fields always trigger a ping (DC-6). | Steve |
+| ON-6 | Browser notification permission | Ask for notification permission with a clear reason ("so we can ask you mid-call"), then send a test notification. If the user denies it, warn that pings only show in the open tab. | P0 | Eng: Web Push / Notification API. Design: handle the denied state. | Steve |
+| ON-7 | Edit profile anytime | Profile page to edit fields and sharing settings. Changes apply to future calls. | P0 |  | Steve |
 
 ## 2. Pre-call
 
@@ -63,17 +63,17 @@
 
 **Requirements**
 
-| ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng |
-|---|---|---|---|---|
-| PC-1 | Start a call: template or custom | The entry point offers templates and a "Custom call" option. | P0 | Designer decides the UI (chat, form, or hybrid). |
-| PC-2 | Templates | P0: Restaurant (book), Doctor (book). P1: Restaurant (cancel/modify), Doctor (cancel/reschedule). Each template defines its required fields, the likely questions the other side will ask, and the default constraints. | P0 | Templates are config, not code. Easy to add more later. |
-| PC-3 | Custom call | User enters the business name, phone number and goal in plain words. The system turns this into a structured call brief. | P0 | This is the general case. Templates are shortcuts. |
-| PC-4 | Gather missing context | The system builds a call brief from goal + profile + template. It detects missing required info and asks the user for it before the call (e.g. "Which doctor?", "New or existing patient?"). | P0 | Design: how we ask is up to the designer. Requirement: ask only for what's missing, and never re-ask for anything already in the profile. |
-| PC-5 | Constraints and fallbacks | User can set hard constraints (e.g. "before 3pm"), preferences, ranked acceptable alternatives ("else Tue afternoon"), and never-agree items (e.g. "no deposit"). | P0 | The confidence score (DC-4) checks every decision against these. Prompt for at least one fallback. |
-| PC-6 | Pre-call review | Show the goal, the number to dial, the opening line, what the agent may share (freely vs. ask first), constraints and fallbacks. The user can edit, then Start. | P0 | Design: the final checkpoint. Must be scannable in ~10 seconds. |
-| PC-7 | Number validation | US numbers only. Block 911 and other emergency numbers. | P0 |  |
-| PC-8 | Schedule for later / business hours | Warn if the business is likely closed. Option to schedule the call. | P2 |  |
-| PC-9 | Calendar availability | Connect Google Calendar (read-only). Before the call, the user's free slots fill in the time constraints automatically. During the call, the agent checks any offered time against the calendar before accepting it (e.g. "They offered Tue 2pm, and you have class then"). | P1 | Connect in onboarding or the first time it's needed. A calendar conflict counts as a broken constraint in confidence scoring (DC-4). |
+| ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng | Owner |
+|---|---|---|---|---|---|
+| PC-1 | Start a call: template or custom | The entry point offers templates and a "Custom call" option. | P0 | Designer decides the UI (chat, form, or hybrid). | Lotto |
+| PC-2 | Templates | P0: Restaurant (book), Doctor (book). P1: Restaurant (cancel/modify), Doctor (cancel/reschedule). Each template defines its required fields, the likely questions the other side will ask, and the default constraints. | P0 | Templates are config, not code. Easy to add more later. | Harper |
+| PC-3 | Custom call | User enters the business name, phone number and goal in plain words. The system turns this into a structured call brief. | P0 | This is the general case. Templates are shortcuts. | Lotto |
+| PC-4 | Gather missing context | The system builds a call brief from goal + profile + template. It detects missing required info and asks the user for it before the call (e.g. "Which doctor?", "New or existing patient?"). | P0 | Design: how we ask is up to the designer. Requirement: ask only for what's missing, and never re-ask for anything already in the profile. | Lotto |
+| PC-5 | Constraints and fallbacks | User can set hard constraints (e.g. "before 3pm"), preferences, ranked acceptable alternatives ("else Tue afternoon"), and never-agree items (e.g. "no deposit"). | P0 | The confidence score (DC-4) checks every decision against these. Prompt for at least one fallback. | Lotto |
+| PC-6 | Pre-call review | Show the goal, the number to dial, the opening line, what the agent may share (freely vs. ask first), constraints and fallbacks. The user can edit, then Start. | P0 | Design: the final checkpoint. Must be scannable in ~10 seconds. | Lotto |
+| PC-7 | Number validation | US numbers only. Block 911 and other emergency numbers. | P0 |  | Lotto |
+| PC-8 | Schedule for later / business hours | Warn if the business is likely closed. Option to schedule the call. | P2 |  |  |
+| PC-9 | Calendar availability | Connect Google Calendar (read-only). Before the call, the user's free slots fill in the time constraints automatically. During the call, the agent checks any offered time against the calendar before accepting it (e.g. "They offered Tue 2pm, and you have class then"). | P1 | Connect in onboarding or the first time it's needed. A calendar conflict counts as a broken constraint in confidence scoring (DC-4). |  |
 
 ## 3. During call
 
@@ -91,23 +91,23 @@
 
 **Requirements**
 
-| ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng |
-|---|---|---|---|---|
-| DC-1 | Opening disclosure | The first sentence names who we're calling for, says it's an AI assistant, and says the call is transcribed. E.g. "Hi, I'm an AI assistant calling on behalf of Alex Chen. This call is transcribed. I'd like to book a table for..." | P0 | Massachusetts requires every party's consent to recording/transcription (open notice at the start). Meta Muse lost trust by not disclosing. |
-| DC-2 | Phone menus and hold | Navigate IVR menus (DTMF), wait on hold, detect when a human picks up. | P2 | Eng: check Vapi support. Many doctor offices use IVR. |
-| DC-3 | Live transcript | The web app streams the transcript with speaker labels (Agent / Business / You), with under ~2s delay. | P0 |  |
-| DC-4 | Confidence-driven decisions | For every question or offer from the other side, the agent scores its candidate response against the brief (goal, profile, constraints, fallbacks).<br>**High:** act and log it.<br>**Low:** stall and ping, and if there's no reply, end the call (DC-9). When the other side counters or rejects a fallback, re-score the new offer. An offer that matches a stated fallback scores High. | P0 | Core differentiator. Eng: define the scoring rubric and thresholds in the tech doc. Log every score for debugging. |
-| DC-5 | Explain decisions, hide the score | The score is never shown. Every action and ping shows a plain-language reason, e.g. "They offered 4pm. You said before 3pm." or "Matched your fallback: Tue 2pm." | P0 | Design: the reason is the main content of the ping card. |
-| DC-6 | Ask-first fields always ping | If the agent needs an Ask-me-first field (e.g. insurance ID), it pings the user regardless of confidence. | P0 | Shows up in the post-call "what was shared" log. |
-| DC-7 | Pause and ping, keep the line open | While waiting, the agent uses a natural hold script ("Let me check with Alex, one moment") and reassures the other side every ~15s. Default timeout is 45s, to be tuned from test calls. | P0 | The biggest unvalidated assumption: will a receptionist wait? Test this early with role-play calls. |
-| DC-8 | Ping delivery and reply | Browser push notification plus an in-app card: the question, the reason, 2–4 suggested one-tap replies, and a free-text box. Clicking the notification focuses the live-call tab. | P0 | Laptop/browser only for the MVP. Design: must work from a glance.<br>Free text box → need to clean up user’s input and convert to a message |
-| DC-9 | No reply in time | On timeout: if a High-confidence fallback fits, use it and log the reason. Otherwise end politely ("I'll confirm with Alex and call back"), and mark the call Needs follow-up. Never guess on Low confidence. | P0 |  |
-| DC-10 | Send an instruction anytime | The user can type an instruction (e.g. "ask if they have Saturday") and the agent works it in at the next natural turn. | P0 |  |
-| DC-11 | Pause agent / end call | Pause: the agent asks the other side to hold. End: the agent says a polite goodbye and hangs up. | P0 |  |
-| DC-12 | Live voice takeover | The user joins from their laptop mic (WebRTC). The agent goes silent and can be handed back control. | P1 | Hardest piece. Eng: check whether Vapi supports a live listen/join. |
-| DC-13 | Guardrails | Never claim to be human. Answer "are you a robot?" honestly. Never share info that isn't in the brief, and never invent details. Never agree to payments, deposits or fees without a ping. If the business refuses to talk to an AI: apologise, end, and mark the call "Refused AI". | P0 |  |
-| DC-14 | Call status | Visible states: Dialing, In phone menu, On hold, Talking, Waiting on you, Ended. | P0 |  |
-| DC-15 | Call limits | Max call length (e.g. 15 min) and a cap on calls per day for each user, to control cost. | P1 |  |
+| ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng | Owner |
+|---|---|---|---|---|---|
+| DC-1 | Opening disclosure | The first sentence names who we're calling for, says it's an AI assistant, and says the call is transcribed. E.g. "Hi, I'm an AI assistant calling on behalf of Alex Chen. This call is transcribed. I'd like to book a table for..." | P0 | Massachusetts requires every party's consent to recording/transcription (open notice at the start). Meta Muse lost trust by not disclosing. | Coco |
+| DC-2 | Phone menus and hold | Navigate IVR menus (DTMF), wait on hold, detect when a human picks up. | P2 | Eng: check Vapi support. Many doctor offices use IVR. |  |
+| DC-3 | Live transcript | The web app streams the transcript with speaker labels (Agent / Business / You), with under ~2s delay. | P0 |  | Coco |
+| DC-4 | Confidence-driven decisions | For every question or offer from the other side, the agent scores its candidate response against the brief (goal, profile, constraints, fallbacks).<br>**High:** act and log it.<br>**Low:** stall and ping, and if there's no reply, end the call (DC-9). When the other side counters or rejects a fallback, re-score the new offer. An offer that matches a stated fallback scores High. | P0 | Core differentiator. Eng: define the scoring rubric and thresholds in the tech doc. Log every score for debugging. | Coco |
+| DC-5 | Explain decisions, hide the score | The score is never shown. Every action and ping shows a plain-language reason, e.g. "They offered 4pm. You said before 3pm." or "Matched your fallback: Tue 2pm." | P0 | Design: the reason is the main content of the ping card. | Coco |
+| DC-6 | Ask-first fields always ping | If the agent needs an Ask-me-first field (e.g. insurance ID), it pings the user regardless of confidence. | P0 | Shows up in the post-call "what was shared" log. | Coco |
+| DC-7 | Pause and ping, keep the line open | While waiting, the agent uses a natural hold script ("Let me check with Alex, one moment") and reassures the other side every ~15s. Default timeout is 45s, to be tuned from test calls. | P0 | The biggest unvalidated assumption: will a receptionist wait? Test this early with role-play calls. | Coco |
+| DC-8 | Ping delivery and reply | Browser push notification plus an in-app card: the question, the reason, 2–4 suggested one-tap replies, and a free-text box. Clicking the notification focuses the live-call tab. | P0 | Laptop/browser only for the MVP. Design: must work from a glance.<br>Free text box → need to clean up user’s input and convert to a message | Coco |
+| DC-9 | No reply in time | On timeout: if a High-confidence fallback fits, use it and log the reason. Otherwise end politely ("I'll confirm with Alex and call back"), and mark the call Needs follow-up. Never guess on Low confidence. | P0 |  | Coco |
+| DC-10 | Send an instruction anytime | The user can type an instruction (e.g. "ask if they have Saturday") and the agent works it in at the next natural turn. | P0 |  | Lotto |
+| DC-11 | Pause agent / end call | Pause: the agent asks the other side to hold. End: the agent says a polite goodbye and hangs up. | P0 |  | Coco |
+| DC-12 | Live voice takeover | The user joins from their laptop mic (WebRTC). The agent goes silent and can be handed back control. | P1 | Hardest piece. Eng: check whether Vapi supports a live listen/join. |  |
+| DC-13 | Guardrails | Never claim to be human. Answer "are you a robot?" honestly. Never share info that isn't in the brief, and never invent details. Never agree to payments, deposits or fees without a ping. If the business refuses to talk to an AI: apologise, end, and mark the call "Refused AI". | P0 |  | Lotto |
+| DC-14 | Call status | Visible states: Dialing, In phone menu, On hold, Talking, Waiting on you, Ended. | P0 |  | Coco |
+| DC-15 | Call limits | Max call length (e.g. 15 min) and a cap on calls per day for each user, to control cost. | P1 |  |  |
 
 ## 4. Post-call
 
@@ -123,17 +123,23 @@
 
 **Requirements**
 
-| ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng |
-|---|---|---|---|---|
-| PO-1 | Outcome status | Booked / Cancelled / Rescheduled / Needs follow-up / Failed (no answer, refused AI, wrong number). | P0 | Written only by the backend. |
-| PO-2 | Summary | What was agreed (date, time, confirmation number, staff name), decisions the agent made with their reasons, and open items. | P0 |  |
-| PO-3 | What was shared | A list of every profile field disclosed on the call | P0 | Trust lesson from Meta Muse. |
-| PO-4 | Transcript | The full transcript is saved and viewable. No audio is stored. | P0 |  |
-| PO-5 | Post-call notification | A browser notification when the call ends, with the outcome. | P0 |  |
-| PO-6 | Call history | List of past calls with. Open any call to see its summary and transcript. | P0 |  |
-| PO-7 | Retry / follow up | "Call again", either reusing the brief or with an adjusted brief (e.g. new fallback). Follow-up calls carry over context from the earlier call. | P1 |  |
-| PO-8 | Save new info to profile | Offer to save info learned on the call (e.g. patient ID, the office's preferred number). | P1 |  |
-| PO-9 | Add to calendar | Once a booking is confirmed, add it to the connected Google Calendar. If no calendar is connected, offer an .ics download. | P1 | Needs write access to the calendar, on top of PC-10's read access. |
+| ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng | Owner |
+|---|---|---|---|---|---|
+| PO-1 | Outcome status | Booked / Cancelled / Rescheduled / Needs follow-up / Failed (no answer, refused AI, wrong number). | P0 | Written only by the backend. | Harper |
+| PO-2 | Summary | What was agreed (date, time, confirmation number, staff name), decisions the agent made with their reasons, and open items. | P0 |  | Harper |
+| PO-3 | What was shared | A list of every profile field disclosed on the call | P0 | Trust lesson from Meta Muse. | Harper |
+| PO-4 | Transcript | The full transcript is saved and viewable. No audio is stored. | P0 |  | Harper |
+| PO-5 | Post-call notification | A browser notification when the call ends, with the outcome. | P0 |  | Harper |
+| PO-6 | Call history | List of past calls with. Open any call to see its summary and transcript. | P0 |  | Harper |
+| PO-7 | Retry / follow up | "Call again", either reusing the brief or with an adjusted brief (e.g. new fallback). Follow-up calls carry over context from the earlier call. | P1 |  |  |
+| PO-8 | Save new info to profile | Offer to save info learned on the call (e.g. patient ID, the office's preferred number). | P1 |  |  |
+| PO-9 | Add to calendar | Once a booking is confirmed, add it to the connected Google Calendar. If no calendar is connected, offer an .ics download. | P1 | Needs write access to the calendar, on top of PC-10's read access. |  |
+
+## 5. System Architecture
+
+The full blueprint is [docs/architecture.md](architecture.md) (status: Proposed, for the tech doc). In short: a browser web app talks to one backend service, which drives the call through Vapi on our Twilio number. Supabase provides Postgres, Auth and Realtime, an LLM API builds the pre-call brief and the post-call summary, and Web Push delivers pings.
+
+**Needs a decision (Coco, Lotto):** a "calling name" profile field that is always shared, because DC-1 requires the opening line to name who we're calling for, while ON-5 lets any field be Ask me first. See the opening-line rules in [docs/architecture.md](architecture.md).
 
 ## AI Disclosure examples
 
