@@ -15,9 +15,22 @@ updates:
     directory: /frontend
     schedule:
       interval: weekly
+    # Minor/patch bumps land together; majors come one PR per group so a
+    # breaking upgrade is easy to spot and hold back.
     groups:
-      npm:
+      npm-minor-patch:
         patterns: ['*']
+        update-types: [minor, patch]
+      eslint-major:
+        patterns: ['eslint', '@eslint/*', 'eslint-plugin-*', 'typescript-eslint', 'globals']
+        update-types: [major]
+      vite-major:
+        patterns: ['vite', '@vitejs/*']
+        update-types: [major]
+    # typescript-eslint doesn't support TypeScript 7 yet; drop this once it does.
+    ignore:
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
     commit-message:
       prefix: build
       include: scope
