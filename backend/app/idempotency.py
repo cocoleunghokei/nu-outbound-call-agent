@@ -8,6 +8,7 @@ from fastapi import Header
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
+from app.db_tx import require_transaction
 from app.errors import ApiError
 
 
@@ -42,7 +43,10 @@ async def claim_idempotency(
     then call store_idempotent_response in the same transaction. Raises 409 in_progress if
     another transaction holds the claim. Creates the profile row if missing, because
     idempotency_keys.user_id references public.profiles and no trigger creates profiles.
+    Raises RuntimeError if ``conn`` is in autocommit mode with no transaction open: the
+    advisory lock is transaction-scoped, so it would be released at once.
     """
+    require_transaction(conn, "claim_idempotency")
     await conn.execute(
         "insert into public.profiles (id) values (%s) on conflict (id) do nothing", (user_id,)
     )

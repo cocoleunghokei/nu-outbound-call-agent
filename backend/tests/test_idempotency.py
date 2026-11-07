@@ -111,3 +111,26 @@ def test_claim_creates_missing_profile(
             assert row == (1,)
 
     asyncio.run(scenario())
+
+
+def test_claim_refuses_autocommit_outside_transaction(
+    supabase_env: SupabaseEnv, signed_up_user: SignedUpUser
+) -> None:
+    """The advisory lock is transaction-scoped: in autocommit it would be released at once."""
+    user_id, key = signed_up_user.user_id, uuid.uuid4()
+
+    async def scenario() -> None:
+        async with await psycopg.AsyncConnection.connect(
+            supabase_env.db_url, autocommit=True
+        ) as conn:
+            with pytest.raises(RuntimeError, match="claim_idempotency"):
+                await claim_idempotency(conn, user_id, key)
+            row = await (
+                await conn.execute(
+                    "select 1 from public.idempotency_keys where user_id = %s and key = %s",
+                    (user_id, str(key)),
+                )
+            ).fetchone()
+            assert row is None
+
+    asyncio.run(scenario())

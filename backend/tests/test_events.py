@@ -609,3 +609,32 @@ def test_append_event_refuses_autocommit_outside_transaction(
         )
 
     asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_write_call_secrets_refused_for_failed_call_without_ended_at(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    """`failed` is terminal even with ended_at null: no capability URLs may be stored."""
+    call_id = fresh_call.call_id
+
+    async def scenario() -> None:
+        db = supabase_env.db_url
+        async with await psycopg.AsyncConnection.connect(db, autocommit=True) as conn:
+            await conn.execute(
+                "update public.calls set status = 'failed' where id = %s", (call_id,)
+            )
+        async with await psycopg.AsyncConnection.connect(db) as conn:
+            async with conn.transaction():
+                wrote = await write_call_secrets(
+                    conn,
+                    call_id,
+                    f"https://control.example.test/{call_id}/failed",
+                    f"wss://listen.example.test/{call_id}/failed",
+                )
+        assert wrote is False
+        assert (
+            await _fetch(db, "select 1 from public.call_secrets where call_id=%s", (call_id,)) == []
+        )
+
+    asyncio.run(scenario())

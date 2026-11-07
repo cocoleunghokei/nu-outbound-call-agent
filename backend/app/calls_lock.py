@@ -66,14 +66,15 @@ async def lock_call(conn: AsyncConnection[Any], call_id: UUID) -> CallRow:
 async def write_call_secrets(
     conn: AsyncConnection[Any], call_id: UUID, control_url: str, listen_url: str
 ) -> bool:
-    """Store the call's Vapi control and listen URLs, unless the call has already ended.
+    """Store the call's Vapi control and listen URLs, unless the call is already terminal.
 
     Takes the call lock, so it cannot interleave with end_call_transition. Returns True if it
-    wrote (insert or update) and False if the call had ended. On a write the URLs are added to
+    wrote (insert or update) and False if the call had ended (``ended_at`` set, or status
+    ``ended`` or ``failed``). On a write the URLs are added to
     the process-wide secret registry so they are redacted from logs.
     """
     call = await lock_call(conn, call_id)
-    if call.ended_at is not None:
+    if call.ended_at is not None or call.status in TERMINAL_STATUSES:
         return False
     await conn.execute(
         "insert into public.call_secrets (call_id, control_url, listen_url) values (%s, %s, %s)"
