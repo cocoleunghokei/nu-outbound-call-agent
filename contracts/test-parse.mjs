@@ -75,6 +75,21 @@ check("unknown field.shared state (closed enum) is invalid", () => {
   const raw = { ...base, type: "field.shared", payload: { field_key: "date_of_birth", state: "bogus" } };
   assert.equal(parseCallEvent(raw).kind, "invalid");
 });
+check("agent.decision with missed_preference parses as known and keeps it", () => {
+  const payload = {
+    situation: "They offered 7pm on the patio",
+    action: "accept",
+    reason: "Meets the constraints",
+    missed_preference: "No window seat, patio only",
+  };
+  const result = parseCallEvent({ ...base, type: "agent.decision", payload });
+  assert.equal(result.kind, "known", JSON.stringify(result));
+  assert.equal(result.event.payload.missed_preference, "No window seat, patio only");
+});
+check("agent.decision with non-string missed_preference is invalid", () => {
+  const payload = { situation: "s", action: "accept", reason: "r", missed_preference: 3 };
+  assert.equal(parseCallEvent({ ...base, type: "agent.decision", payload }).kind, "invalid");
+});
 check("ping.opened carrying extra score fields still parses as known (tolerant reader)", () => {
   const ping = readJson(join(eventsDir, "ping.opened.valid.json")).payload;
   const raw = { ...base, type: "ping.opened", payload: { ...ping, confidence: "low" } };

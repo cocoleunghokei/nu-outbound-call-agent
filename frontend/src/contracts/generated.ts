@@ -111,6 +111,10 @@ export interface AgentDecisionPayload {
   action: DecisionAction;
   reason: string;
   field_key?: string;
+  /**
+   * The preference the agent could not meet, shown as a flag in the live feed (DC-4 Medium). Plain language, no score.
+   */
+  missed_preference?: string;
 }
 
 export type CallOutcome =
@@ -255,6 +259,10 @@ export interface ReportDecisionArgs {
    * For share_field: the share-freely field the agent is about to say
    */
   field_key?: string;
+  /**
+   * The preference the agent could not meet, shown as a flag in the live feed (DC-4 Medium). Plain language, no score.
+   */
+  missed_preference?: string;
   dimensions: Dimensions;
 }
 export type ReportedOutcome =
@@ -320,7 +328,7 @@ const KNOWN_EVENT_TYPES: readonly string[] = ["status.changed","transcript.final
 
 const ENVELOPE_SCHEMA: RuntimeSchema = {"type":"object","required":["event_id","call_id","seq","type","occurred_at","schema_version","payload"],"properties":{"event_id":{"type":"string"},"call_id":{"type":"string"},"seq":{"type":"integer"},"type":{"type":"string","x-open-enum":true},"occurred_at":{"type":"string"},"source":{"type":"string","enum":["vapi","backend","user"]},"dedup_key":{"type":"string"},"schema_version":{"const":1},"payload":{"type":"object"}}};
 
-const PAYLOAD_SCHEMAS: Record<string, RuntimeSchema> = {"status.changed":{"type":"object","required":["status"],"properties":{"status":{"type":"string","enum":["creating","creation_uncertain","dialing","in_phone_menu","talking","waiting_on_you","on_hold","ended","failed"],"x-open-enum":true}}},"transcript.final":{"type":"object","required":["role","text","source_start_ts"],"properties":{"role":{"type":"string","enum":["agent","business","user"]},"text":{"type":"string"},"source_start_ts":{"type":["string","null"]}}},"ping.opened":{"type":"object","required":["ping_id","call_id","kind","question","reason","suggested_replies","expires_at","remaining_ms","state"],"properties":{"ping_id":{"type":"string"},"call_id":{"type":"string"},"kind":{"type":"string","enum":["decision","field_approval"]},"field_key":{"type":"string"},"question":{"type":"string"},"reason":{"type":"string"},"suggested_replies":{"type":"array","items":{"type":"string"}},"expires_at":{"type":["string","null"]},"remaining_ms":{"type":["integer","null"]},"state":{"type":"string","enum":["open","answered","expired","superseded","cancelled"],"x-open-enum":true}}},"ping.resolved":{"type":"object","required":["ping_id","state"],"properties":{"ping_id":{"type":"string"},"state":{"type":"string","enum":["open","answered","expired","superseded","cancelled"],"x-open-enum":true},"reply_text":{"type":"string"}}},"agent.decision":{"type":"object","required":["situation","action","reason"],"properties":{"situation":{"type":"string"},"action":{"type":"string","enum":["accept","counter","decline","share_field","take_fallback","end_call"]},"reason":{"type":"string"},"field_key":{"type":"string"}}},"field.shared":{"type":"object","required":["field_key","state"],"properties":{"field_key":{"type":"string"},"state":{"type":"string","enum":["approved","sent_to_agent","spoken"]}}},"command.applied":{"type":"object","required":["command"],"properties":{"command":{"type":"string","enum":["instruction","pause","resume","end"]}}},"call.ended":{"type":"object","required":["outcome","ended_reason"],"properties":{"outcome":{"type":["string","null"],"enum":["booked","cancelled","rescheduled","needs_follow_up","refused_ai","wrong_number","failed","no_answer",null],"x-open-enum":true},"ended_reason":{"type":"string"}}}};
+const PAYLOAD_SCHEMAS: Record<string, RuntimeSchema> = {"status.changed":{"type":"object","required":["status"],"properties":{"status":{"type":"string","enum":["creating","creation_uncertain","dialing","in_phone_menu","talking","waiting_on_you","on_hold","ended","failed"],"x-open-enum":true}}},"transcript.final":{"type":"object","required":["role","text","source_start_ts"],"properties":{"role":{"type":"string","enum":["agent","business","user"]},"text":{"type":"string"},"source_start_ts":{"type":["string","null"]}}},"ping.opened":{"type":"object","required":["ping_id","call_id","kind","question","reason","suggested_replies","expires_at","remaining_ms","state"],"properties":{"ping_id":{"type":"string"},"call_id":{"type":"string"},"kind":{"type":"string","enum":["decision","field_approval"]},"field_key":{"type":"string"},"question":{"type":"string"},"reason":{"type":"string"},"suggested_replies":{"type":"array","items":{"type":"string"}},"expires_at":{"type":["string","null"]},"remaining_ms":{"type":["integer","null"]},"state":{"type":"string","enum":["open","answered","expired","superseded","cancelled"],"x-open-enum":true}}},"ping.resolved":{"type":"object","required":["ping_id","state"],"properties":{"ping_id":{"type":"string"},"state":{"type":"string","enum":["open","answered","expired","superseded","cancelled"],"x-open-enum":true},"reply_text":{"type":"string"}}},"agent.decision":{"type":"object","required":["situation","action","reason"],"properties":{"situation":{"type":"string"},"action":{"type":"string","enum":["accept","counter","decline","share_field","take_fallback","end_call"]},"reason":{"type":"string"},"field_key":{"type":"string"},"missed_preference":{"type":"string"}}},"field.shared":{"type":"object","required":["field_key","state"],"properties":{"field_key":{"type":"string"},"state":{"type":"string","enum":["approved","sent_to_agent","spoken"]}}},"command.applied":{"type":"object","required":["command"],"properties":{"command":{"type":"string","enum":["instruction","pause","resume","end"]}}},"call.ended":{"type":"object","required":["outcome","ended_reason"],"properties":{"outcome":{"type":["string","null"],"enum":["booked","cancelled","rescheduled","needs_follow_up","refused_ai","wrong_number","failed","no_answer",null],"x-open-enum":true},"ended_reason":{"type":"string"}}}};
 
 function hasType(value: unknown, type: string): boolean {
   switch (type) {

@@ -14,7 +14,10 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "Report every action you take on your own after scoring an offer or question against "
         "the brief. Call ask_user instead whenever the score is Low, and always for an "
         "ask-first field or before agreeing to any payment, deposit or fee, or to a never-agree "
-        "item."
+        "item. When you act at Medium (every check passes but a preference is missed), set "
+        "missed_preference to the preference you could not meet, in plain language and without "
+        'any score, for example "No window seat, patio only"; it is shown as a flag in the '
+        "live feed."
     ),
     "report_outcome": (
         "Call once, before you end the call, to report how the call went. Set "

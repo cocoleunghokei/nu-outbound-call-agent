@@ -96,6 +96,21 @@ def test_agent_decision_payload_rejects_score_fields() -> None:
         assert not is_valid("payloads/agent.decision.v1.json", {**payload, **extra})
 
 
+def test_agent_decision_payload_accepts_missed_preference_but_rejects_scores() -> None:
+    payload = {
+        "situation": "They offered 7pm on the patio",
+        "action": "accept",
+        "reason": "Meets the constraints",
+        "missed_preference": "No window seat, patio only",
+    }
+    assert is_valid("payloads/agent.decision.v1.json", payload)
+    too_long = {**payload, "missed_preference": "x" * 201}
+    assert not is_valid("payloads/agent.decision.v1.json", too_long)
+    assert not is_valid("payloads/agent.decision.v1.json", {**payload, "missed_preference": 3})
+    for extra in ({"confidence": "medium"}, {"dimensions": {"understood": True}}):
+        assert not is_valid("payloads/agent.decision.v1.json", {**payload, **extra})
+
+
 def test_ping_opened_payload_rejects_score_fields() -> None:
     ping = read_json(EXAMPLES / "payloads" / "ping.opened.v1.valid.json")
     assert is_valid("payloads/ping.opened.v1.json", ping)

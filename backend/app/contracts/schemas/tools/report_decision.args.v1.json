@@ -44,6 +44,11 @@
       "type": "string",
       "description": "For share_field: the share-freely field the agent is about to say"
     },
+    "missed_preference": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "The preference the agent could not meet, shown as a flag in the live feed (DC-4 Medium). Plain language, no score."
+    },
     "dimensions": {
       "title": "Dimensions",
       "type": "object",

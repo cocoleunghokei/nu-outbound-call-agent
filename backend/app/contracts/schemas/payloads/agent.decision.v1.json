@@ -31,6 +31,11 @@
     },
     "field_key": {
       "type": "string"
+    },
+    "missed_preference": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "The preference the agent could not meet, shown as a flag in the live feed (DC-4 Medium). Plain language, no score."
     }
   }
 }

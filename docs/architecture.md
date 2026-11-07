@@ -176,7 +176,7 @@ This matches the probe kit, so probe results carry over. It is an **async** tool
 
 ### The `report_decision` tool (DC-4, DC-5)
 
-The in-call agent scores each offer or question against the brief, as DC-4 requires. It calls `report_decision` for every action it takes on its own. It calls `ask_user` instead whenever the tier is Low, and **always, regardless of score**, for an ask-first field (DC-6) and before agreeing to any payment, deposit or fee, or to a never-agree item from the brief (DC-13, PC-5). These overrides are in the tool description and the system prompt, and the backend checks them after the call: a `report_decision` of `accept` on a situation that mentions money, with no ping before it, is flagged in the summary as a guardrail breach. The tool is async and fire-and-forget. The backend stores each report as an `agent.decision` event. The tier and its six `dimensions` are kept for debugging and are never sent to the browser; the reason is shown (DC-5). The scoring rubric and thresholds belong in the tech doc; this fixes only where the score is produced and how it is reported.
+The in-call agent scores each offer or question against the brief, as DC-4 requires. It calls `report_decision` for every action it takes on its own. It calls `ask_user` instead whenever the tier is Low, and **always, regardless of score**, for an ask-first field (DC-6) and before agreeing to any payment, deposit or fee, or to a never-agree item from the brief (DC-13, PC-5). These overrides are in the tool description and the system prompt, and the backend checks them after the call: a `report_decision` of `accept` on a situation that mentions money, with no ping before it, is flagged in the summary as a guardrail breach. The tool is async and fire-and-forget. The backend stores each report as an `agent.decision` event. The tier and its six `dimensions` are kept for debugging and are never sent to the browser; the reason is shown (DC-5). At Medium (every check passes but a preference is missed) the agent acts and also sets the optional `missed_preference` (max 200 characters, plain language, for example "No window seat, patio only"). It is copied into the `agent.decision` payload so the live feed can show it as a flag; without it the UI cannot tell a flagged miss from a normal decision, because the tier stays hidden. The scoring rubric and thresholds belong in the tech doc; this fixes only where the score is produced and how it is reported.
 
 ```json
 {
@@ -193,6 +193,7 @@ The in-call agent scores each offer or question against the brief, as DC-4 requi
         "confidence": { "enum": ["high", "medium", "low"] },
         "dimensions": { "type": "object", "description": "The same six DC-4 booleans as ask_user. Backend-only." },
         "reason":     { "type": "string", "maxLength": 200 },
+        "missed_preference": { "type": "string", "maxLength": 200, "description": "Medium only: the preference that could not be met. Shown in the live feed, no score." },
         "field_key":  { "type": "string", "description": "For share_field: the share-freely field the agent is about to say" }
       }
     }

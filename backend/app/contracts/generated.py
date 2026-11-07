@@ -160,6 +160,13 @@ class AgentDecisionPayload(BaseModel):
     action: Annotated[DecisionAction, Field(title="DecisionAction")]
     reason: str
     field_key: str | None = None
+    missed_preference: Annotated[
+        str | None,
+        Field(
+            description="The preference the agent could not meet, shown as a flag in the live feed (DC-4 Medium). Plain language, no score.",
+            max_length=200,
+        ),
+    ] = None
 
 
 class CallOutcome(StrEnum):
@@ -353,6 +360,13 @@ class ReportDecisionArgs(BaseModel):
     field_key: Annotated[
         str | None,
         Field(description="For share_field: the share-freely field the agent is about to say"),
+    ] = None
+    missed_preference: Annotated[
+        str | None,
+        Field(
+            description="The preference the agent could not meet, shown as a flag in the live feed (DC-4 Medium). Plain language, no score.",
+            max_length=200,
+        ),
     ] = None
     dimensions: Annotated[
         Dimensions,
