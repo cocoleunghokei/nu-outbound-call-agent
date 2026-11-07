@@ -1,8 +1,9 @@
 """Tests for the call event log (append_event) and the call-lock helpers (calls_lock)."""
 
 import asyncio
+import random
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from datetime import UTC, datetime
 from typing import Any, NoReturn
 
@@ -28,6 +29,12 @@ class _NoDatabase:
 async def _with_pool(db_url: str, body: Callable[[AsyncConnectionPool], Awaitable[None]]) -> None:
     async with AsyncConnectionPool(db_url, min_size=2, max_size=10, open=False) as pool:
         await body(pool)
+
+
+async def _after(delay: float, coro: Coroutine[Any, Any, None]) -> None:
+    """Run ``coro`` after ``delay`` seconds."""
+    await asyncio.sleep(delay)
+    await coro
 
 
 async def _fetch(db_url: str, sql: str, params: tuple[Any, ...]) -> list[tuple[Any, ...]]:
@@ -500,11 +507,17 @@ def test_end_vs_reply_no_deadlock(supabase_env: SupabaseEnv) -> None:
 
     async def body(pool: AsyncConnectionPool) -> None:
         outcomes: set[str] = set()
-        for _ in range(20):
+        for iteration in range(20):
             call = create_fresh_call(supabase_env.db_url)
             ping_id = await _seed_secrets_ping_outbox(supabase_env.db_url, call.call_id)
+            # Alternate which side starts first; the other starts after a jitter of 0-3 ms,
+            # so both the end-first and the reply-first orderings are really exercised.
+            jitter = random.uniform(0, 0.003)
+            ending = end(pool, call.call_id)
+            replying = reply(pool, call.call_id, ping_id)
+            first, second = (ending, replying) if iteration % 2 == 0 else (replying, ending)
             async with asyncio.timeout(10):
-                await asyncio.gather(end(pool, call.call_id), reply(pool, call.call_id, ping_id))
+                await asyncio.gather(first, _after(jitter, second))
             db = supabase_env.db_url
             ping = await _fetch(db, "select state from public.pings where ping_id=%s", (ping_id,))
             events = await _fetch(
@@ -525,4 +538,74 @@ def test_end_vs_reply_no_deadlock(supabase_env: SupabaseEnv) -> None:
             )
             assert ended == [("ended",)]
 
+        assert outcomes == {"answered", "cancelled"}, f"only saw {outcomes}"
+
     asyncio.run(_with_pool(supabase_env.db_url, body))
+
+
+@pytest.mark.db
+def test_end_transition_leaves_failed_call_alone(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    """`failed` is terminal (architecture 4.2): the end transition must not touch it."""
+    call_id = fresh_call.call_id
+
+    async def scenario() -> None:
+        ping_id = await _seed_secrets_ping_outbox(supabase_env.db_url, call_id)
+        db = supabase_env.db_url
+        async with await psycopg.AsyncConnection.connect(db, autocommit=True) as conn:
+            await conn.execute(
+                "update public.calls set status = 'failed' where id = %s", (call_id,)
+            )
+        async with await psycopg.AsyncConnection.connect(db) as conn:
+            async with conn.transaction():
+                assert not await end_call_transition(
+                    conn, call_id, reason="end-of-call-report", source="vapi"
+                )
+        call = await _fetch(db, "select status, ended_at from public.calls where id=%s", (call_id,))
+        assert call == [("failed", None)]
+        assert (
+            await _fetch(db, "select 1 from public.call_events where call_id=%s", (call_id,)) == []
+        )
+        assert (
+            await _fetch(db, "select 1 from public.call_secrets where call_id=%s", (call_id,)) != []
+        )
+        pings = await _fetch(db, "select state from public.pings where ping_id = %s", (ping_id,))
+        assert pings == [("open",)]
+        outbox = await _fetch(
+            db, "select lane, state from public.outbox where call_id = %s order by lane", (call_id,)
+        )
+        assert outbox == [("control", "pending"), ("notify", "pending")]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_append_event_refuses_autocommit_outside_transaction(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    """Outside a caller transaction the event would commit alone; fail closed instead."""
+
+    async def scenario() -> None:
+        db = supabase_env.db_url
+        async with await psycopg.AsyncConnection.connect(db, autocommit=True) as conn:
+            with pytest.raises(RuntimeError):
+                await append_event(
+                    conn,
+                    call_id=fresh_call.call_id,
+                    type="status.changed",
+                    source="backend",
+                    payload={"status": "dialing"},
+                    occurred_at=NOW,
+                )
+        assert await _fetch(
+            db, "select last_seq from public.calls where id=%s", (fresh_call.call_id,)
+        ) == [(0,)]
+        assert (
+            await _fetch(
+                db, "select 1 from public.call_events where call_id=%s", (fresh_call.call_id,)
+            )
+            == []
+        )
+
+    asyncio.run(scenario())

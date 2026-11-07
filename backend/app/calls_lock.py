@@ -12,14 +12,17 @@ from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
-from psycopg.pq import TransactionStatus
 
+from app.db_tx import require_transaction
 from app.events import CallNotFound, EventSource, append_event
 from app.secrets_registry import get_secret_registry
 
 __all__ = ["CallNotFound", "CallRow", "end_call_transition", "lock_call", "write_call_secrets"]
 
 logger = logging.getLogger(__name__)
+
+# Statuses with no way out (docs/architecture.md section 4.2).
+TERMINAL_STATUSES = frozenset({"ended", "failed"})
 
 
 @dataclass(frozen=True)
@@ -34,21 +37,13 @@ class CallRow:
     last_seq: int
 
 
-def _require_transaction(conn: AsyncConnection[Any]) -> None:
-    """A row lock taken in autocommit mode outside a transaction is released immediately."""
-    if conn.autocommit and conn.info.transaction_status == TransactionStatus.IDLE:
-        raise RuntimeError(
-            "lock_call needs an open transaction (use `async with conn.transaction()`)"
-        )
-
-
 async def lock_call(conn: AsyncConnection[Any], call_id: UUID) -> CallRow:
     """Row-lock the call (``select ... for update``) until the caller's transaction ends.
 
     Raises CallNotFound (a LookupError) if the call does not exist, and RuntimeError if
     ``conn`` is in autocommit mode with no transaction open.
     """
-    _require_transaction(conn)
+    require_transaction(conn, "lock_call")
     row = await (
         await conn.execute(
             "select id, user_id, status, ended_at, vapi_call_id, last_seq"
@@ -97,13 +92,15 @@ async def end_call_transition(
 ) -> bool:
     """The one shared end transition, run in the caller's transaction.
 
-    Under the call lock: if the call already ended, does nothing and returns False. Otherwise
-    sets ``status='ended'`` and ``ended_at=now()``, deletes call_secrets, cancels the open ping
-    and the pending ``control`` outbox rows, appends ``status.changed {status: "ended"}`` and
-    returns True. ``reason`` (for example the Vapi message type) is only logged.
+    Under the call lock: if the call is already terminal (``ended_at`` set, or status
+    ``ended`` or ``failed``; see docs/architecture.md section 4.2), changes nothing and returns
+    False. Otherwise sets ``status='ended'`` and ``ended_at=now()``, deletes call_secrets,
+    cancels the open ping and the pending ``control`` outbox rows, appends
+    ``status.changed {status: "ended"}`` and returns True. ``reason`` (for example the Vapi
+    message type) is only logged.
     """
     call = await lock_call(conn, call_id)
-    if call.ended_at is not None:
+    if call.ended_at is not None or call.status in TERMINAL_STATUSES:
         return False
     await conn.execute(
         "update public.calls set status = 'ended', ended_at = now() where id = %s", (call_id,)

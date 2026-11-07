@@ -15,6 +15,7 @@ from psycopg.types.json import Jsonb
 
 from app.contracts import validator_for
 from app.contracts.generated import CallEvent
+from app.db_tx import require_transaction
 
 EventSource = Literal["vapi", "backend", "user"]
 
@@ -65,12 +66,14 @@ async def append_event(
     ``calls.last_seq`` (which row-locks the call and serialises seq) and inserts the event. If
     ``dedup_key`` was already used for this call, the savepoint is rolled back, so no seq is
     burned, and None is returned. ``dedup_key=None`` never deduplicates. Raises CallNotFound if
-    the call does not exist.
+    the call does not exist, and RuntimeError if ``conn`` is in autocommit mode with no
+    transaction open (the event must commit with the caller's other work, never alone).
 
     Lock order: callers touching pings, call_secrets or the outbox take
     ``calls_lock.lock_call`` first; this function then re-locks the same row.
     """
     validate_event(type, source, payload, occurred_at)
+    require_transaction(conn, "append_event")
     event: CallEvent | None = None
     async with conn.transaction() as savepoint:
         bumped = await (
