@@ -13,6 +13,8 @@
       "minLength": 1
     },
     "state": {
+      "title": "DisclosureState",
+      "type": "string",
       "enum": [
         "approved",
         "sent_to_agent",

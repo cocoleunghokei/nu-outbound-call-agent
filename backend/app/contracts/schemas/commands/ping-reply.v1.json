@@ -4,6 +4,7 @@
   "title": "PingReplyCommand",
   "oneOf": [
     {
+      "title": "PingReplyChoice",
       "type": "object",
       "required": [
         "choice"
@@ -18,6 +19,7 @@
       }
     },
     {
+      "title": "PingReplyText",
       "type": "object",
       "required": [
         "text"

@@ -8,6 +8,8 @@
   ],
   "properties": {
     "type": {
+      "title": "CallCommandType",
+      "type": "string",
       "enum": [
         "instruction",
         "pause",

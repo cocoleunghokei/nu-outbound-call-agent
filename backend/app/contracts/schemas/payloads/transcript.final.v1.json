@@ -10,6 +10,8 @@
   ],
   "properties": {
     "role": {
+      "title": "TranscriptRole",
+      "type": "string",
       "enum": [
         "agent",
         "business",

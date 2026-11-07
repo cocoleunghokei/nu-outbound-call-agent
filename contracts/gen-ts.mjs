@@ -65,6 +65,50 @@ function prepare(node, file) {
 
 const compileOptions = { bannerComment: "", additionalProperties: false, format: true };
 
+/**
+ * Titled sub-schemas (for example PingState) appear in several schema files, and each
+ * compile() call declares them again. Keep the first declaration of each name, drop identical
+ * repeats, and fail on a name declared two different ways.
+ */
+const declared = new Map();
+const isComment = (line) => /^\s*(\/\*\*|\*)/.test(line) || line.trim() === "";
+
+function dedupeDeclarations(source) {
+  const chunks = [];
+  let current = [];
+  for (const line of source.split("\n")) {
+    const startsDeclaration = line.startsWith("/**") || line.startsWith("export ");
+    if (startsDeclaration && !(line.startsWith("export ") && current.length > 0 && current.every(isComment))) {
+      chunks.push(current);
+      current = [];
+    }
+    current.push(line);
+  }
+  chunks.push(current);
+  const kept = [];
+  for (const chunk of chunks) {
+    if (chunk.length === 0) continue;
+    const text = chunk.join("\n");
+    const name = /^export (?:type|interface) (\w+)/m.exec(text)?.[1];
+    if (name === undefined) {
+      kept.push(text);
+      continue;
+    }
+    const previous = declared.get(name);
+    if (previous === undefined) {
+      declared.set(name, text.trim());
+      kept.push(text);
+    } else if (previous !== text.trim()) {
+      throw new Error(`type ${name} is declared two different ways; give one a different title`);
+    }
+  }
+  return kept.join("\n");
+}
+
+async function compileOnce(schema, name) {
+  return dedupeDeclarations(await compile(schema, name, compileOptions));
+}
+
 const envelopeFile = join(here, "call-event.v1.json");
 const envelope = readSchema(envelopeFile);
 const eventTypes = envelope.allOf.map((branch) => branch.if.properties.type.const);
@@ -79,7 +123,7 @@ for (const file of files) {
     parts.push(`export type ${source.title} = ${schema.tsType};\n`);
     continue;
   }
-  parts.push(await compile(schema, schema.title, compileOptions));
+  parts.push(await compileOnce(schema, schema.title));
 }
 
 // KnownCallEvent: the envelope without `type` and `payload`, intersected with one member per type.
@@ -89,7 +133,7 @@ delete baseSchema.additionalProperties;
 delete baseSchema.properties.type;
 delete baseSchema.properties.payload;
 baseSchema.required = baseSchema.required.filter((key) => key !== "type" && key !== "payload");
-parts.push(await compile(baseSchema, "CallEventBase", compileOptions));
+parts.push(await compileOnce(baseSchema, "CallEventBase"));
 
 const members = eventTypes.map(
   (type) => `  | (CallEventBase & { type: ${JSON.stringify(type)}; payload: ${titleOf(payloadFile(type))} })`,
@@ -97,6 +141,10 @@ const members = eventTypes.map(
 parts.push(
   `/** Every event type this client knows. Narrow on \`type\` to read the payload. */\n` +
     `export type KnownCallEvent =\n${members.join("\n")};\n`,
+);
+parts.push(
+  `/** The known event types (the if/then branches of call-event.v1.json). */\n` +
+    `export type CallEventType = KnownCallEvent["type"];\n`,
 );
 
 // Runtime schemas for parseCallEvent: $refs inlined, only the keywords the decoder understands.

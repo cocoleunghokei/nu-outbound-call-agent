@@ -9,6 +9,7 @@
   ],
   "properties": {
     "outcome": {
+      "title": "CallOutcome",
       "type": [
         "string",
         "null"

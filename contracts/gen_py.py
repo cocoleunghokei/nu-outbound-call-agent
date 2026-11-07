@@ -41,13 +41,34 @@ def prepare(node: Any, file: Path) -> Any:
     }
     enum = cleaned.get("enum")
     if isinstance(enum, list) and None in enum:
-        # Nullable enum: keep the null in `type` so the model is `Enum | None`.
-        cleaned["enum"] = [value for value in enum if value is not None]
+        # Nullable enum: a string enum (a StrEnum, like every other string enum) or null, so
+        # the field is `Enum | None`.
+        values = [value for value in enum if value is not None]
+        member = {key: cleaned[key] for key in ("title", "description") if key in cleaned}
+        member.update({"type": "string", "enum": values})
+        rest = {k: v for k, v in cleaned.items() if k not in {"title", "type", "enum"}}
+        return {**rest, "anyOf": [member, {"type": "null"}]}
     if "allOf" in cleaned:
         cleaned["allOf"] = [branch for branch in cleaned["allOf"] if branch]
         if not cleaned["allOf"]:
             del cleaned["allOf"]
     return cleaned
+
+
+def call_event_type() -> dict[str, Any]:
+    """The known event types, read from the envelope's if/then branches (as gen-ts.mjs does).
+
+    ``CallEvent.type`` itself stays a plain string, because the envelope is open to unknown
+    types; this enum names the known ones for writers.
+    """
+    envelope = json.loads((HERE / "call-event.v1.json").read_text(encoding="utf-8"))
+    types = [branch["if"]["properties"]["type"]["const"] for branch in envelope["allOf"]]
+    return {
+        "title": "CallEventType",
+        "type": "string",
+        "enum": types,
+        "description": "Known call event types (the call-event.v1.json if/then branches)",
+    }
 
 
 def main() -> None:
@@ -56,9 +77,12 @@ def main() -> None:
     for file in schema_files():
         schema = json.loads(file.read_text(encoding="utf-8"))
         defs[schema["title"]] = prepare(schema, file)
+    defs["CallEventType"] = call_event_type()
     with tempfile.TemporaryDirectory() as tmp:
         bundle = Path(tmp) / "bundle.json"
-        bundle.write_text(json.dumps({"$defs": defs}), encoding="utf-8")
+        # The titled root becomes one unused RootModel; the title keeps its name stable.
+        bundle_doc = {"title": "ContractBundle", "$defs": defs}
+        bundle.write_text(json.dumps(bundle_doc), encoding="utf-8")
         subprocess.run(
             [
                 sys.executable, "-m", "datamodel_code_generator",
@@ -71,6 +95,7 @@ def main() -> None:
                 "--use-annotated",
                 "--field-constraints",
                 "--use-schema-description",
+                "--use-title-as-name",
                 "--formatters", "ruff-format",
             ],
             check=True,

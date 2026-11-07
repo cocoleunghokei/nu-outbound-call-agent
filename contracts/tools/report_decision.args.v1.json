@@ -15,6 +15,8 @@
       "description": "What the other side offered or asked"
     },
     "action": {
+      "title": "DecisionAction",
+      "type": "string",
       "enum": [
         "accept",
         "counter",
@@ -25,6 +27,8 @@
       ]
     },
     "confidence": {
+      "title": "Confidence",
+      "type": "string",
       "enum": [
         "high",
         "medium",
@@ -41,6 +45,7 @@
       "description": "For share_field: the share-freely field the agent is about to say"
     },
     "dimensions": {
+      "title": "Dimensions",
       "type": "object",
       "required": [
         "needs_ask_first_field",

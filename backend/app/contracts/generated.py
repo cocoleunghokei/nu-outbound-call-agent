@@ -4,50 +4,50 @@
 from __future__ import annotations
 from typing import Annotated, Any, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, RootModel
-from enum import Enum, StrEnum
+from enum import StrEnum
 from uuid import UUID
 
 
-class Model(RootModel[Any]):
-    root: Any
+class ContractBundle(RootModel[Any]):
+    root: Annotated[Any, Field(title="ContractBundle")]
 
 
-class TaskVars(BaseModel):
+class TaskVarLiteral(BaseModel):
     model_config = ConfigDict(extra="forbid")
     literal: str
 
 
-class TaskVars1(BaseModel):
+class TaskVarFieldRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
     field_ref: Annotated[str, Field(min_length=1)]
 
 
-class Constraint(BaseModel):
+class BriefConstraint(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: Annotated[str, Field(min_length=1)]
 
 
-class Preference(BaseModel):
+class BriefPreference(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: Annotated[str, Field(min_length=1)]
 
 
-class Fallback(BaseModel):
+class BriefFallback(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: Annotated[str, Field(min_length=1)]
 
 
-class NeverAgreeItem(BaseModel):
+class BriefNeverAgree(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: Annotated[str, Field(min_length=1)]
 
 
 class ShareFreelyKey(RootModel[str]):
-    root: Annotated[str, Field(min_length=1)]
+    root: Annotated[str, Field(min_length=1, title="ShareFreelyKey")]
 
 
 class AskFirstKey(RootModel[str]):
-    root: Annotated[str, Field(min_length=1)]
+    root: Annotated[str, Field(min_length=1, title="AskFirstKey")]
 
 
 class Brief(BaseModel):
@@ -64,16 +64,16 @@ class Brief(BaseModel):
         str,
         Field(description="Template; {name} placeholders resolve from task_vars", max_length=120),
     ]
-    task_vars: dict[str, TaskVars | TaskVars1]
-    constraints: list[Constraint]
-    preferences: list[Preference]
-    fallbacks: Annotated[list[Fallback], Field(description="Ranked, best first")]
-    never_agree: list[NeverAgreeItem]
+    task_vars: dict[str, TaskVarLiteral | TaskVarFieldRef]
+    constraints: list[BriefConstraint]
+    preferences: list[BriefPreference]
+    fallbacks: Annotated[list[BriefFallback], Field(description="Ranked, best first")]
+    never_agree: list[BriefNeverAgree]
     share_freely_keys: list[ShareFreelyKey]
     ask_first_keys: list[AskFirstKey]
 
 
-class Source(Enum):
+class EventSource(StrEnum):
     vapi = "vapi"
     backend = "backend"
     user = "user"
@@ -91,7 +91,7 @@ class CallEvent(BaseModel):
         ),
     ]
     occurred_at: AwareDatetime
-    source: Source | None = None
+    source: Annotated[EventSource | None, Field(title="EventSource")] = None
     dedup_key: Annotated[
         str | None, Field(description="Natural key from the source event, unique per call")
     ] = None
@@ -99,7 +99,7 @@ class CallEvent(BaseModel):
     payload: dict[str, Any]
 
 
-class Type(Enum):
+class CallCommandType(StrEnum):
     instruction = "instruction"
     pause = "pause"
     resume = "resume"
@@ -107,7 +107,7 @@ class Type(Enum):
 
 
 class CallCommand(BaseModel):
-    type: Type
+    type: Annotated[CallCommandType, Field(title="CallCommandType")]
     text: Annotated[str | None, Field(max_length=200)] = None
 
 
@@ -116,21 +116,21 @@ class CreateCallCommand(BaseModel):
     brief_id: UUID
 
 
-class PingReplyCommand1(BaseModel):
+class PingReplyChoice(BaseModel):
     model_config = ConfigDict(extra="forbid")
     choice: Annotated[int, Field(ge=0, le=3)]
 
 
-class PingReplyCommand2(BaseModel):
+class PingReplyText(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: Annotated[str, Field(max_length=200, min_length=1)]
 
 
-class PingReplyCommand(RootModel[PingReplyCommand1 | PingReplyCommand2]):
-    root: Annotated[PingReplyCommand1 | PingReplyCommand2, Field(title="PingReplyCommand")]
+class PingReplyCommand(RootModel[PingReplyChoice | PingReplyText]):
+    root: Annotated[PingReplyChoice | PingReplyText, Field(title="PingReplyCommand")]
 
 
-class Error(BaseModel):
+class ErrorBody(BaseModel):
     code: str
     message: str
     retryable: bool
@@ -138,10 +138,10 @@ class Error(BaseModel):
 
 class ErrorResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    error: Error
+    error: Annotated[ErrorBody, Field(title="ErrorBody")]
 
 
-class Action(Enum):
+class DecisionAction(StrEnum):
     accept = "accept"
     counter = "counter"
     decline = "decline"
@@ -157,12 +157,12 @@ class AgentDecisionPayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     situation: str
-    action: Action
+    action: Annotated[DecisionAction, Field(title="DecisionAction")]
     reason: str
     field_key: str | None = None
 
 
-class Outcome(Enum):
+class CallOutcome(StrEnum):
     booked = "booked"
     cancelled = "cancelled"
     rescheduled = "rescheduled"
@@ -174,22 +174,15 @@ class Outcome(Enum):
 
 
 class CallEndedPayload(BaseModel):
-    outcome: Outcome | None
+    outcome: CallOutcome | None
     ended_reason: str
 
 
-class Command(Enum):
-    instruction = "instruction"
-    pause = "pause"
-    resume = "resume"
-    end = "end"
-
-
 class CommandAppliedPayload(BaseModel):
-    command: Command
+    command: Annotated[CallCommandType, Field(title="CallCommandType")]
 
 
-class State(Enum):
+class DisclosureState(StrEnum):
     """
     Disclosure state of a shared_fields row; moves approved, sent_to_agent, spoken
     """
@@ -202,14 +195,15 @@ class State(Enum):
 class FieldSharedPayload(BaseModel):
     field_key: Annotated[str, Field(min_length=1)]
     state: Annotated[
-        State,
+        DisclosureState,
         Field(
-            description="Disclosure state of a shared_fields row; moves approved, sent_to_agent, spoken"
+            description="Disclosure state of a shared_fields row; moves approved, sent_to_agent, spoken",
+            title="DisclosureState",
         ),
     ]
 
 
-class State1(StrEnum):
+class PingState(StrEnum):
     open = "open"
     answered = "answered"
     expired = "expired"
@@ -219,11 +213,11 @@ class State1(StrEnum):
 
 class PingResolvedPayload(BaseModel):
     ping_id: UUID
-    state: State1
+    state: Annotated[PingState, Field(title="PingState")]
     reply_text: str | None = None
 
 
-class Status(StrEnum):
+class CallStatus(StrEnum):
     creating = "creating"
     creation_uncertain = "creation_uncertain"
     dialing = "dialing"
@@ -236,22 +230,22 @@ class Status(StrEnum):
 
 
 class StatusChangedPayload(BaseModel):
-    status: Status
+    status: Annotated[CallStatus, Field(title="CallStatus")]
 
 
-class Role(Enum):
+class TranscriptRole(StrEnum):
     agent = "agent"
     business = "business"
     user = "user"
 
 
 class TranscriptFinalPayload(BaseModel):
-    role: Role
+    role: Annotated[TranscriptRole, Field(title="TranscriptRole")]
     text: str
     source_start_ts: AwareDatetime | None
 
 
-class Kind(Enum):
+class PingKind(StrEnum):
     """
     field_approval: server-written question and Share / Don't share replies
     """
@@ -265,9 +259,10 @@ class Ping(BaseModel):
     ping_id: UUID
     call_id: UUID
     kind: Annotated[
-        Kind,
+        PingKind,
         Field(
-            description="field_approval: server-written question and Share / Don't share replies"
+            description="field_approval: server-written question and Share / Don't share replies",
+            title="PingKind",
         ),
     ]
     field_key: Annotated[str | None, Field(description="Only for field_approval")] = None
@@ -281,14 +276,14 @@ class Ping(BaseModel):
     remaining_ms: Annotated[
         int | None, Field(description="Time left on the reply clock, in milliseconds", ge=0)
     ]
-    state: State1
+    state: Annotated[PingState, Field(title="PingState")]
 
 
 class SuggestedReply(RootModel[str]):
-    root: Annotated[str, Field(max_length=60)]
+    root: Annotated[str, Field(max_length=60, title="SuggestedReply")]
 
 
-class Confidence(Enum):
+class Confidence(StrEnum):
     """
     The tier behind this call. Stored backend-only (agent_scores); never in the card or the push (DC-4, DC-5)
     """
@@ -329,13 +324,15 @@ class AskUserArgs(BaseModel):
     confidence: Annotated[
         Confidence,
         Field(
-            description="The tier behind this call. Stored backend-only (agent_scores); never in the card or the push (DC-4, DC-5)"
+            description="The tier behind this call. Stored backend-only (agent_scores); never in the card or the push (DC-4, DC-5)",
+            title="Confidence",
         ),
     ]
     dimensions: Annotated[
         Dimensions,
         Field(
-            description="The six DC-4 answers behind the confidence tier. Logged for debugging, never shown to the user."
+            description="The six DC-4 answers behind the confidence tier. Logged for debugging, never shown to the user.",
+            title="Dimensions",
         ),
     ]
 
@@ -344,11 +341,12 @@ class ReportDecisionArgs(BaseModel):
     situation: Annotated[
         str, Field(description="What the other side offered or asked", max_length=200)
     ]
-    action: Action
+    action: Annotated[DecisionAction, Field(title="DecisionAction")]
     confidence: Annotated[
         Confidence,
         Field(
-            description="The tier behind this call. Stored backend-only (agent_scores); never in the card or the push (DC-4, DC-5)"
+            description="The tier behind this call. Stored backend-only (agent_scores); never in the card or the push (DC-4, DC-5)",
+            title="Confidence",
         ),
     ]
     reason: Annotated[str, Field(max_length=200)]
@@ -359,12 +357,13 @@ class ReportDecisionArgs(BaseModel):
     dimensions: Annotated[
         Dimensions,
         Field(
-            description="The six DC-4 answers behind the confidence tier. Logged for debugging, never shown to the user."
+            description="The six DC-4 answers behind the confidence tier. Logged for debugging, never shown to the user.",
+            title="Dimensions",
         ),
     ]
 
 
-class Outcome1(Enum):
+class ReportedOutcome(StrEnum):
     booked = "booked"
     cancelled = "cancelled"
     rescheduled = "rescheduled"
@@ -373,7 +372,7 @@ class Outcome1(Enum):
     wrong_number = "wrong_number"
 
 
-class Details(BaseModel):
+class OutcomeDetails(BaseModel):
     date: str | None = None
     time: str | None = None
     confirmation_number: str | None = None
@@ -381,12 +380,27 @@ class Details(BaseModel):
 
 
 class ReportOutcomeArgs(BaseModel):
-    outcome: Outcome1
+    outcome: Annotated[ReportedOutcome, Field(title="ReportedOutcome")]
     business_confirmed: Annotated[
         bool, Field(description="True only if the other side explicitly confirmed it, in words")
     ]
-    details: Details | None = None
+    details: Annotated[OutcomeDetails | None, Field(title="OutcomeDetails")] = None
     open_items: list[str] | None = None
+
+
+class CallEventType(StrEnum):
+    """
+    Known call event types (the call-event.v1.json if/then branches)
+    """
+
+    status_changed = "status.changed"
+    transcript_final = "transcript.final"
+    ping_opened = "ping.opened"
+    ping_resolved = "ping.resolved"
+    agent_decision = "agent.decision"
+    field_shared = "field.shared"
+    command_applied = "command.applied"
+    call_ended = "call.ended"
 
 
 class PingOpenedPayload(RootModel[Ping]):

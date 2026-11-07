@@ -24,6 +24,8 @@
       "format": "uuid"
     },
     "kind": {
+      "title": "PingKind",
+      "type": "string",
       "enum": [
         "decision",
         "field_approval"
@@ -63,6 +65,7 @@
       "description": "Time left on the reply clock, in milliseconds"
     },
     "state": {
+      "title": "PingState",
       "type": "string",
       "enum": [
         "open",

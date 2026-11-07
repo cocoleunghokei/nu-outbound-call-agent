@@ -145,7 +145,11 @@ def test_generated_ts_has_open_enums() -> None:
     text = (REPO_ROOT / "frontend" / "src" / "contracts" / "generated.ts").read_text()
     assert "| (string & {})" in text
     block = text.split("export interface StatusChangedPayload {")[1].split("\n}")[0]
-    assert "(string & {})" in block
+    assert "status: CallStatus;" in block
+    alias = text.split("export type CallStatus =")[1].split(";")[0]
+    assert "(string & {})" in alias
+    ping_state = text.split("export type PingState =")[1].split(";")[0]
+    assert "(string & {})" in ping_state
 
 
 def test_consumer_type_check_exists() -> None:
@@ -208,3 +212,112 @@ def test_call_ended_accepts_failed_and_no_answer_outcomes() -> None:
     """PO-1: Failed and no-answer are call outcomes, not only a status."""
     for outcome in ("failed", "no_answer", "booked", None):
         assert is_valid("payloads/call.ended.v1.json", {"outcome": outcome, "ended_reason": "x"})
+
+
+# Owner code imports these names from app.contracts.generated. Each comes from a `title` in
+# contracts/ (or, for CallEventType, the envelope's if/then branches), so a schema change
+# cannot silently renumber or rename them. Renaming one is a contract change.
+PINNED_STR_ENUMS: dict[str, set[str]] = {
+    "CallEventType": BLUEPRINT_EVENT_TYPES,
+    "CallStatus": {
+        "creating",
+        "creation_uncertain",
+        "dialing",
+        "in_phone_menu",
+        "talking",
+        "waiting_on_you",
+        "on_hold",
+        "ended",
+        "failed",
+    },
+    "PingState": {"open", "answered", "expired", "superseded", "cancelled"},
+    "CallOutcome": {
+        "booked",
+        "cancelled",
+        "rescheduled",
+        "needs_follow_up",
+        "refused_ai",
+        "wrong_number",
+        "failed",
+        "no_answer",
+    },
+    "ReportedOutcome": {
+        "booked",
+        "cancelled",
+        "rescheduled",
+        "needs_follow_up",
+        "refused_ai",
+        "wrong_number",
+    },
+    "EventSource": {"vapi", "backend", "user"},
+    "Confidence": {"high", "medium", "low"},
+    "DecisionAction": {
+        "accept",
+        "counter",
+        "decline",
+        "share_field",
+        "take_fallback",
+        "end_call",
+    },
+    "PingKind": {"decision", "field_approval"},
+    "DisclosureState": {"approved", "sent_to_agent", "spoken"},
+    "TranscriptRole": {"agent", "business", "user"},
+    "CallCommandType": {"instruction", "pause", "resume", "end"},
+}
+PINNED_MODELS = [
+    "ReportOutcomeArgs",
+    "AskUserArgs",
+    "ReportDecisionArgs",
+    "OutcomeDetails",
+    "Dimensions",
+    "PingReplyChoice",
+    "PingReplyText",
+    "TaskVarLiteral",
+    "TaskVarFieldRef",
+    "ErrorBody",
+]
+
+
+@pytest.mark.parametrize("name", sorted(PINNED_STR_ENUMS))
+def test_generated_enum_names_are_pinned_str_enums(name: str) -> None:
+    from enum import StrEnum
+
+    from app.contracts import generated
+
+    enum = getattr(generated, name, None)
+    assert enum is not None, f"generated.py lost the stable name {name}"
+    assert issubclass(enum, StrEnum)
+    assert {member.value for member in enum} == PINNED_STR_ENUMS[name]
+
+
+@pytest.mark.parametrize("name", PINNED_MODELS)
+def test_generated_model_names_are_pinned(name: str) -> None:
+    from pydantic import BaseModel
+
+    from app.contracts import generated
+
+    model = getattr(generated, name, None)
+    assert isinstance(model, type) and issubclass(model, BaseModel), name
+
+
+def test_generated_models_use_pinned_types() -> None:
+    from app.contracts import generated as g
+
+    fields = g.ReportOutcomeArgs.model_fields
+    assert fields["outcome"].annotation is g.ReportedOutcome
+    assert g.PingResolvedPayload.model_fields["state"].annotation is g.PingState
+    assert g.Ping.model_fields["state"].annotation is g.PingState
+    assert g.StatusChangedPayload.model_fields["status"].annotation is g.CallStatus
+    assert g.CallEndedPayload.model_fields["outcome"].annotation == g.CallOutcome | None
+
+
+def test_no_numbered_or_generic_generated_names() -> None:
+    """Names such as Model, Type, State1 or Outcome1 mean a sub-schema is missing a title."""
+    import re
+
+    text = (Path(__file__).parents[1] / "app" / "contracts" / "generated.py").read_text()
+    classes = re.findall(r"^class (\w+)\(", text, re.MULTILINE)
+    assert not [c for c in classes if re.search(r"\d$", c)], classes
+    generic = {"Model", "Type", "State", "Status", "Outcome", "Kind", "Role", "Source", "Action"}
+    assert not generic & set(classes), classes
+    assert "(Enum)" not in text, "every string enum should generate as StrEnum"

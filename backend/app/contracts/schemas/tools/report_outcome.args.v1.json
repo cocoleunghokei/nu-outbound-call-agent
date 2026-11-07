@@ -7,6 +7,8 @@
   ],
   "properties": {
     "outcome": {
+      "title": "ReportedOutcome",
+      "type": "string",
       "enum": [
         "booked",
         "cancelled",
@@ -21,6 +23,7 @@
       "description": "True only if the other side explicitly confirmed it, in words"
     },
     "details": {
+      "title": "OutcomeDetails",
       "type": "object",
       "properties": {
         "date": {

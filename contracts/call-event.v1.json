@@ -36,6 +36,8 @@
       "format": "date-time"
     },
     "source": {
+      "title": "EventSource",
+      "type": "string",
       "enum": [
         "vapi",
         "backend",

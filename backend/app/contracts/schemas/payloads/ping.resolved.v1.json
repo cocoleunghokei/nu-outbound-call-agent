@@ -13,6 +13,7 @@
       "format": "uuid"
     },
     "state": {
+      "title": "PingState",
       "type": "string",
       "enum": [
         "open",
