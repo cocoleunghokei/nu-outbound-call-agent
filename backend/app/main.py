@@ -14,8 +14,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import app as app_package
 from app.config import Settings
+from app.db import create_pool
 from app.errors import UnhandledErrorMiddleware, install_error_handlers
 from app.registry import Registries
+from app.routers import me
 
 DEFAULT_PACKAGES_ROOT = Path(next(iter(app_package.__path__)))
 
@@ -55,10 +57,19 @@ def create_app(settings: Settings | None = None, packages_root: Path | None = No
     _load_packages(reg, packages_root or DEFAULT_PACKAGES_ROOT)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        for hook in reg.startup_hooks:
-            await hook()
-        yield
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # No database_url (non-db tests): no pool, and DB routes answer 503.
+        pool = create_pool(settings.database_url) if settings.database_url else None
+        app.state.pool = pool
+        if pool is not None:
+            await pool.open(wait=True, timeout=10)
+        try:
+            for hook in reg.startup_hooks:
+                await hook()
+            yield
+        finally:
+            if pool is not None:
+                await pool.close()
 
     app = FastAPI(title="Call agent backend", lifespan=lifespan)
     app.state.settings = settings
@@ -78,6 +89,7 @@ def create_app(settings: Settings | None = None, packages_root: Path | None = No
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(me.router)
     for router in reg.routers:
         app.include_router(router)
     return app

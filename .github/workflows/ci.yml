@@ -84,3 +84,10 @@ jobs:
         with:
           version: 2.122.0
       - run: make db-check
+      - run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project backend --frozen
+      - run: make -C backend test-db
