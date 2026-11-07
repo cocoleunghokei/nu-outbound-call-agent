@@ -33,7 +33,7 @@ Done for both the backend (`backend/`: Python 3.12 + FastAPI, uv) and the fronte
 5. Add `.env.example` with every variable name the app reads, and no values.
 6. Update the stack table in `AGENTS.md`.
 
-The `database` job also runs the backend's database tests and the Realtime smoke check (`make -C backend realtime-smoke`) against the local Supabase stack.
+The `database` job also runs the backend's database tests and the Realtime smoke check (`make -C backend realtime-smoke`) against the local Supabase stack. If that step fails, the job prints the last 200 lines of the Realtime container log.
 
 ## Frontend deploys (Vercel)
 

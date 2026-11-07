@@ -19,6 +19,8 @@ make replay CALL_ID=<the CALL_ID printed by seed-dev>    # in a second terminal
 
 `make realtime-smoke` is the automated version of that check: it seeds Alex and Bob, starts uvicorn, subscribes to `call_events` for Alex's call with each user's token, replays one final transcript, and asserts that Alex receives it within 2 s and Bob receives nothing within 3 s. It needs a stack with Realtime (CI runs it after `supabase start`) and Node.js 22+, because `@supabase/realtime-js` uses Node's native WebSocket; on an older Node the script exits 2 with a clear message.
 
+The smoke waits for Realtime's `postgres_changes` confirmation (a `system` message that can arrive after `SUBSCRIBED`) and fails on any subscription error Realtime reports, so a rejected subscription shows Realtime's own message instead of a timeout. It passes each user's token through the client's `accessToken` option. `client.realtime.setAuth(token)` is not enough: supabase-js keeps its own token callback, which returns the anon key when there is no session, and Realtime then re-subscribes as `anon` and fails (`invalid column for filter call_id`, because `anon` has no SELECT on `call_events`). If it fails in CI, the job prints the Realtime container's log.
+
 ## The patterns, by example
 
 | To do this | Copy this |

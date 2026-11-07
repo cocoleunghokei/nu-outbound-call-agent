@@ -100,3 +100,6 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --prefix frontend
       - run: make -C backend realtime-smoke
+      - name: Realtime logs (on failure)
+        if: failure()
+        run: docker logs supabase_realtime_nu-outbound-call-agent 2>&1 | tail -200

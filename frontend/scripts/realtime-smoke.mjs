@@ -7,8 +7,8 @@
 //
 // Needs Node.js 22+: @supabase/realtime-js uses Node's native WebSocket.
 //
-// Exit codes: 0 pass, 1 an assertion failed, 2 bad arguments, Node too old or Realtime
-// unreachable.
+// Exit codes: 0 pass, 1 an assertion failed (including Realtime rejecting the subscription),
+// 2 bad arguments, Node too old or Realtime unreachable.
 import { spawn } from 'node:child_process'
 import { parseArgs } from 'node:util'
 
@@ -47,18 +47,33 @@ for (const name of ['url', 'anon-key', 'call-id', 'owner-token', 'other-token', 
   if (!values[name]) fail(2, `missing --${name}`)
 }
 
-/** Subscribe to this call's call_events as the token's user; resolves once SUBSCRIBED. */
+/**
+ * Subscribe to this call's call_events as the token's user. Resolves once Realtime reports
+ * that the Postgres Changes subscription is live, not merely that the channel joined.
+ */
 function listen(label, token) {
   const received = []
-  const client = createClient(values.url, values['anon-key'], {
-    auth: { persistSession: false, autoRefreshToken: false },
-  })
-  client.realtime.setAuth(token)
-  const subscribed = new Promise((resolve, reject) => {
+  const errors = []
+  // The token goes in through `accessToken`, not `client.realtime.setAuth(token)`. supabase-js
+  // always gives Realtime an access-token callback; without a session that callback returns the
+  // anon key, and Realtime sends it right after the join. Realtime then re-subscribes as `anon`,
+  // which has no SELECT on call_events, and the subscription fails. In the app the callback
+  // returns the signed-in session's token, so this matches real use.
+  const client = createClient(values.url, values['anon-key'], { accessToken: async () => token })
+  // supabase-js applies the token asynchronously; wait for it, or the join goes out without a
+  // token and Realtime authorizes it with the anon apikey.
+  const subscribed = client.realtime.setAuth().then(() => new Promise((resolve, reject) => {
     const timer = setTimeout(
       () => reject(new Error(`${label}: Realtime did not confirm the subscription in time (is Realtime reachable at ${values.url}?)`)),
       SUBSCRIBE_TIMEOUT_MS,
     )
+    const settle = (error) => {
+      clearTimeout(timer)
+      if (error) reject(error)
+      else resolve()
+    }
+    let joined = false
+    let postgresReady = false
     client
       .channel(`smoke-${label}`)
       .on(
@@ -66,17 +81,35 @@ function listen(label, token) {
         { event: 'INSERT', schema: 'public', table: 'call_events', filter: `call_id=eq.${values['call-id']}` },
         (payload) => received.push(payload.new),
       )
+      // Realtime confirms (or rejects) the Postgres Changes subscription in a system message
+      // that can arrive after SUBSCRIBED, e.g. while a cold Realtime starts replication.
+      .on('system', {}, (message) => {
+        if (message.extension !== 'postgres_changes') return
+        if (message.status !== 'ok') {
+          // Also recorded after settling: a later re-subscribe can fail and silently stop delivery.
+          errors.push(message.message)
+          settle(Object.assign(new Error(`${label}: postgres_changes subscription failed: ${message.message}`), { exitCode: 1 }))
+          return
+        }
+        postgresReady = true
+        if (joined) settle()
+      })
       .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
-          clearTimeout(timer)
-          resolve()
+          joined = true
+          if (postgresReady) settle()
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          clearTimeout(timer)
-          reject(new Error(`${label}: channel ${status}${err ? `: ${err.message}` : ''}`))
+          settle(new Error(`${label}: channel ${status}${err ? `: ${err.message}` : ''}`))
         }
       })
-  })
-  return { client, received, subscribed }
+  }))
+  return { client, received, errors, subscribed }
+}
+
+/** Fails if either subscription reported an error after it was confirmed. */
+function failOnSubscriptionError() {
+  const error = [...owner.errors, ...other.errors][0]
+  if (error) fail(1, `postgres_changes subscription failed after joining: ${error}`)
 }
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -86,7 +119,7 @@ const other = listen('other', values['other-token'])
 try {
   await Promise.all([owner.subscribed, other.subscribed])
 } catch (error) {
-  fail(2, error.message)
+  fail(error.exitCode ?? 2, error.message)
 }
 await sleep(500) // let the server finish registering both subscriptions
 
@@ -99,11 +132,13 @@ if (triggerStatus !== 0) fail(1, `trigger command failed with status ${triggerSt
 // The clock starts once the webhook has acknowledged (the trigger returned).
 const started = Date.now()
 while (owner.received.length === 0 && Date.now() - started < OWNER_WITHIN_MS) await sleep(50)
+failOnSubscriptionError()
 if (owner.received.length === 0) fail(1, `owner got no call_events INSERT within ${OWNER_WITHIN_MS} ms`)
 const event = owner.received[0]
 if (event.type !== 'transcript.final') fail(1, `owner got ${event.type}, expected transcript.final`)
 
 await sleep(Math.max(0, OTHER_QUIET_MS - (Date.now() - started)))
+failOnSubscriptionError()
 if (other.received.length !== 0) fail(1, `other user received ${other.received.length} event(s); RLS leak`)
 
 console.log(`realtime-smoke: PASS (owner got seq ${event.seq} ${event.type}; other user got nothing)`)
