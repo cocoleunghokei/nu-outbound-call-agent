@@ -25,8 +25,8 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
 
 
 def tool_definitions() -> list[dict[str, Any]]:
-    """Return Vapi function-tool wrappers whose ``parameters`` are the argument schemas."""
-    return [
+    """Return the three async function tools plus Vapi's built-in ``endCall`` tool."""
+    functions: list[dict[str, Any]] = [
         {
             "type": "function",
             "async": True,
@@ -38,3 +38,4 @@ def tool_definitions() -> list[dict[str, Any]]:
         }
         for name, description in _TOOL_DESCRIPTIONS.items()
     ]
+    return [*functions, {"type": "endCall"}]

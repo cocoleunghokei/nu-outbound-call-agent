@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     vapi_api_key: SecretStr = SecretStr("")
     vapi_webhook_secret: SecretStr = SecretStr("")
     vapi_phone_number_id: str = ""
+    vapi_base_url: str = "https://api.vapi.ai"
     vapi_ip_allowlist: bool = False
 
     voice_platform: Literal["vapi", "fake"] = "fake"

@@ -111,7 +111,9 @@ def test_field_shared_state_is_closed_enum() -> None:
 
 
 def test_tool_definitions_wrap_args_schemas() -> None:
-    definitions = {d["function"]["name"]: d for d in tool_definitions()}
+    all_tools = tool_definitions()
+    assert all_tools[-1] == {"type": "endCall"}
+    definitions = {d["function"]["name"]: d for d in all_tools[:-1]}
     assert set(definitions) == {"ask_user", "report_decision", "report_outcome"}
     for name, definition in definitions.items():
         assert definition["type"] == "function"
