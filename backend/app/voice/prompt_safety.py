@@ -57,6 +57,14 @@ class Snapshot:
         return self.fields.items()
 
 
+# Scripts written without spaces between words: a name inside running text is not its own token.
+_UNSPACED_SCRIPT = re.compile("[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af\u0e00-\u0e7f]")
+
+
+def _squash(text: str) -> str:
+    return "".join(text.casefold().split())
+
+
 def _tokens(text: str) -> list[str]:
     return [t for t in _NON_WORD.split(text.casefold()) if t]
 
@@ -97,6 +105,8 @@ def assert_prompt_safe(text: str, snapshot: Snapshot) -> None:
             continue
         if value_tokens:
             if _contains_sequence(text_tokens, value_tokens):
+                raise AskFirstInPrompt(key)
+            if _UNSPACED_SCRIPT.search(value) and _squash(value) in _squash(text):
                 raise AskFirstInPrompt(key)
         elif value.strip() and value.casefold().strip() in text.casefold():
             # No word characters to tokenise: fail closed on a plain substring match.

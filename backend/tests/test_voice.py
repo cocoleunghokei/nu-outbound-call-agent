@@ -446,3 +446,19 @@ def test_other_httpx_errors_map_to_uncertain_without_url(exc: Exception) -> None
         asyncio.run(adapter.send_control(CONTROL_URL, {"type": "x"}))
     assert "capability" not in str(info.value) + repr(info.value)
     assert info.value.__cause__ is None
+
+
+def test_unspaced_script_ask_first_name_blocked_inside_running_text() -> None:
+    snap = Snapshot.from_rows([("full_name", "王小明", "ask_first")])
+    for text in ("請找王小明先生", "王小明さんの予約", "請找 王 小 明 先生"):
+        with pytest.raises(AskFirstInPrompt):
+            assert_prompt_safe(text, snap)
+    assert_prompt_safe("請找李先生，謝謝", snap)
+    assert_prompt_safe("田中さんの予約", snap)
+
+
+def test_unspaced_script_calling_name_exemption_still_applies() -> None:
+    snap = Snapshot.from_rows(
+        [("calling_name", "王小明", "share_freely"), ("full_name", "王小明", "ask_first")]
+    )
+    assert_prompt_safe("請找王小明先生", snap)
