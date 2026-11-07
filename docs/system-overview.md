@@ -4,21 +4,23 @@ A map of the whole system for teammates who have not read the [blueprint](archit
 
 In one paragraph: the user (Alex) fills in a brief, the backend places a phone call through Vapi, and the AI agent talks to the business. When the agent is missing something it pauses, pings Alex for a one-tap reply (45 s), then continues the call. After the call, the outcome and a summary are saved.
 
-Colours are the same in every diagram: **grey** = foundation (shared, already built), **blue** = Steve (onboarding), **green** = Lotto (pre-call), **orange** = Coco (during call), **purple** = Harper (post-call).
+Colours: **grey** = foundation, **blue** = Steve (onboarding), **green** = Lotto (pre-call), **orange** = Coco (during call), **purple** = Harper (post-call). Only three diagrams use colour: the big picture (section 1), the class diagram (section 2) and the webhook ingress flowchart (section 7). Wherever colour marks ownership, the owner's name is also in the node text.
+
+**Status:** grey is built and tested. Blue, green, orange and purple are planned: those packages do not exist yet, and the diagrams show the intended design.
 
 Contents: [1. Big picture](#1-the-big-picture) · [2. Inside the backend](#2-inside-the-backend) · [3. The data](#3-the-data) · [4. One call](#4-one-call-start-to-finish) · [5. Pause and ping](#5-pause-and-ping-the-critical-path) · [6. States](#6-states) · [7. Webhook ingress](#7-webhook-ingress) · [8. Glossary](#8-glossary-and-further-reading) · [Try it locally](#try-it-locally)
 
 ## 1. The big picture
 
-Look for: who talks to whom, and over which edge (`E1` to `E12` are the edge numbers from [blueprint section 1](architecture.md#1-system-overview-and-communication-topology)).
+Look for: who talks to whom, and over which edge (dashed boxes are planned) (`E1` to `E12` are the edge numbers from [blueprint section 1](architecture.md#1-system-overview-and-communication-topology)).
 
 ```mermaid
 flowchart LR
   classDef found fill:#eeeeee,stroke:#666666,color:#111111
-  classDef steve fill:#dbeafe,stroke:#2563eb,color:#111111
-  classDef lotto fill:#dcfce7,stroke:#16a34a,color:#111111
-  classDef coco fill:#ffedd5,stroke:#ea580c,color:#111111
-  classDef harper fill:#f3e8ff,stroke:#9333ea,color:#111111
+  classDef steve fill:#dbeafe,stroke:#2563eb,color:#111111,stroke-dasharray:5 3
+  classDef lotto fill:#dcfce7,stroke:#16a34a,color:#111111,stroke-dasharray:5 3
+  classDef coco fill:#ffedd5,stroke:#ea580c,color:#111111,stroke-dasharray:5 3
+  classDef harper fill:#f3e8ff,stroke:#9333ea,color:#111111,stroke-dasharray:5 3
 
   subgraph Browser["Web app · React on Vercel"]
     UI["Onboarding chat · Pre-call · Live call · Post-call"]
@@ -32,10 +34,10 @@ flowchart LR
     EVT["Event log<br/>append_event"]:::found
     LCK["calls_lock<br/>lock_call · end_call_transition"]:::found
     VP["Voice port<br/>VapiVoice · FakeVoicePlatform · prompt_safety"]:::found
-    PROF["app/profile · app/notifier"]:::steve
-    BRF["app/briefs"]:::lotto
-    CALLS["app/calls<br/>controller · ask manager<br/>outbox worker · sweeper"]:::coco
-    POST["app/postcall"]:::harper
+    PROF["Steve (planned)<br/>app/profile · app/notifier"]:::steve
+    BRF["Lotto (planned)<br/>app/briefs"]:::lotto
+    CALLS["Coco (planned)<br/>app/calls<br/>controller · ask manager<br/>outbox worker · sweeper"]:::coco
+    POST["Harper (planned)<br/>app/postcall"]:::harper
   end
 
   subgraph Supabase
@@ -108,7 +110,7 @@ classDiagram
   }
   class WebhookIngress {
     <<module app/webhooks/vapi.py>>
-    +dispatch_pending(pool, limit=50, tools) int
+    +dispatch_pending(pool, limit=50, *, tools) int
     +run_ingress_startup(pool, tools)
   }
   class WebhookNormalise {
@@ -161,6 +163,18 @@ classDiagram
     +load_call_secrets(conn) int
   }
   class RedactingFormatter
+  class CocoHandlers:::coco {
+    <<planned app/calls, Coco>>
+    ask_user and report_decision tool handlers
+    status-update and speech-update event handlers
+  }
+  class HarperHandlers:::harper {
+    <<planned app/postcall, Harper>>
+    report_outcome tool handler
+    end-of-call-report event handler
+  }
+  classDef coco fill:#ffedd5,stroke:#ea580c,color:#111111,stroke-dasharray:5 3
+  classDef harper fill:#f3e8ff,stroke:#9333ea,color:#111111,stroke-dasharray:5 3
   VoicePlatform <|.. VapiVoice
   VoicePlatform <|.. FakeVoicePlatform
   VoicePlatform ..> CreatedCall
@@ -177,6 +191,10 @@ classDiagram
   CallsLock ..> SecretRegistry
   CallsLock ..> EventLog
   RedactingFormatter ..> SecretRegistry
+  CocoHandlers ..> ToolRegistry : register(reg)
+  CocoHandlers ..> EventRegistry : register(reg)
+  HarperHandlers ..> ToolRegistry : register(reg)
+  HarperHandlers ..> EventRegistry : register(reg)
 ```
 
 **Your part:** Coco codes against `VoicePlatform`, `CallsLock` and the `ask_user` / `report_decision` / `status-update` / `speech-update` handlers. Harper codes against `report_outcome` and `end-of-call-report`. Steve and Lotto mostly add routers through `Registries.add_router`. Every owner package exposes `register(reg)`, which `create_app` finds automatically.
@@ -241,7 +259,7 @@ erDiagram
     uuid call_id PK
     text tool_call_id PK
     text name
-    jsonb arguments "scores only while pending"
+    jsonb arguments "keeps confidence/dimensions only while pending"
     text state "pending | handled | failed"
   }
   agent_scores {
@@ -259,7 +277,7 @@ Notes:
 - Browser-readable: `profiles`, `profile_fields`, `briefs`, `push_subscriptions` (select and delete), `calls`, `call_events`, `pings` and `shared_fields`. Everything else is backend-only.
 - The schema lives only in `supabase/migrations/`.
 
-**Your part:** Steve owns `profiles`, `profile_fields` and `push_subscriptions`; Lotto owns `briefs`; Coco owns `pings` and the status in `calls`; Harper owns `shared_fields` and `calls.outcome`. The foundation owns `call_events`, `tool_calls`, `agent_scores`, `call_secrets`, `call_profile_snapshots`, `outbox`, `vapi_raw_events` and `call_events_failed`.
+**Your part (planned):** Steve builds on `profile_fields` and `push_subscriptions`; Lotto on `briefs`; Coco on `pings` and the status in `calls`; Harper on `shared_fields` and `calls.outcome` (as in the ownership map above). The foundation owns `profiles` (created at first sign-in by `app/routers/me.py`), `call_events`, `tool_calls`, `agent_scores`, `call_secrets`, `call_profile_snapshots`, `outbox`, `vapi_raw_events` and `call_events_failed`.
 
 ## 4. One call, start to finish
 
@@ -275,8 +293,9 @@ sequenceDiagram
   participant V as Vapi
   actor R as Receptionist
   U->>B: POST /calls {brief_id} + JWT + Idempotency-Key
-  B->>DB: COMMIT calls 'creating' + snapshot + create_attempted_at
-  Note over B,DB: committed before Vapi is called (crash-safe)
+  B->>DB: COMMIT 1: calls 'creating' + snapshot
+  B->>DB: COMMIT 2: create_attempted_at
+  Note over B,DB: both committed before Vapi is called (crash-safe)
   B->>V: create_call (prompt_safety: no ask-first values)
   alt response received
     V-->>B: vapi_call_id + control URL
@@ -299,7 +318,7 @@ sequenceDiagram
   B-->>U: Web Push "Booked: Fri 10am"
 ```
 
-**Your part:** Lotto owns the brief behind `POST /calls`. Coco owns call creation and the uncertain-creation branch. The foundation runs the transcript loop. Harper owns `report_outcome` and the end-of-call jobs, and Steve sends the push.
+**Your part (planned):** Lotto owns the brief behind `POST /calls`. Coco owns call creation and the uncertain-creation branch. The foundation runs the transcript loop. Harper owns `report_outcome` and the end-of-call jobs, and Steve sends the push.
 
 ## 5. Pause and ping, the critical path
 
@@ -328,7 +347,7 @@ sequenceDiagram
     end
   end
   alt Alex replies in time
-    U->>B: POST /pings/{id}/reply
+    U->>B: POST /calls/{call_id}/pings/{ping_id}/reply + JWT + Idempotency-Key
     B->>DB: one txn: lock_call → ping answered (wins race) + outbox control row, COMMIT
     B->>V: outbox worker sends add-message "Alex's answer to 'Thu 4pm?': ask for Fri"
   else 45 s pass
@@ -338,7 +357,7 @@ sequenceDiagram
   V->>R: continues the call
 ```
 
-**Your part:** Coco owns the ask manager, the reply and timeout race, and the fillers. Steve owns Web Push. The foundation provides the receipt, the locking, the score storage and the registry. See [blueprint section 6](architecture.md#6-pause-and-ping-sequence-the-critical-path).
+**Your part (planned):** Coco owns the ask manager, the reply and timeout race, and the fillers. Steve owns Web Push. The foundation provides the receipt, the locking, the score storage and the registry. See [blueprint section 6](architecture.md#6-pause-and-ping-sequence-the-critical-path).
 
 ## 6. States
 
@@ -354,6 +373,8 @@ stateDiagram-v2
   creation_uncertain --> dialing : found by app id
   creation_uncertain --> failed : 2 min
   creating --> failed
+  creating --> ended
+  creation_uncertain --> ended
   dialing --> in_phone_menu
   in_phone_menu --> talking
   dialing --> talking
@@ -373,7 +394,7 @@ stateDiagram-v2
   note right of ended : any non-terminal state → ended via end_call_transition
 ```
 
-**Your part:** Coco owns the state machine. `end_call_transition` is the only way into `ended`. Both `ended` and `failed` are terminal: it changes nothing for a call that is already in either, so a late `status-update` cannot revive a call.
+**Your part (planned):** Coco owns the state machine. `end_call_transition` is the only way into `ended`. Both `ended` and `failed` are terminal: it changes nothing for a call that is already in either, so a late `status-update` cannot revive a call.
 
 Ping state:
 
@@ -386,7 +407,7 @@ stateDiagram-v2
   open --> cancelled : call ended
 ```
 
-**Your part:** Coco owns ping transitions. A call has at most one `open` ping (a partial unique index enforces it).
+**Your part (planned):** Coco owns ping transitions. A call has at most one `open` ping (a partial unique index enforces it).
 
 ## 7. Webhook ingress
 
@@ -394,6 +415,9 @@ Look for: what has already happened by the time your handler runs. The code is `
 
 ```mermaid
 flowchart TD
+  classDef coco fill:#ffedd5,stroke:#ea580c,color:#111111,stroke-dasharray:5 3
+  classDef harper fill:#f3e8ff,stroke:#9333ea,color:#111111,stroke-dasharray:5 3
+
   A["POST /webhooks/vapi"] --> B{"secret ok?"}
   B -- no --> X["401, nothing written"]
   B -- yes --> C{"partial transcript?"}
@@ -405,20 +429,30 @@ flowchart TD
   F --> G["per unit, own savepoint:<br/>normalise_unit (decode + validate)"]
   G -- invalid --> H["rollback unit · dead letter · continue"]
   G -- transcript --> T["append_event"]
-  G -- other type --> O["event handler"]
+  T -- error --> H
+  G -- "status-update, speech-update" --> OC["event handler<br/>Coco (planned)"]:::coco
+  G -- "end-of-call-report" --> OH["event handler<br/>Harper (planned)"]:::harper
+  G -- "other type" --> OX["no handler: raw row only"]
+  OC -- error --> H
+  OH -- error --> H
   G -- tool call --> R["lock_call → receipt (kept)"]
-  R -- duplicate --> S["reuse stored result"]
+  R -- "duplicate" --> S["reuse stored result if handled, else 'received'"]
+  R -- "new, no handler" --> P["stays pending · 'received'"]
   R -- new --> HS["nested savepoint: tool handler"]
-  HS -- error --> HF["rollback handler only · receipt = failed · dead letter"]
-  T & O & S & HS & HF & H --> K{"COMMIT ok?"}
-  K -- yes --> I["200 with tool results"]
+  HS -- "ask_user, report_decision" --> HC["tool handler<br/>Coco (planned)"]:::coco
+  HS -- "report_outcome" --> HP["tool handler<br/>Harper (planned)"]:::harper
+  HC -- error --> HF["rollback handler only · receipt = failed · dead letter · 'received'"]
+  HP -- error --> HF
+  T & OC & OH & OX & S & P & HC & HP & HF & H --> K{"COMMIT ok?"}
+  K -- yes --> I["200: results for tool-calls messages, {} for the rest"]
   K -- no --> Z
   D -- "DB down (pool, bind, lock, raw insert)" --> Z["503 db_unavailable"]
+  G -- "DB down in a unit (OperationalError)" --> Z
 ```
 
 Notes: a body that is not JSON, or has no `message`, is a 400 before anything else. A tool with no registered handler is stored `pending` and answered `"received"`; `dispatch_pending` runs it later. Unit errors are dead-lettered and the delivery is still acknowledged; only database failures give a 503 (`retryable`), so Vapi may retry.
 
-**Your part:** you write the box labelled "event handler" or "tool handler" (Coco: `ask_user`, `report_decision`, `status-update`, `speech-update`; Harper: `report_outcome`, `end-of-call-report`). You run inside the transaction with the call lock held, so do not commit and do not call the network.
+**Your part (planned):** you write the coloured box labelled "event handler" or "tool handler" (Coco: `ask_user`, `report_decision`, `status-update`, `speech-update`; Harper: `report_outcome`, `end-of-call-report`). You run inside the transaction with the call lock held, so do not commit and do not call the network.
 
 ## 8. Glossary and further reading
 
