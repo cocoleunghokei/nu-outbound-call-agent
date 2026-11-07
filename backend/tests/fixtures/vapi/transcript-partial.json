@@ -1,0 +1,14 @@
+{
+  "message": {
+    "type": "transcript",
+    "role": "user",
+    "transcriptType": "partial",
+    "transcript": "We have Thurs",
+    "timestamp": 1794081604900,
+    "call": {
+      "id": "__VAPI_CALL_ID__",
+      "metadata": {"call_id": "__CALL_ID__"},
+      "monitor": {"controlUrl": "__CONTROL_URL__", "listenUrl": "__LISTEN_URL__"}
+    }
+  }
+}

@@ -18,6 +18,8 @@ from app.db import create_pool
 from app.errors import UnhandledErrorMiddleware, install_error_handlers
 from app.registry import Registries
 from app.routers import me
+from app.secrets_registry import get_secret_registry, install_redacting_formatter
+from app.webhooks import vapi as vapi_webhooks
 
 DEFAULT_PACKAGES_ROOT = Path(next(iter(app_package.__path__)))
 
@@ -58,11 +60,14 @@ def create_app(settings: Settings | None = None, packages_root: Path | None = No
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        install_redacting_formatter()
+        get_secret_registry().add_settings(settings)
         # No database_url (non-db tests): no pool, and DB routes answer 503.
         pool = create_pool(settings.database_url) if settings.database_url else None
         app.state.pool = pool
         if pool is not None:
             await pool.open(wait=True, timeout=10)
+            await vapi_webhooks.run_ingress_startup(pool, reg.tools)
         try:
             for hook in reg.startup_hooks:
                 await hook()
@@ -73,6 +78,7 @@ def create_app(settings: Settings | None = None, packages_root: Path | None = No
 
     app = FastAPI(title="Call agent backend", lifespan=lifespan)
     app.state.settings = settings
+    app.state.registries = reg
     install_error_handlers(app)
     # Added first so it sits inside CORS; CORS then decorates its 500 responses.
     app.add_middleware(UnhandledErrorMiddleware)
@@ -90,6 +96,7 @@ def create_app(settings: Settings | None = None, packages_root: Path | None = No
         return {"status": "ok"}
 
     app.include_router(me.router)
+    app.include_router(vapi_webhooks.router)
     for router in reg.routers:
         app.include_router(router)
     return app
