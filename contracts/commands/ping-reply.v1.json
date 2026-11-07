@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "commands/ping-reply.v1.json",
+  "title": "PingReplyCommand",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "choice"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "choice": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    }
+  ]
+}

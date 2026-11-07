@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "payloads/field.shared.v1.json",
+  "title": "FieldSharedPayload",
+  "type": "object",
+  "required": [
+    "field_key",
+    "state"
+  ],
+  "properties": {
+    "field_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "payloads/status.changed.v1.json",
+  "title": "StatusChangedPayload",
+  "type": "object",
+  "required": [
+    "status"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": [
+        "creating",
+        "creation_uncertain",
+        "dialing",
+        "in_phone_menu",
+        "talking",
+        "waiting_on_you",
+        "on_hold",
+        "ended",
+        "failed"
+      ],
+      "x-open-enum": true
+    }
+  }
+}

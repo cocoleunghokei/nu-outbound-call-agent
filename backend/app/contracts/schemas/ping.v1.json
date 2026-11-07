@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ping.v1.json",
+  "title": "Ping",
+  "type": "object",
+  "required": [
+    "ping_id",
+    "call_id",
+    "kind",
+    "question",
+    "reason",
+    "suggested_replies",
+    "expires_at",
+    "remaining_ms",
+    "state"
+  ],
+  "properties": {
+    "ping_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "call_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "kind": {
+      "enum": [
+        "decision",
+        "field_approval"
+      ],
+      "description": "field_approval: server-written question and Share / Don't share replies"
+    },
+    "field_key": {
+      "type": "string",
+      "description": "Only for field_approval"
+    },
+    "question": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "suggested_replies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "expires_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Null while the call is paused (the clock is frozen)"
+    },
+    "remaining_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0,
+      "description": "Time left on the reply clock, in milliseconds"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "open",
+        "answered",
+        "expired",
+        "superseded",
+        "cancelled"
+      ],
+      "x-open-enum": true
+    }
+  }
+}

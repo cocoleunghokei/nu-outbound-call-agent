@@ -1,0 +1,76 @@
+{
+  "title": "AskUserArgs",
+  "type": "object",
+  "required": [
+    "question",
+    "reason",
+    "suggested_replies",
+    "confidence",
+    "dimensions"
+  ],
+  "properties": {
+    "question": {
+      "type": "string",
+      "maxLength": 200
+    },
+    "reason": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "Plain language, e.g. 'They offered 4pm. You said before 3pm.' (DC-5)"
+    },
+    "suggested_replies": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "maxLength": 60
+      }
+    },
+    "field_requested": {
+      "type": "string",
+      "description": "Profile field key when the trigger is an ask-first field (DC-6)"
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "description": "The tier behind this call. Stored backend-only (agent_scores); never in the card or the push (DC-4, DC-5)"
+    },
+    "dimensions": {
+      "type": "object",
+      "required": [
+        "needs_ask_first_field",
+        "involves_money",
+        "meets_constraints",
+        "matches_fallback",
+        "answerable_from_brief",
+        "understood"
+      ],
+      "additionalProperties": false,
+      "description": "The six DC-4 answers behind the confidence tier. Logged for debugging, never shown to the user.",
+      "properties": {
+        "needs_ask_first_field": {
+          "type": "boolean"
+        },
+        "involves_money": {
+          "type": "boolean"
+        },
+        "meets_constraints": {
+          "type": "boolean"
+        },
+        "matches_fallback": {
+          "type": "boolean"
+        },
+        "answerable_from_brief": {
+          "type": "boolean"
+        },
+        "understood": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "commands/call-command.v1.json",
+  "title": "CallCommand",
+  "type": "object",
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "enum": [
+        "instruction",
+        "pause",
+        "resume",
+        "end"
+      ]
+    },
+    "text": {
+      "type": "string",
+      "maxLength": 200
+    }
+  },
+  "if": {
+    "properties": {
+      "type": {
+        "const": "instruction"
+      }
+    },
+    "required": [
+      "type"
+    ]
+  },
+  "then": {
+    "required": [
+      "text"
+    ]
+  }
+}
