@@ -17,7 +17,7 @@ make replay CALL_ID=<the CALL_ID printed by seed-dev>    # in a second terminal
 
 **What replay proves:** ordered `transcript.final` events arrive over Realtime, and the `ask_user` call lands as a `pending` row in `tool_calls`. Pings, status changes and outcomes appear only once their owners register handlers.
 
-`make realtime-smoke` is the automated version of that check: it seeds Alex and Bob, starts uvicorn, subscribes to `call_events` for Alex's call with each user's token, replays one final transcript, and asserts that Alex receives it within 2 s and Bob receives nothing within 3 s. It needs a stack with Realtime (CI runs it after `supabase start`).
+`make realtime-smoke` is the automated version of that check: it seeds Alex and Bob, starts uvicorn, subscribes to `call_events` for Alex's call with each user's token, replays one final transcript, and asserts that Alex receives it within 2 s and Bob receives nothing within 3 s. It needs a stack with Realtime (CI runs it after `supabase start`) and Node.js 22+, because `@supabase/realtime-js` uses Node's native WebSocket; on an older Node the script exits 2 with a clear message.
 
 ## The patterns, by example
 
@@ -32,6 +32,25 @@ make replay CALL_ID=<the CALL_ID printed by seed-dev>    # in a second terminal
 ## Ownership map
 
 Each owner works in their own package. A package exposes `register(registries)` in its `__init__.py`; `create_app` finds it automatically, so merges don't conflict.
+
+`register(reg)` runs before the database pool exists, so it only records things. Anything that needs the pool or settings goes in a lifecycle hook, which receives an `AppContext(pool, settings, registries)` (`app/registry.py`; `pool` is None when no `DATABASE_URL` is set):
+
+- `reg.add_router(router)`: mount an API router.
+- `reg.on_startup(fn)`: `async fn(ctx)` runs once at startup, after the pool opens and after the built-in startup (load `call_secrets`, run `dispatch_pending`). It must return; an exception stops the app from starting.
+- `reg.add_worker(fn)`: `async fn(ctx)` runs as a background task for the life of the app, started after the startup hooks. Use it for loops (Coco's sweeper and outbox worker, Steve's notifier, Harper's jobs lane). On shutdown it is cancelled, so let `asyncio.CancelledError` propagate. A worker that raises is logged (redacted) and stops; the app keeps serving, so catch and log per iteration if the loop must survive errors.
+- `reg.on_shutdown(fn)`: `async fn(ctx)` runs on shutdown after every worker has stopped and before the pool closes. Its exceptions are logged and the other hooks still run.
+
+```python
+async def sweeper(ctx: AppContext) -> None:
+    while True:
+        if ctx.pool is not None:
+            await dispatch_pending(ctx.pool, tools=ctx.registries.tools)
+        await asyncio.sleep(5)
+
+
+def register(reg: Registries) -> None:
+    reg.add_worker(sweeper)
+```
 
 | Owner | Package | Requirements | Builds on |
 | --- | --- | --- | --- |
@@ -52,9 +71,11 @@ Any transaction that touches a call's `pings`, `call_secrets`, `outbox` or `call
 
 Every Vapi server message enters through `POST /webhooks/vapi` (`app/webhooks/vapi.py`). Owners plug in from their package's `register(reg)`:
 
-- `reg.tools.register_tool_handler(name, fn)`, where `fn(conn, ctx: ToolCallContext) -> str`. `ask_user` and `report_decision` belong to Coco, `report_outcome` to Harper. A tool with no handler is stored `pending` in `tool_calls` and answered `"received"`; `dispatch_pending(pool, tools=reg.tools)` runs it later (at startup, and from the sweeper).
+- `reg.tools.register_tool_handler(name, fn)`, where `fn(conn, ctx: ToolCallContext) -> str`. `ask_user` and `report_decision` belong to Coco, `report_outcome` to Harper. A tool with no handler is stored `pending` in `tool_calls` and answered `"received"`; `dispatch_pending(pool, tools=reg.tools)` runs it later (at startup, and from the sweeper worker, which reads the pool and registry from its `AppContext`).
 - `reg.events.register_event_handler(vapi_type, fn)`, where `fn(conn, call: BoundCall, redacted_body) -> None`. `status-update` and `speech-update` belong to Coco, `end-of-call-report` to Harper. A type with no handler is kept in `vapi_raw_events` only. `transcript` and `tool-calls` are handled by the ingress itself.
 
-Handlers run inside the ingress transaction, in their own savepoint, with the call lock already held. They must not commit, must not call the network (500 ms ack budget; use the outbox), and must never store `confidence` or `dimensions`: `ctx.arguments` has them removed, and the ingress writes them to `agent_scores`. A handler that raises leaves its receipt `failed` plus a `call_events_failed` row, and a redelivery never reruns it.
+Handlers run inside the ingress transaction, in their own savepoint, with the call lock already held. They must not commit, must not call the network (500 ms ack budget; use the outbox), and must never store `confidence` or `dimensions`: `ctx.arguments` has them removed, and the ingress writes them to `agent_scores`. **Tool handlers run once.** A tool handler that raises leaves its receipt `failed` plus a `call_events_failed` row, and a redelivery never reruns it. The exception is a transient database error (`psycopg.OperationalError`: lock timeout, query cancel, deadlock, serialization failure, lost connection): it is re-raised, the whole delivery rolls back (receipt included) and Vapi gets a 503 and retries; in `dispatch_pending` the row stays `pending` for the next run.
+
+**Event handlers must be idempotent.** The receipt rule above is for tool handlers only. An event handler (`status-update`, `speech-update`, `end-of-call-report`) has no receipt: it runs again on every redelivery of the same message, and one that raises is dead-lettered into `call_events_failed` and never retried. So write it to be safe to run twice: pass a `dedup_key` to `append_event` (for example `status:<status>`, so a repeated status appends nothing), and make every UPDATE guarded (`... where status = 'talking'`, `... where state = 'open'`) so a second run changes nothing. End a call only through `end_call_transition`, which already does nothing for a terminal call.
 
 Anything stored or logged goes through `app.webhooks.redact.redact` / `redact_text`. Every log line passes through `RedactingFormatter` (installed on the root and uvicorn handlers at startup), which scrubs the process-wide `SecretRegistry`: settings secrets plus every capability URL seen since startup. Never log a raw Vapi body.

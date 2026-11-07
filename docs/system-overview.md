@@ -30,7 +30,7 @@ flowchart LR
   subgraph Backend["Backend · FastAPI on Railway (one process)"]
     API["API routers"]:::found
     ING["Webhook ingress<br/>auth · bind · redact · dedup"]:::found
-    REG["Registries<br/>routers · tools · events · startup"]:::found
+    REG["Registries<br/>routers · tools · events · startup · workers · shutdown"]:::found
     EVT["Event log<br/>append_event"]:::found
     LCK["calls_lock<br/>lock_call · end_call_transition"]:::found
     VP["Voice port<br/>VapiVoice · FakeVoicePlatform · prompt_safety"]:::found
@@ -87,9 +87,17 @@ Look for: the interfaces each owner codes against. Foundation code is built; own
 classDiagram
   class Registries {
     +add_router(router)
-    +on_startup(fn)
+    +on_startup(fn(ctx))
+    +add_worker(fn(ctx))
+    +on_shutdown(fn(ctx))
     +tools: ToolRegistry
     +events: EventRegistry
+  }
+  class AppContext {
+    <<frozen>>
+    +pool: AsyncConnectionPool?
+    +settings: Settings
+    +registries: Registries
   }
   class ToolRegistry {
     +register_tool_handler(name, fn)
@@ -183,6 +191,7 @@ classDiagram
   PromptSafety ..> Snapshot
   Registries *-- ToolRegistry
   Registries *-- EventRegistry
+  Registries ..> AppContext : hooks and workers receive
   ToolRegistry ..> ToolCallContext
   WebhookIngress ..> ToolRegistry : dispatch_pending(tools=reg.tools)
   WebhookIngress ..> WebhookNormalise
@@ -197,7 +206,7 @@ classDiagram
   HarperHandlers ..> EventRegistry : register(reg)
 ```
 
-**Your part:** Coco codes against `VoicePlatform`, `CallsLock` and the `ask_user` / `report_decision` / `status-update` / `speech-update` handlers. Harper codes against `report_outcome` and `end-of-call-report`. Steve and Lotto mostly add routers through `Registries.add_router`. Every owner package exposes `register(reg)`, which `create_app` finds automatically.
+**Your part:** Coco codes against `VoicePlatform`, `CallsLock` and the `ask_user` / `report_decision` / `status-update` / `speech-update` handlers. Harper codes against `report_outcome` and `end-of-call-report`. Steve and Lotto mostly add routers through `Registries.add_router`. Every owner package exposes `register(reg)`, which `create_app` finds automatically. `register` runs before the pool exists; loops (Coco's sweeper and outbox worker, Steve's notifier, Harper's jobs lane) go in `add_worker`, and each hook or worker gets an `AppContext` with the pool, settings and registries. Startup order: pool opens, startup hooks (the built-in `dispatch_pending` first), workers start. Shutdown order: workers cancelled and awaited, shutdown hooks, pool closes.
 
 The four rules every owner follows:
 
@@ -450,7 +459,9 @@ flowchart TD
   G -- "DB down in a unit (OperationalError)" --> Z
 ```
 
-Notes: a body that is not JSON, or has no `message`, is a 400 before anything else. A tool with no registered handler is stored `pending` and answered `"received"`; `dispatch_pending` runs it later. Unit errors are dead-lettered and the delivery is still acknowledged; only database failures give a 503 (`retryable`), so Vapi may retry.
+Notes: a body that is not JSON, or has no `message`, is a 400 before anything else. A tool with no registered handler is stored `pending` and answered `"received"`; `dispatch_pending` runs it later. Unit errors are dead-lettered and the delivery is still acknowledged; only database failures give a 503 (`retryable`), so Vapi may retry. A transient database error inside a handler (`psycopg.OperationalError`, such as a lock timeout or deadlock) is a database failure too: the whole delivery rolls back, receipt included, and is retried.
+
+Tool handlers run once: the receipt stops a redelivery from rerunning them. Event handlers (`status-update`, `speech-update`, `end-of-call-report`) have no receipt. They rerun on every redelivery, and one that raises is dead-lettered and never retried, so **event handlers must be idempotent**: pass a `dedup_key` to `append_event` (for example `status:<status>`) and use guarded UPDATEs (`... where state = 'open'`) so a second run changes nothing.
 
 **Your part (planned):** you write the coloured box labelled "event handler" or "tool handler" (Coco: `ask_user`, `report_decision`, `status-update`, `speech-update`; Harper: `report_outcome`, `end-of-call-report`). You run inside the transaction with the call lock held, so do not commit and do not call the network.
 
@@ -462,7 +473,7 @@ Notes: a body that is not JSON, or has no `message`, is a 400 before anything el
 - **Ask-first:** a profile value the agent must not say until the user approves it in a ping. It never goes into the prompt. `share_freely` values may.
 - **Outbox lane:** a queue inside the `outbox` table: `control` (commands to the live call), `notify` (pushes) and `jobs` (post-call work).
 - **Control URL:** the per-call Vapi URL used to send live commands. It is a secret: stored in `call_secrets`, deleted when the call ends, redacted from logs.
-- **Receipt:** the `tool_calls` row written for each Vapi tool call before its handler runs. A redelivery reuses it and never reruns the handler.
+- **Receipt:** the `tool_calls` row written for each Vapi tool call before its handler runs. A redelivery reuses it and never reruns the handler. Event handlers have no receipt, so they must be idempotent.
 
 Further reading:
 

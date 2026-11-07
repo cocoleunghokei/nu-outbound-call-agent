@@ -12,6 +12,12 @@ Owners register from their package's ``register(reg)``:
 Handlers run inside the ingress transaction under their own savepoint, after the call lock
 is held. They must not commit, must not call the network (500 ms ack budget), and must never
 store ``confidence``/``dimensions``: the ingress writes those to ``agent_scores`` itself.
+
+Tool handlers run once per tool call: the ``tool_calls`` receipt stops a redelivery from
+rerunning them. Event handlers have no receipt, so they rerun on every redelivery, and one
+that raises is dead-lettered and never retried. Event handlers must therefore be idempotent
+(see ``EventRegistry.register_event_handler``). A ``psycopg.OperationalError`` from either
+kind is transient: it rolls back the whole delivery and Vapi retries it (503).
 """
 
 from collections.abc import Awaitable, Callable
@@ -71,7 +77,15 @@ class EventRegistry:
         self._handlers: dict[str, EventHandler] = {}
 
     def register_event_handler(self, vapi_type: str, fn: EventHandler) -> None:
-        """Register ``fn`` for Vapi message type ``vapi_type``, replacing any earlier one."""
+        """Register ``fn`` for Vapi message type ``vapi_type``, replacing any earlier one.
+
+        ``fn`` must be idempotent. Unlike a tool handler it has no receipt: Vapi redelivers
+        the same message and ``fn`` runs again each time, and if it raises it is
+        dead-lettered into ``call_events_failed`` and never retried. Pass a ``dedup_key`` to
+        ``append_event`` (for example ``f"status:{status}"``) and guard every UPDATE with
+        the state it expects (``... where state = 'open'``), so a second run changes
+        nothing.
+        """
         self._handlers[vapi_type] = fn
 
     def get(self, vapi_type: str) -> EventHandler | None:
