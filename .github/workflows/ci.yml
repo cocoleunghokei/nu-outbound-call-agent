@@ -34,6 +34,8 @@ jobs:
               - 'supabase/**'
               - 'scripts/check-db.sh'
               - 'scripts/sql/**'
+              - 'backend/**'
+              - 'contracts/**'
               - '.github/workflows/ci.yml'
 
   hygiene:
@@ -58,7 +60,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Add backend toolchain setup here once the backend stack is picked.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project backend --frozen
       - uses: actions/setup-node@v7
         with:
           node-version: 20

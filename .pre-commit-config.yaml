@@ -1,6 +1,6 @@
 # Git hooks shared by the whole team. Install once with `make setup`.
 # CI runs the same hooks (`make hygiene`), so a commit that passes locally passes there.
-# Add language linters (ruff, eslint, prettier, ...) here once the stack is picked.
+# Add further language linters (eslint, prettier, ...) here as stacks land.
 default_install_hook_types: [pre-commit, commit-msg]
 default_stages: [pre-commit]
 
@@ -48,3 +48,13 @@ repos:
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
+
+  # Python lint and format for the backend.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff-check
+        files: ^backend/
+        args: [--fix]
+      - id: ruff-format
+        files: ^backend/
