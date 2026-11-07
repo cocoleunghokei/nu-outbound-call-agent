@@ -187,12 +187,27 @@ class CommandAppliedPayload(BaseModel):
     command: Command
 
 
+class State(Enum):
+    """
+    Disclosure state of a shared_fields row; moves approved, sent_to_agent, spoken
+    """
+
+    approved = "approved"
+    sent_to_agent = "sent_to_agent"
+    spoken = "spoken"
+
+
 class FieldSharedPayload(BaseModel):
     field_key: Annotated[str, Field(min_length=1)]
-    state: Annotated[str, Field(min_length=1)]
+    state: Annotated[
+        State,
+        Field(
+            description="Disclosure state of a shared_fields row; moves approved, sent_to_agent, spoken"
+        ),
+    ]
 
 
-class State(StrEnum):
+class State1(StrEnum):
     open = "open"
     answered = "answered"
     expired = "expired"
@@ -202,7 +217,7 @@ class State(StrEnum):
 
 class PingResolvedPayload(BaseModel):
     ping_id: UUID
-    state: State
+    state: State1
     reply_text: str | None = None
 
 
@@ -244,6 +259,7 @@ class Kind(Enum):
 
 
 class Ping(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     ping_id: UUID
     call_id: UUID
     kind: Annotated[
@@ -263,7 +279,7 @@ class Ping(BaseModel):
     remaining_ms: Annotated[
         int | None, Field(description="Time left on the reply clock, in milliseconds", ge=0)
     ]
-    state: State
+    state: State1
 
 
 class SuggestedReply(RootModel[str]):

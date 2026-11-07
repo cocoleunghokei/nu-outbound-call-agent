@@ -71,6 +71,15 @@ check("unknown status value (open enum) still parses as known", () => {
   const raw = { ...base, type: "status.changed", payload: { status: "teleporting" } };
   assert.equal(parseCallEvent(raw).kind, "known");
 });
+check("unknown field.shared state (closed enum) is invalid", () => {
+  const raw = { ...base, type: "field.shared", payload: { field_key: "date_of_birth", state: "bogus" } };
+  assert.equal(parseCallEvent(raw).kind, "invalid");
+});
+check("ping.opened carrying extra score fields still parses as known (tolerant reader)", () => {
+  const ping = readJson(join(eventsDir, "ping.opened.valid.json")).payload;
+  const raw = { ...base, type: "ping.opened", payload: { ...ping, confidence: "low" } };
+  assert.equal(parseCallEvent(raw).kind, "known");
+});
 check("unknown outcome value (open enum, nullable) still parses as known", () => {
   const raw = { ...base, type: "call.ended", payload: { outcome: "new_outcome", ended_reason: "x" } };
   assert.equal(parseCallEvent(raw).kind, "known");

@@ -13,8 +13,12 @@
       "minLength": 1
     },
     "state": {
-      "type": "string",
-      "minLength": 1
+      "enum": [
+        "approved",
+        "sent_to_agent",
+        "spoken"
+      ],
+      "description": "Disclosure state of a shared_fields row; moves approved, sent_to_agent, spoken"
     }
   }
 }

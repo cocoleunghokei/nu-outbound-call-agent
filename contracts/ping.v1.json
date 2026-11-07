@@ -73,5 +73,6 @@
       ],
       "x-open-enum": true
     }
-  }
+  },
+  "additionalProperties": false
 }

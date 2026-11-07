@@ -8,6 +8,6 @@
   "schema_version": 1,
   "payload": {
     "field_key": "calling_name",
-    "state": "shared"
+    "state": "sent_to_agent"
   }
 }

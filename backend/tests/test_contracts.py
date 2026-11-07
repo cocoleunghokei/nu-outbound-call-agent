@@ -96,6 +96,20 @@ def test_agent_decision_payload_rejects_score_fields() -> None:
         assert not is_valid("payloads/agent.decision.v1.json", {**payload, **extra})
 
 
+def test_ping_opened_payload_rejects_score_fields() -> None:
+    ping = read_json(EXAMPLES / "payloads" / "ping.opened.v1.valid.json")
+    assert is_valid("payloads/ping.opened.v1.json", ping)
+    for extra in ({"confidence": "low"}, {"dimensions": {"understood": True}}):
+        assert not is_valid("payloads/ping.opened.v1.json", {**ping, **extra})
+        assert not is_valid("ping.v1.json", {**ping, **extra})
+
+
+def test_field_shared_state_is_closed_enum() -> None:
+    for state in ("approved", "sent_to_agent", "spoken"):
+        assert is_valid("payloads/field.shared.v1.json", {"field_key": "k", "state": state})
+    assert not is_valid("payloads/field.shared.v1.json", {"field_key": "k", "state": "shared"})
+
+
 def test_tool_definitions_wrap_args_schemas() -> None:
     definitions = {d["function"]["name"]: d for d in tool_definitions()}
     assert set(definitions) == {"ask_user", "report_decision", "report_outcome"}
