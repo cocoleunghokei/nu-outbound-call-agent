@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import app as app_package
 from app.config import Settings
-from app.errors import install_error_handlers
+from app.errors import UnhandledErrorMiddleware, install_error_handlers
 from app.registry import Registries
 
 DEFAULT_PACKAGES_ROOT = Path(next(iter(app_package.__path__)))
@@ -63,6 +63,8 @@ def create_app(settings: Settings | None = None, packages_root: Path | None = No
     app = FastAPI(title="Call agent backend", lifespan=lifespan)
     app.state.settings = settings
     install_error_handlers(app)
+    # Added first so it sits inside CORS; CORS then decorates its 500 responses.
+    app.add_middleware(UnhandledErrorMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

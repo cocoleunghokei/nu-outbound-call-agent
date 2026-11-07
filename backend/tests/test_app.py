@@ -147,3 +147,25 @@ def test_cors_rejects_unknown_origin(origin: str) -> None:
     )
     assert response.status_code == 400
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_unhandled_error_response_carries_cors_header() -> None:
+    origin = "https://preview-123.vercel.app"
+    client = TestClient(make_app(), raise_server_exceptions=False)
+    response = client.get("/boom", headers={"Origin": origin})
+    assert response.status_code == 500
+    assert response.headers["access-control-allow-origin"] == origin
+    assert response.json()["error"] == {
+        "code": "internal",
+        "message": "Internal server error",
+        "retryable": True,
+    }
+
+
+def test_env_example_loads_with_defaults() -> None:
+    example = Path(__file__).parent.parent / ".env.example"
+    settings = Settings(_env_file=example)
+    assert settings.voice_platform == "fake"
+    assert settings.cors_origins == ["http://localhost:5173"]
+    assert settings.vapi_ip_allowlist is False
+    assert settings.supabase_jwt_secret is None

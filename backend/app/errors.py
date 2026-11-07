@@ -6,6 +6,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 logger = logging.getLogger(__name__)
 
@@ -60,14 +62,23 @@ async def _http_exception_handler(request: Request, exc: Exception) -> JSONRespo
     return response
 
 
-async def _unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.error("unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
-    return error_response("internal", 500, "Internal server error", True)
+class UnhandledErrorMiddleware(BaseHTTPMiddleware):
+    """Turn any unhandled exception into the shared 500 shape.
+
+    Must sit inside CORSMiddleware: Starlette's own catch-all handler runs outside it,
+    so its 500s would carry no CORS headers and browsers would report a CORS failure.
+    """
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        try:
+            return await call_next(request)
+        except Exception:
+            logger.exception("unhandled error on %s %s", request.method, request.url.path)
+            return error_response("internal", 500, "Internal server error", True)
 
 
 def install_error_handlers(app: FastAPI) -> None:
-    """Register the four handlers that render every error in the shared shape."""
+    """Register the three handlers that render every error in the shared shape."""
     app.add_exception_handler(ApiError, _api_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_handler)
     app.add_exception_handler(StarletteHTTPException, _http_exception_handler)
-    app.add_exception_handler(Exception, _unhandled_handler)
