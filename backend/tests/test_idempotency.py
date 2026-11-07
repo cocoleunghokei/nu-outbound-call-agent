@@ -91,3 +91,23 @@ def test_claim_without_stored_response_is_reclaimable(
                 assert row == (None,)
 
     asyncio.run(scenario())
+
+
+def test_claim_creates_missing_profile(
+    supabase_env: SupabaseEnv, signed_up_user: SignedUpUser
+) -> None:
+    """A user with an auth.users row but no profiles row can still claim a key."""
+    user_id, key = signed_up_user.user_id, uuid.uuid4()
+
+    async def scenario() -> None:
+        async with await psycopg.AsyncConnection.connect(supabase_env.db_url) as conn:
+            await conn.execute("delete from public.profiles where id = %s", (user_id,))
+            await conn.commit()
+            async with conn.transaction():
+                assert await claim_idempotency(conn, user_id, key) is None
+            row = await (
+                await conn.execute("select 1 from public.profiles where id = %s", (user_id,))
+            ).fetchone()
+            assert row == (1,)
+
+    asyncio.run(scenario())

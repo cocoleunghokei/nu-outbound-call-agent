@@ -83,8 +83,8 @@ jobs:
       - uses: supabase/setup-cli@v3
         with:
           version: 2.122.0
-      - run: make db-check
       - run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector
+      - run: make db-check
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'

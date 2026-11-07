@@ -102,6 +102,8 @@ async def _signing_key(request: Request, settings: Settings, token: str) -> tupl
         key = await _get_jwks_cache(request, settings).get_key(kid)
         if key is None:
             raise _unauthenticated()
+        if key.algorithm_name != alg:
+            raise _unauthenticated()
         return key.key, str(alg)
     if alg == "HS256" and settings.supabase_jwt_secret is not None:
         return settings.supabase_jwt_secret.get_secret_value(), "HS256"
@@ -132,7 +134,7 @@ async def current_user(
         )
     except jwt.ExpiredSignatureError as exc:
         raise ApiError("token_expired", 401, "Token has expired", False) from exc
-    except jwt.PyJWTError as exc:
+    except (jwt.PyJWTError, TypeError, ValueError) as exc:
         raise _unauthenticated() from exc
     try:
         return uuid.UUID(str(claims["sub"]))

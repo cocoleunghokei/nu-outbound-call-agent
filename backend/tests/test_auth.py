@@ -1,5 +1,6 @@
 """Tests for Supabase JWT verification and GET /me."""
 
+import base64
 import json
 import time
 import uuid
@@ -202,6 +203,24 @@ def test_unknown_kid_triggers_one_refetch() -> None:
     now[0] += 5
     assert_unauthenticated(client.get("/whoami", headers=bearer(es256_token(ghost, "ghost"))))
     assert fake.fetches == 2
+
+
+def test_alg_key_mismatch_401() -> None:
+    fake = FakeJwks()
+    fake.add_key("key-1")  # an ES256 JWK
+    client = make_client(jwks_cache(fake))
+    forged = jwt.encode(
+        {"sub": str(USER_ID), "aud": "authenticated", "iss": ISSUER, "exp": time.time() + 60},
+        SECRET,
+        algorithm="HS256",
+        headers={"kid": "key-1"},
+    )
+    header, payload, signature = forged.split(".")
+    bad_header = base64.urlsafe_b64encode(
+        json.dumps({"alg": "RS256", "typ": "JWT", "kid": "key-1"}).encode()
+    ).rstrip(b"=")
+    token = f"{bad_header.decode()}.{payload}.{signature}"
+    assert_unauthenticated(client.get("/whoami", headers=bearer(token)))
 
 
 def test_hs256_rejected_when_no_secret_configured() -> None:

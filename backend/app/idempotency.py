@@ -40,8 +40,12 @@ async def claim_idempotency(
 
     Returns the stored response for a replay, or None when the caller should do the work and
     then call store_idempotent_response in the same transaction. Raises 409 in_progress if
-    another transaction holds the claim. The profile row for user_id must exist.
+    another transaction holds the claim. Creates the profile row if missing, because
+    idempotency_keys.user_id references public.profiles and no trigger creates profiles.
     """
+    await conn.execute(
+        "insert into public.profiles (id) values (%s) on conflict (id) do nothing", (user_id,)
+    )
     locked = await (
         await conn.execute(
             "select pg_try_advisory_xact_lock(hashtextextended(%s, 0))",
