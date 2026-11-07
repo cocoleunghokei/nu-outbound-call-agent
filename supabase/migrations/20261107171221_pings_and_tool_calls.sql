@@ -25,7 +25,8 @@ revoke all on public.pings from anon, authenticated;
 grant select on public.pings to authenticated;
 create policy pings_select_own on public.pings
   for select to authenticated using (
-    exists (select 1 from public.calls c where c.id = call_id and c.user_id = (select auth.uid())));
+    exists (select 1 from public.calls c
+            where c.id = pings.call_id and c.user_id = (select auth.uid())));
 
 alter publication supabase_realtime add table public.pings;
 

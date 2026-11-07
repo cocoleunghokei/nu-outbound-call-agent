@@ -85,6 +85,7 @@ create policy calls_select_own on public.calls
   for select to authenticated using (user_id = (select auth.uid()));
 create policy call_events_select_own on public.call_events
   for select to authenticated using (
-    exists (select 1 from public.calls c where c.id = call_id and c.user_id = (select auth.uid())));
+    exists (select 1 from public.calls c
+            where c.id = call_events.call_id and c.user_id = (select auth.uid())));
 
 alter publication supabase_realtime add table public.call_events;

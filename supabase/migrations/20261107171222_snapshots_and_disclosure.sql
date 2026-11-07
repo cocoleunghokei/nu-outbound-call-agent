@@ -26,4 +26,5 @@ revoke all on public.shared_fields from anon, authenticated;
 grant select on public.shared_fields to authenticated;
 create policy shared_fields_select_own on public.shared_fields
   for select to authenticated using (
-    exists (select 1 from public.calls c where c.id = call_id and c.user_id = (select auth.uid())));
+    exists (select 1 from public.calls c
+            where c.id = shared_fields.call_id and c.user_id = (select auth.uid())));

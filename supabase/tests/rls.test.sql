@@ -1,7 +1,7 @@
 -- pgTAP tests for row-level security and grants. Run by `supabase test db`
 -- (called from scripts/check-db.sh). Fake data only.
 begin;
-select plan(43);
+select plan(44);
 
 -- Seed as the owner role (bypasses RLS) before switching identity.
 insert into auth.users (id, email) values
@@ -139,6 +139,9 @@ select throws_ok(
   $$insert into public.pings (call_id, kind, question, vapi_tool_call_id, source_ts)
     values ('00000000-0000-0000-0000-0000000000d1', 'decision', 'Second?', 'tc-2', now())$$,
   '23505', null, 'second open ping for a call violates unique index');
+
+select col_is_pk('public', 'push_subscriptions', 'id',
+  'push_subscriptions has a uuid primary key (id)');
 
 select * from finish();
 rollback;

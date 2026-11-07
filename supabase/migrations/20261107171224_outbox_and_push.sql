@@ -33,6 +33,7 @@ revoke all on sequence public.outbox_id_seq from anon, authenticated;
 
 -- Browser: owner can list and delete their own Web Push subscriptions; the backend inserts.
 create table public.push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
   endpoint text not null unique,
   p256dh text not null,
