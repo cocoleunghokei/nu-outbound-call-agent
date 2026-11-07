@@ -2,7 +2,7 @@
 
 > **Read-only snapshot. Notion is the master copy.**
 > Source: the "Product Requirements" section of the [NU Launch Labs Outbound Call Agent](https://app.notion.com/p/NU-Launch-Labs-Outbound-Call-Agent-402b6bc9644c80d7ad0ae5636298240f) Notion page.
-> Snapshot taken 2026-11-04 from the Notion version last updated Oct 26, 2026 (owners: Coco, Lotto · status: draft for team review). Refreshed 2026-11-05 with per-requirement owners and the System Architecture section.
+> Snapshot taken 2026-11-04 from the Notion version last updated Oct 26, 2026 (owners: Coco, Lotto · status: draft for team review). Refreshed 2026-11-05 with per-requirement owners and the System Architecture section. Refreshed 2026-11-06 with the tech doc decisions (ON-3, ON-5, DC-4, DC-11). These are not in Notion yet, because the workspace is at its free block limit.
 >
 > To change a requirement, edit it in Notion first, then refresh this file in a `docs` PR. If the two disagree, Notion wins.
 > Requirement IDs (`ON-`, `PC-`, `DC-`, `PO-`) are stable: specs, tests and code cite them, so never renumber or reuse one.
@@ -42,9 +42,9 @@
 |---|---|---|---|---|---|
 | ON-1 | Sign up and sign in | Email sign-in via Supabase Auth. A user only ever sees their own profile and calls (RLS). | P1 | Eng: RLS on every table (see CONTRIBUTING). |  |
 | ON-2 | Explain how the agent works | Before the profile step, show the user: the agent says it's an AI, says the call is transcribed, calls from our number, and pauses to ask you when unsure. The user acknowledges once. | P1 | Design: short, 1 screen. Sets expectations for pings. |  |
-| ON-3 | Basic profile | Name, phone, email, date of birth, address. Required: name and phone. | P0 | Collect once, reuse everywhere. | Steve |
+| ON-3 | Basic profile | Name, calling name, phone, email, date of birth, address. Required: name, calling name and phone. The calling name is how the agent introduces who it is calling for (DC-1). It defaults to the full name and can be edited (e.g. "Alex" or "Alex C."). | P0 | Collect once, reuse everywhere. The profile UI explains the calling name is always said on calls. | Steve |
 | ON-4 | Extended profile | Typical availability windows, default party size, dietary needs, doctors/providers (name, office, phone), insurance (carrier, member ID). All optional, and can be added later or mid-flow. | P1 | Design: progressive. Don't block first call on this. |  |
-| ON-5 | Per-field sharing setting | Each field is set to **Share freely** or **Ask me first**. Defaults: DOB, address, insurance = Ask me first. Others = Share freely. | P0 | Core trust feature. During a call, ask-first fields always trigger a ping (DC-6). | Steve |
+| ON-5 | Per-field sharing setting | Each field is set to **Share freely** or **Ask me first**. Defaults: DOB, address, insurance = Ask me first. Others = Share freely. Exception: the calling name is always shared and can't be set to Ask me first, because DC-1 says it in the first sentence. | P0 | Core trust feature. During a call, ask-first fields always trigger a ping (DC-6). | Steve |
 | ON-6 | Browser notification permission | Ask for notification permission with a clear reason ("so we can ask you mid-call"), then send a test notification. If the user denies it, warn that pings only show in the open tab. | P0 | Eng: Web Push / Notification API. Design: handle the denied state. | Steve |
 | ON-7 | Edit profile anytime | Profile page to edit fields and sharing settings. Changes apply to future calls. | P0 |  | Steve |
 
@@ -96,14 +96,14 @@
 | DC-1 | Opening disclosure | The first sentence names who we're calling for, says it's an AI assistant, and says the call is transcribed. E.g. "Hi, I'm an AI assistant calling on behalf of Alex Chen. This call is transcribed. I'd like to book a table for..." | P0 | Massachusetts requires every party's consent to recording/transcription (open notice at the start). Meta Muse lost trust by not disclosing. | Coco |
 | DC-2 | Phone menus and hold | Navigate IVR menus (DTMF), wait on hold, detect when a human picks up. | P2 | Eng: check Vapi support. Many doctor offices use IVR. |  |
 | DC-3 | Live transcript | The web app streams the transcript with speaker labels (Agent / Business / You), with under ~2s delay. | P0 |  | Coco |
-| DC-4 | Confidence-driven decisions | For every question or offer from the other side, the agent scores its candidate response against the brief (goal, profile, constraints, fallbacks).<br>**High:** act and log it.<br>**Low:** stall and ping, and if there's no reply, end the call (DC-9). When the other side counters or rejects a fallback, re-score the new offer. An offer that matches a stated fallback scores High. | P0 | Core differentiator. Eng: define the scoring rubric and thresholds in the tech doc. Log every score for debugging. | Coco |
+| DC-4 | Confidence-driven decisions | For every question or offer from the other side, the agent scores its candidate response against the brief (goal, profile, constraints, fallbacks).<br>**High:** act and log it.<br>**Medium:** every constraint is met but a preference is missed. Act, and flag the miss in the live feed.<br>**Low:** stall and ping, and if there's no reply, end the call (DC-9). When the other side counters or rejects a fallback, re-score the new offer. An offer that matches a stated fallback scores High. Ask-me-first fields and money (a deposit, a fee or a never-agree item) always ping, whatever the score. | P0 | Core differentiator. The rubric (2 gates, 4 checks, no numeric threshold) is in the [tech doc](tech-doc-during-call.md). Log every score for debugging. | Coco |
 | DC-5 | Explain decisions, hide the score | The score is never shown. Every action and ping shows a plain-language reason, e.g. "They offered 4pm. You said before 3pm." or "Matched your fallback: Tue 2pm." | P0 | Design: the reason is the main content of the ping card. | Coco |
 | DC-6 | Ask-first fields always ping | If the agent needs an Ask-me-first field (e.g. insurance ID), it pings the user regardless of confidence. | P0 | Shows up in the post-call "what was shared" log. | Coco |
 | DC-7 | Pause and ping, keep the line open | While waiting, the agent uses a natural hold script ("Let me check with Alex, one moment") and reassures the other side every ~15s. Default timeout is 45s, to be tuned from test calls. | P0 | The biggest unvalidated assumption: will a receptionist wait? Test this early with role-play calls. | Coco |
 | DC-8 | Ping delivery and reply | Browser push notification plus an in-app card: the question, the reason, 2–4 suggested one-tap replies, and a free-text box. Clicking the notification focuses the live-call tab. | P0 | Laptop/browser only for the MVP. Design: must work from a glance.<br>Free text box → need to clean up user’s input and convert to a message | Coco |
 | DC-9 | No reply in time | On timeout: if a High-confidence fallback fits, use it and log the reason. Otherwise end politely ("I'll confirm with Alex and call back"), and mark the call Needs follow-up. Never guess on Low confidence. | P0 |  | Coco |
 | DC-10 | Send an instruction anytime | The user can type an instruction (e.g. "ask if they have Saturday") and the agent works it in at the next natural turn. | P0 |  | Lotto |
-| DC-11 | Pause agent / end call | Pause: the agent asks the other side to hold. End: the agent says a polite goodbye and hangs up. | P0 |  | Coco |
+| DC-11 | Pause agent / end call | Pause: the agent asks the other side to hold. While paused, an open ping's timer stops and picks up where it left off on Resume. The agent keeps the business informed with a short reassurance every ~15s, and after 2 min paused (to be tuned from test calls) it offers to call back and ends politely as Needs follow-up. End: the agent says a polite goodbye and hangs up. | P0 |  | Coco |
 | DC-12 | Live voice takeover | The user joins from their laptop mic (WebRTC). The agent goes silent and can be handed back control. | P1 | Hardest piece. Eng: check whether Vapi supports a live listen/join. |  |
 | DC-13 | Guardrails | Never claim to be human. Answer "are you a robot?" honestly. Never share info that isn't in the brief, and never invent details. Never agree to payments, deposits or fees without a ping. If the business refuses to talk to an AI: apologise, end, and mark the call "Refused AI". | P0 |  | Lotto |
 | DC-14 | Call status | Visible states: Dialing, In phone menu, On hold, Talking, Waiting on you, Ended. | P0 |  | Coco |
@@ -139,7 +139,7 @@
 
 The full blueprint is [docs/architecture.md](architecture.md) (status: Proposed, for the tech doc). In short: a browser web app talks to one backend service, which drives the call through Vapi on our Twilio number. Supabase provides Postgres, Auth and Realtime, an LLM API builds the pre-call brief and the post-call summary, and Web Push delivers pings.
 
-**Needs a decision (Coco, Lotto):** a "calling name" profile field that is always shared, because DC-1 requires the opening line to name who we're calling for, while ON-5 lets any field be Ask me first. See the opening-line rules in [docs/architecture.md](architecture.md).
+**Decided (Coco):** the profile has a required, always-shared calling name (ON-3, ON-5), because DC-1 says it in the opening line. The technical design for the During-call requirements is in [docs/tech-doc-during-call.md](tech-doc-during-call.md).
 
 ## AI Disclosure examples
 
@@ -155,6 +155,5 @@ The full blueprint is [docs/architecture.md](architecture.md) (status: Proposed,
 
 Copied as written above; to be fixed in Notion by the owners, then refreshed here.
 
-- **DC-4** and the "During call" decisions describe a *three-tier* confidence score, but only **High** and **Low** are defined. The middle tier is missing.
 - **PO-6** is cut off: "List of past calls with."
 - **PO-9** cites "PC-10's read access". Calendar read access is **PC-9**; there is no PC-10.

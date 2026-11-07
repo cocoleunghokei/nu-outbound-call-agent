@@ -4,7 +4,7 @@
 **Inputs:** [docs/requirements.md](requirements.md) (requirement IDs below refer to it) and the [Vapi API test design](superpowers/specs/2026-10-28-vapi-api-test-design.md).
 **Depends on:** the Vapi go/no-go from the probe session. If Vapi fails probe 3, the same shape applies with Retell in the voice-platform box. Only the adapter changes.
 
-This is a high-level design. It fixes the components, the edges between them, the protocol on each edge, and the delivery rules the pause-and-ping loop needs. It leaves the language, framework and host to the tech doc.
+This is a high-level design. It fixes the components, the edges between them, the protocol on each edge, and the delivery rules the pause-and-ping loop needs. It leaves the language, framework and host to the tech doc ([docs/tech-doc-during-call.md](tech-doc-during-call.md): host is Railway, and the language and framework are still to confirm).
 
 ## 0. Context and sizing
 
@@ -320,9 +320,11 @@ The guarantees are stated as they are, including where they are weaker than "exa
 
 - Order matters only **within a call**. `seq` is assigned on insert under a per-call lock, so the browser can render in order and detect gaps.
 - **All control-URL commands for a call go through the control lane**, fillers included. Just before each send, the worker re-reads the call and ping state, and drops a command the state has made obsolete. Rules between commands:
-  - **Pause** suppresses filler and mutes the assistant; open ping timers keep running.
-  - **A reply or a timeout while paused** queues `unmute` first, then the reply or the timeout message, so the fallback or goodbye is audible.
-  - **Resume** unmutes.
+  - **Pause** suppresses filler and mutes the assistant, and freezes an open ping's timer. Under the ping lock it stores the time left (`expires_at` minus `clock_timestamp()`) and clears `expires_at`, so the timeout can't fire while paused. A reassurance `say` plays every 15 s while paused.
+  - **Resume** sets `expires_at` to `clock_timestamp()` plus the stored time left, so the timer picks up where it left off.
+  - **A reply while paused** queues `unmute` first, then the reply, so it is audible.
+  - **Pause cap (proposed 2 min, tuned from test calls):** queues `unmute`, then a call-back offer and goodbye, and the outcome is Needs follow-up (DC-11).
+  - **Resume** also unmutes.
   - **End** cancels the open ping and marks every pending control row for the call `cancelled`, then queues unmute (if paused) and the goodbye `say` with `endCallAfterSpoken`. Only if the call is still live 6 s later does it send `end-call`. Nothing queued after End is sent.
 - Call status is a state machine: `creating → dialing → in_phone_menu? → talking ⇄ waiting_on_you ⇄ on_hold → ended`, with `creation_uncertain` and `failed` off `creating`. Transitions out of `ended` are rejected, so a late `status-update` can't revive a call. `waiting_on_you` comes from an open ping and `on_hold` from a user pause, not from Vapi events (DC-14).
 - Transcript events are ordered by Vapi's start timestamp, not arrival time.
