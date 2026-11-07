@@ -2,7 +2,7 @@
 
 > **Read-only snapshot. Notion is the master copy.**
 > Source: the "Product Requirements" section of the [NU Launch Labs Outbound Call Agent](https://app.notion.com/p/NU-Launch-Labs-Outbound-Call-Agent-402b6bc9644c80d7ad0ae5636298240f) Notion page.
-> Snapshot taken 2026-11-04 from the Notion version last updated Oct 26, 2026 (owners: Coco, Lotto · status: draft for team review). Refreshed 2026-11-05 with per-requirement owners and the System Architecture section. Refreshed 2026-11-06 with the tech doc decisions (ON-3, ON-5, DC-4, DC-11). These are not in Notion yet, because the workspace is at its free block limit.
+> Snapshot taken 2026-11-04 from the Notion version last updated Oct 26, 2026 (owners: Coco, Lotto · status: draft for team review). Refreshed 2026-11-05 with per-requirement owners and the System Architecture section. Refreshed 2026-11-06 with the tech doc decisions (ON-3, ON-5, DC-4, DC-11). Refreshed again 2026-11-06 with prototype feedback: chat-based one-time onboarding and the chat page as home (ON-8, PC-1). These are not in Notion yet, because the workspace is at its free block limit.
 >
 > To change a requirement, edit it in Notion first, then refresh this file in a `docs` PR. If the two disagree, Notion wins.
 > Requirement IDs (`ON-`, `PC-`, `DC-`, `PO-`) are stable: specs, tests and code cite them, so never renumber or reuse one.
@@ -35,6 +35,7 @@
 - **Explain up front that the agent says it's an AI and that calls are transcribed.** Users aren't surprised later, and it sets up the pings.
 - **Ask for notification permission during onboarding, with a test ping.** A missed ping means a dropped call. The MVP is laptop and browser only, with no SMS or phone app.
 - **The extended profile (insurance, providers, availability) is optional and P1.** It shouldn't block the first call.
+- **Onboarding is a one-time chat, separate from placing calls.** Once the profile is set up, onboarding is done and the user is never sent through it again. Prototype feedback (Nov 6): profile setup and call setup were one flow, so a returning user could only place a call through the restart button.
 
 **Requirements**
 
@@ -47,6 +48,7 @@
 | ON-5 | Per-field sharing setting | Each field is set to **Share freely** or **Ask me first**. Defaults: DOB, address, insurance = Ask me first. Others = Share freely. Exception: the calling name is always shared and can't be set to Ask me first, because DC-1 says it in the first sentence. | P0 | Core trust feature. During a call, ask-first fields always trigger a ping (DC-6). | Steve |
 | ON-6 | Browser notification permission | Ask for notification permission with a clear reason ("so we can ask you mid-call"), then send a test notification. If the user denies it, warn that pings only show in the open tab. | P0 | Eng: Web Push / Notification API. Design: handle the denied state. | Steve |
 | ON-7 | Edit profile anytime | Profile page to edit fields and sharing settings. Changes apply to future calls. | P0 |  | Steve |
+| ON-8 | Onboarding completes once | Onboarding runs as a chat that covers ON-2 to ON-6. When it finishes, the user is marked as onboarded and lands on the chat home (PC-1). An onboarded user who comes back skips onboarding and goes straight to the chat home. Profile changes go through ON-7, never by re-running onboarding. | P0 | Design: no "restart" path is needed to place a new call. From prototype feedback, Nov 6. | |
 
 ## 2. Pre-call
 
@@ -59,13 +61,13 @@
 - **Constraints and fallbacks are first-class inputs.** They're what the confidence score checks against, and a good fallback lets the agent act without bothering the user.
 - **The pre-call review is the last checkpoint.** It shows exactly what the agent may share and say, before anything happens.
 - **The calendar (read-only, P1) fills in availability automatically.** The user doesn't have to type their schedule.
-- **The UI (chat, form or a mix) is left to the designer.** These requirements define what must be gathered, not how.
+- **Calls are placed from the chat page, which is the home screen.** A returning user lands there and can start a new call right away, without going through onboarding again (ON-8). How the chat gathers each field is left to the designer.
 
 **Requirements**
 
 | ID | Requirement | Details / acceptance criteria | Priority | Notes for design & eng | Owner |
 |---|---|---|---|---|---|
-| PC-1 | Start a call: template or custom | The entry point offers templates and a "Custom call" option. | P0 | Designer decides the UI (chat, form, or hybrid). | Lotto |
+| PC-1 | Start a call: template or custom | The chat page is the home screen and the entry point for every call. It offers templates and a "Custom call" option, and the user can start a new call from it at any time. | P0 | Chat UI decided Nov 6 (prototype feedback). Designer decides how templates appear in the chat. | Lotto |
 | PC-2 | Templates | P0: Restaurant (book), Doctor (book). P1: Restaurant (cancel/modify), Doctor (cancel/reschedule). Each template defines its required fields, the likely questions the other side will ask, and the default constraints. | P0 | Templates are config, not code. Easy to add more later. | Harper |
 | PC-3 | Custom call | User enters the business name, phone number and goal in plain words. The system turns this into a structured call brief. | P0 | This is the general case. Templates are shortcuts. | Lotto |
 | PC-4 | Gather missing context | The system builds a call brief from goal + profile + template. It detects missing required info and asks the user for it before the call (e.g. "Which doctor?", "New or existing patient?"). | P0 | Design: how we ask is up to the designer. Requirement: ask only for what's missing, and never re-ask for anything already in the profile. | Lotto |
