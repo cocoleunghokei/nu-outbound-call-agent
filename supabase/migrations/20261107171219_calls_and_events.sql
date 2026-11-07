@@ -10,7 +10,8 @@ create table public.calls (
     'creating', 'creation_uncertain', 'dialing', 'in_phone_menu', 'talking',
     'waiting_on_you', 'on_hold', 'ended', 'failed')),
   outcome text check (outcome in (
-    'booked', 'cancelled', 'rescheduled', 'needs_follow_up', 'refused_ai', 'wrong_number')),
+    'booked', 'cancelled', 'rescheduled', 'needs_follow_up', 'refused_ai', 'wrong_number',
+    'failed', 'no_answer')),
   vapi_call_id text unique,
   create_attempted_at timestamptz,
   last_seq int not null default 0,

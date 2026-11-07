@@ -169,6 +169,8 @@ class Outcome(Enum):
     needs_follow_up = "needs_follow_up"
     refused_ai = "refused_ai"
     wrong_number = "wrong_number"
+    failed = "failed"
+    no_answer = "no_answer"
 
 
 class CallEndedPayload(BaseModel):
@@ -362,6 +364,15 @@ class ReportDecisionArgs(BaseModel):
     ]
 
 
+class Outcome1(Enum):
+    booked = "booked"
+    cancelled = "cancelled"
+    rescheduled = "rescheduled"
+    needs_follow_up = "needs_follow_up"
+    refused_ai = "refused_ai"
+    wrong_number = "wrong_number"
+
+
 class Details(BaseModel):
     date: str | None = None
     time: str | None = None
@@ -370,7 +381,7 @@ class Details(BaseModel):
 
 
 class ReportOutcomeArgs(BaseModel):
-    outcome: Outcome
+    outcome: Outcome1
     business_confirmed: Annotated[
         bool, Field(description="True only if the other side explicitly confirmed it, in words")
     ]

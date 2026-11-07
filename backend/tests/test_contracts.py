@@ -200,3 +200,9 @@ def test_schemas_load_from_package(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_packaged_schemas_match_contracts() -> None:
     for name in schema_names():
         assert load_schema(name) == read_json(CONTRACTS / name)
+
+
+def test_call_ended_accepts_failed_and_no_answer_outcomes() -> None:
+    """PO-1: Failed and no-answer are call outcomes, not only a status."""
+    for outcome in ("failed", "no_answer", "booked", None):
+        assert is_valid("payloads/call.ended.v1.json", {"outcome": outcome, "ended_reason": "x"})

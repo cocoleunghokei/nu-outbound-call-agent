@@ -1,7 +1,7 @@
 -- pgTAP tests for row-level security and grants. Run by `supabase test db`
 -- (called from scripts/check-db.sh). Fake data only.
 begin;
-select plan(41);
+select plan(43);
 
 -- Seed as the owner role (bypasses RLS) before switching identity.
 insert into auth.users (id, email) values
@@ -127,8 +127,14 @@ select throws_ok('select 1 from public.call_profile_snapshots', '42501', null, '
 select throws_ok('select 1 from public.outbox', '42501', null, 'anon denied outbox');
 select throws_ok('select 1 from public.idempotency_keys', '42501', null, 'anon denied idempotency_keys');
 
--- Back to the owner role: at most one open ping per call.
+-- Back to the owner role: outcome check, then at most one open ping per call.
 reset role;
+select lives_ok(
+  $$update public.calls set outcome = 'no_answer' where id = '00000000-0000-0000-0000-0000000000d1'$$,
+  'no_answer is an accepted call outcome');
+select throws_ok(
+  $$update public.calls set outcome = 'bogus' where id = '00000000-0000-0000-0000-0000000000d1'$$,
+  '23514', null, 'unknown call outcome violates check');
 select throws_ok(
   $$insert into public.pings (call_id, kind, question, vapi_tool_call_id, source_ts)
     values ('00000000-0000-0000-0000-0000000000d1', 'decision', 'Second?', 'tc-2', now())$$,

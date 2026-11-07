@@ -20,6 +20,8 @@
         "needs_follow_up",
         "refused_ai",
         "wrong_number",
+        "failed",
+        "no_answer",
         null
       ],
       "x-open-enum": true
