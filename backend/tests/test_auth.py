@@ -20,7 +20,7 @@ from app.idempotency import idempotency_key
 from app.main import create_app
 from tests.conftest import SignedUpUser, SupabaseEnv
 
-SECRET = "test-secret-with-at-least-32-characters-long"
+SECRET = "test-secret-with-at-least-32-characters-long"  # gitleaks:allow
 ISSUER = "http://issuer.example.test/auth/v1"
 USER_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 
