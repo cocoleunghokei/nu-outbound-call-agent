@@ -184,6 +184,9 @@ async def run_tool_handler(
     the result and the scores (from the full ``arguments``) go to ``agent_scores``. On failure
     only that savepoint is rolled back; the receipt becomes ``failed`` with the redacted error
     and a ``call_events_failed`` row is written, so a redelivery never reruns the handler.
+    A ``psycopg.OperationalError`` (lock timeout, query cancel, deadlock, serialization
+    failure, lost connection) is transient and is re-raised instead, so the caller's
+    transaction rolls back with the receipt and the work is retried later.
     Either way ``confidence``/``dimensions`` are removed from the receipt's ``arguments`` in
     the same UPDATE, so after the pending state scores live only in ``agent_scores``.
     """
@@ -199,6 +202,11 @@ async def run_tool_handler(
                 (Jsonb(result), ctx.call_id, ctx.tool_call_id),
             )
             await _store_scores(conn, ctx, arguments)
+    except psycopg.OperationalError:
+        # Transient (lock timeout, cancel, deadlock, serialization, connection): not the
+        # handler's fault. Re-raise so the caller's whole transaction rolls back and the
+        # receipt is retried: a 503 to Vapi on ingress, still pending in dispatch_pending.
+        raise
     except Exception as exc:
         error = format_error(exc, secrets)
         await conn.execute(
@@ -420,11 +428,21 @@ async def dispatch_pending(
     Reads candidates without locks, then gives each its own transaction: ``lock_call``, then
     ``select ... for update skip locked`` on the still-pending receipt (a row that is gone,
     handled or locked by another dispatcher is skipped). A failing handler marks its receipt
-    ``failed`` and writes a dead letter. Never raises. Returns the number handled.
+    ``failed`` and writes a dead letter. A transient database error (``OperationalError``)
+    rolls back only that candidate's transaction, is logged, and leaves the row ``pending``
+    for the next run. Never raises. Returns the number handled.
 
-    ``tools`` is the app's tool registry. Startup passes it from ``create_app``; Coco's
-    sweeper calls ``dispatch_pending(pool, tools=reg.tools)`` on each tick, with the ``reg``
-    it captured in its package's ``register(reg)``.
+    ``tools`` is the app's tool registry. The internal startup hook passes it; Coco's sweeper
+    is a worker that gets the pool and registry from its ``AppContext``::
+
+        async def sweeper(ctx: AppContext) -> None:
+            while True:
+                if ctx.pool is not None:
+                    await dispatch_pending(ctx.pool, tools=ctx.registries.tools)
+                await asyncio.sleep(5)
+
+        def register(reg: Registries) -> None:
+            reg.add_worker(sweeper)
     """
     names = tools.names()
     if not names:
@@ -485,6 +503,13 @@ async def dispatch_pending(
                 failed += 1
         except CallNotFound:
             continue
+        except psycopg.OperationalError as exc:
+            logger.warning(
+                "dispatch_pending: transient database error on a tool call of call %s,"
+                " left pending (%s)",
+                call_id,
+                type(exc).__name__,
+            )
         except Exception:
             logger.exception("dispatch_pending failed on a tool call of call %s", call_id)
     if handled or failed:

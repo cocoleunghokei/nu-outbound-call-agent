@@ -1455,3 +1455,102 @@ def test_event_handler_sees_ended_at_from_locked_row(
         assert call.call_id == fresh_call.call_id and call.user_id == fresh_call.user_id
 
     asyncio.run(scenario())
+
+
+async def _lock_not_available(conn: AsyncConnection[Any], ctx: ToolCallContext) -> str:
+    """A tool handler that hits a transient database error (lock_timeout expired)."""
+    raise psycopg.errors.LockNotAvailable("canceling statement due to lock timeout")
+
+
+@pytest.mark.db
+def test_transient_db_error_in_tool_handler_is_503_and_leaves_no_receipt(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    """A transient OperationalError must not mark the receipt failed: Vapi retries instead."""
+
+    async def scenario() -> None:
+        tc = f"tc-{uuid.uuid4()}"
+        app = create_app(make_settings(supabase_env.db_url))
+        registries(app).tools.register_tool_handler("report_outcome", _lock_not_available)
+        async with serve(app) as client:
+            response = await post(
+                client, tool_body(fresh_call, [(tc, "report_outcome", OUTCOME_ARGS)])
+            )
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "db_unavailable"
+        assert response.json()["error"]["retryable"] is True
+        assert await receipts(supabase_env.db_url, fresh_call) == {}
+        assert await failed_errors(supabase_env.db_url, fresh_call) == []
+        assert await raw_bodies(supabase_env.db_url, fresh_call) == []
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_transient_db_error_in_dispatch_pending_keeps_row_pending(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    async def scenario() -> None:
+        tc = f"tc-{uuid.uuid4()}"
+        app = create_app(make_settings(supabase_env.db_url))
+        async with serve(app) as client:
+            await post(client, tool_body(fresh_call, [(tc, "report_outcome", OUTCOME_ARGS)]))
+            registries(app).tools.register_tool_handler("report_outcome", _lock_not_available)
+            await dispatch_pending(app.state.pool, tools=registries(app).tools)
+            state = await receipts(supabase_env.db_url, fresh_call)
+            assert state[tc][:3] == ("pending", None, None)
+            assert await failed_errors(supabase_env.db_url, fresh_call) == []
+            # The next tick, with the database healthy again, handles it (and leaves no
+            # pending row behind for later tests' startup dispatch).
+            recorder = Recorder("Outcome recorded.")
+            registries(app).tools.register_tool_handler("report_outcome", recorder)
+            await dispatch_pending(app.state.pool, tools=registries(app).tools)
+        assert tc in recorder.ids()
+        state = await receipts(supabase_env.db_url, fresh_call)
+        assert state[tc][:2] == ("handled", "Outcome recorded.")
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_vapi_call_id_changed_while_waiting_for_lock_is_raw_only(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    """bind_call's unlocked read passes, but the locked row has another vapi_call_id."""
+
+    async def scenario() -> None:
+        tc = f"tc-{uuid.uuid4()}"
+        async with await psycopg.AsyncConnection.connect(
+            supabase_env.db_url, autocommit=True
+        ) as setup:
+            await setup.execute(
+                "update public.calls set vapi_call_id = null where id = %s", (fresh_call.call_id,)
+            )
+        app = create_app(make_settings(supabase_env.db_url))
+        recorder = Recorder()
+        async with serve(app) as client:
+            # After startup, so startup dispatch of other tests' pending rows can't reach it.
+            registries(app).tools.register_tool_handler("report_outcome", recorder)
+            async with await psycopg.AsyncConnection.connect(supabase_env.db_url) as rebinder:
+                async with rebinder.transaction():
+                    await rebinder.execute(
+                        "update public.calls set vapi_call_id = %s where id = %s",
+                        (f"vapi-other-{uuid.uuid4()}", fresh_call.call_id),
+                    )
+                    request = asyncio.create_task(
+                        post(client, tool_body(fresh_call, [(tc, "report_outcome", OUTCOME_ARGS)]))
+                    )
+                    await asyncio.sleep(0.5)
+                    assert not request.done()  # bind_call passed; lock_call is waiting
+            response = await request
+        assert (response.status_code, response.json()) == (200, {})
+        assert [c for c in recorder.seen if c.call_id == fresh_call.call_id] == []
+        assert await receipts(supabase_env.db_url, fresh_call) == {}
+        found = await rows(
+            supabase_env.db_url,
+            "select call_id from public.vapi_raw_events where vapi_call_id = %s",
+            (f"vapi-{fresh_call.call_id}",),
+        )
+        assert found == [(None,)]
+
+    asyncio.run(scenario())
