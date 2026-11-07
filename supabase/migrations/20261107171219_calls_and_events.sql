@@ -18,8 +18,11 @@ create table public.calls (
   latest_ask_at timestamptz,
   max_duration_s int not null default 900,
   created_at timestamptz not null default now(),
-  ended_at timestamptz
+  ended_at timestamptz,
+  paused_at timestamptz
 );
+comment on column public.calls.paused_at is
+  'Set when the user pauses, cleared on resume; the sweeper ends calls paused longer than the cap (DC-11).';
 alter table public.calls enable row level security;
 create index calls_user_id_idx on public.calls (user_id);
 create index calls_brief_id_idx on public.calls (brief_id);

@@ -1,7 +1,7 @@
 -- pgTAP tests for row-level security and grants. Run by `supabase test db`
 -- (called from scripts/check-db.sh). Fake data only.
 begin;
-select plan(44);
+select plan(45);
 
 -- Seed as the owner role (bypasses RLS) before switching identity.
 insert into auth.users (id, email) values
@@ -142,6 +142,8 @@ select throws_ok(
 
 select col_is_pk('public', 'push_subscriptions', 'id',
   'push_subscriptions has a uuid primary key (id)');
+
+select col_is_null('public', 'calls', 'paused_at', 'calls.paused_at exists and is nullable');
 
 select * from finish();
 rollback;

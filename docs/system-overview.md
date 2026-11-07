@@ -248,6 +248,7 @@ erDiagram
     text vapi_call_id UK
     int last_seq
     timestamptz ended_at
+    timestamptz paused_at "null unless paused"
   }
   call_events {
     uuid event_id PK

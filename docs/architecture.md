@@ -331,7 +331,7 @@ The guarantees are stated as they are, including where they are weaker than "exa
   - **Pause** suppresses filler and mutes the assistant, and freezes an open ping's timer. Under the ping lock it stores the time left (`expires_at` minus `clock_timestamp()`) and clears `expires_at`, so the timeout can't fire while paused. A reassurance `say` plays every 15 s while paused.
   - **Resume** sets `expires_at` to `clock_timestamp()` plus the stored time left, so the timer picks up where it left off.
   - **A reply while paused** queues `unmute` first, then the reply, so it is audible.
-  - **Pause cap (proposed 2 min, tuned from test calls):** queues `unmute`, then a call-back offer and goodbye, and the outcome is Needs follow-up (DC-11).
+  - **Pause cap (proposed 2 min, tuned from test calls):** the pause start is stored in `calls.paused_at` (set on pause, cleared on resume), so the sweeper enforces the cap after a restart. It queues `unmute`, then a call-back offer and goodbye, and the outcome is Needs follow-up (DC-11).
   - **Resume** also unmutes.
   - **End** cancels the open ping and marks every pending control row for the call `cancelled`, then queues unmute (if paused) and the goodbye `say` with `endCallAfterSpoken`. Only if the call is still live 6 s later does it send `end-call`. Nothing queued after End is sent.
 - Call status is a state machine: `creating → dialing → in_phone_menu? → talking ⇄ waiting_on_you ⇄ on_hold → ended`, with `creation_uncertain` and `failed` off `creating`. Transitions out of `ended` or `failed` are rejected (`end_call_transition` treats both as terminal), so a late `status-update` can't revive a call. `waiting_on_you` comes from an open ping and `on_hold` from a user pause, not from Vapi events (DC-14).
