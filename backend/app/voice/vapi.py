@@ -28,6 +28,7 @@ for _name in ("httpx", "httpcore"):
 DEFAULT_BASE_URL = "https://api.vapi.ai"
 API_DEADLINE_S = 10.0
 CONTROL_DEADLINE_S = 2.0
+FIND_PAGE_LIMIT = 100
 _SAFE_CODE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
@@ -95,7 +96,7 @@ class VapiVoice:
                     )
         except (httpx.ConnectError, httpx.ConnectTimeout):
             raise VoiceNotSent("voice platform connection failed before sending") from None
-        except (httpx.TransportError, TimeoutError) as exc:
+        except (httpx.RequestError, httpx.InvalidURL, TimeoutError) as exc:
             raise VoiceUncertain(
                 f"voice platform request outcome unknown ({type(exc).__name__})"
             ) from None
@@ -152,14 +153,19 @@ class VapiVoice:
             "GET",
             f"{self._base}/call",
             API_DEADLINE_S,
-            params={"createdAtGt": stamp.replace("+00:00", "Z"), "limit": 100},
+            params={"createdAtGt": stamp.replace("+00:00", "Z"), "limit": FIND_PAGE_LIMIT},
         )
         body = self._json(response)
-        items = body if isinstance(body, list) else (body or {}).get("results", [])
-        for item in items if isinstance(items, list) else []:
+        items = body.get("results", []) if isinstance(body, dict) else body
+        if not isinstance(items, list):
+            raise VoiceUncertain("voice platform returned an unreadable call list")
+        for item in items:
             metadata = item.get("metadata") if isinstance(item, dict) else None
             if isinstance(metadata, dict) and str(metadata.get("call_id")) == str(call_id):
                 return _created_from(item)
+        if len(items) >= FIND_PAGE_LIMIT:
+            # The call may sit beyond the first page: "not found" would be a guess.
+            raise VoiceUncertain("voice platform call list is full; creation not ruled out")
         return None
 
 

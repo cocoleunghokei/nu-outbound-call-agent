@@ -1,7 +1,7 @@
 """The voice platform port: the only seam between the backend and a telephony vendor."""
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
@@ -16,8 +16,8 @@ class CreatedCall:
     """What the platform returned for a placed call. The URLs are capabilities: never log them."""
 
     vapi_call_id: str
-    control_url: str | None
-    listen_url: str | None
+    control_url: str | None = field(repr=False)
+    listen_url: str | None = field(repr=False)
 
 
 class UnsafeAssistantConfig(ApiError):

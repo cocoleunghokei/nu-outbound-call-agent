@@ -13,7 +13,7 @@ from typing import Any, Literal
 Sharing = Literal["share_freely", "ask_first"]
 
 CALLING_NAME_KEY = "calling_name"
-_NON_ALNUM = re.compile(r"[^0-9a-z]+")
+_NON_WORD = re.compile(r"[\W_]+")
 _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 FIRST_MESSAGE_TEMPLATE = (
     "Hi, I'm an AI assistant calling on behalf of {calling_name}. "
@@ -58,7 +58,7 @@ class Snapshot:
 
 
 def _tokens(text: str) -> list[str]:
-    return [t for t in _NON_ALNUM.split(text.lower()) if t]
+    return [t for t in _NON_WORD.split(text.casefold()) if t]
 
 
 def _contains_sequence(haystack: list[str], needle: list[str]) -> bool:
@@ -93,9 +93,13 @@ def assert_prompt_safe(text: str, snapshot: Snapshot) -> None:
         if sharing != "ask_first":
             continue
         value_tokens = _tokens(value)
-        if not value_tokens or value_tokens == calling_tokens:
+        if value_tokens == calling_tokens and value_tokens:
             continue
-        if _contains_sequence(text_tokens, value_tokens):
+        if value_tokens:
+            if _contains_sequence(text_tokens, value_tokens):
+                raise AskFirstInPrompt(key)
+        elif value.strip() and value.casefold().strip() in text.casefold():
+            # No word characters to tokenise: fail closed on a plain substring match.
             raise AskFirstInPrompt(key)
 
 

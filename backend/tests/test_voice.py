@@ -379,3 +379,70 @@ def test_adapter_exception_messages_never_contain_url() -> None:
             and info.value.__context__ is None
             or info.value.__suppress_context__
         )
+
+
+def test_cjk_ask_first_value_blocked() -> None:
+    snap = Snapshot.from_rows([("full_name", "王小明", "ask_first")])
+    with pytest.raises(AskFirstInPrompt) as info:
+        assert_prompt_safe("Calling for 王小明 today", snap)
+    assert info.value.key == "full_name"
+    assert_prompt_safe("Calling for someone today", snap)
+
+
+def test_accented_ask_first_value_blocked_without_false_match() -> None:
+    snap = Snapshot.from_rows([("address", "Müllerstraße 5", "ask_first")])
+    with pytest.raises(AskFirstInPrompt):
+        assert_prompt_safe("deliver to MÜLLERSTRASSE 5, please", snap)
+    with pytest.raises(AskFirstInPrompt):
+        assert_prompt_safe("deliver to müllerstraße 5", snap)
+    assert_prompt_safe("deliver to Mueller Street 5", snap)
+
+
+def test_ask_first_value_without_word_characters_fails_closed() -> None:
+    snap = Snapshot.from_rows([("pin", "#!", "ask_first")])
+    with pytest.raises(AskFirstInPrompt):
+        assert_prompt_safe("the code is #! ok", snap)
+    assert_prompt_safe("nothing here", snap)
+
+
+def test_created_call_repr_has_no_urls() -> None:
+    text = repr(CreatedCall("vapi-1", CONTROL_URL, LISTEN_URL))
+    assert "secret-capability-token" not in text and "secret-listen-token" not in text
+    assert "vapi-1" in text
+
+
+def test_find_call_full_page_without_match_is_uncertain() -> None:
+    items = [{"id": f"c{i}", "metadata": {"call_id": str(uuid.uuid4())}} for i in range(100)]
+    recorder = Recorder(lambda r: httpx.Response(200, json=items))
+    since = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
+    with pytest.raises(VoiceUncertain):
+        asyncio.run(vapi(recorder).find_call_by_app_id(uuid.uuid4(), since))
+    # A full page that does contain the call is still a match.
+    wanted = uuid.uuid4()
+    items[-1]["metadata"] = {"call_id": str(wanted)}
+    assert asyncio.run(vapi(recorder).find_call_by_app_id(wanted, since)) is not None
+
+
+@pytest.mark.parametrize("body", ["a string", 42, None])
+def test_find_call_unexpected_body_is_uncertain(body: Any) -> None:
+    recorder = Recorder(lambda r: httpx.Response(200, json=body))
+    with pytest.raises(VoiceUncertain):
+        asyncio.run(
+            vapi(recorder).find_call_by_app_id(uuid.uuid4(), datetime(2026, 11, 7, tzinfo=UTC))
+        )
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        httpx.InvalidURL("bad " + CONTROL_URL),
+        httpx.TooManyRedirects("loop " + CONTROL_URL),
+        httpx.DecodingError("bad body " + CONTROL_URL),
+    ],
+)
+def test_other_httpx_errors_map_to_uncertain_without_url(exc: Exception) -> None:
+    adapter = vapi(Recorder(raising(exc)))
+    with pytest.raises(VoiceUncertain) as info:
+        asyncio.run(adapter.send_control(CONTROL_URL, {"type": "x"}))
+    assert "capability" not in str(info.value) + repr(info.value)
+    assert info.value.__cause__ is None
