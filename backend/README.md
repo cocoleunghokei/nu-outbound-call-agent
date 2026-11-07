@@ -1,6 +1,6 @@
 # Backend
 
-Python 3.12 + FastAPI, managed with uv. Plain SQL through psycopg 3, no ORM. It receives Vapi webhooks, runs the pause-and-ping loop and serves the web app's API. The design is in [docs/architecture.md](../docs/architecture.md); the wire shapes are in [contracts/](../contracts).
+Python 3.12 + FastAPI, managed with uv. Plain SQL through psycopg 3, no ORM. It receives Vapi webhooks, runs the pause-and-ping loop and serves the web app's API. Start with the [system overview](../docs/system-overview.md) for diagrams. The design is in [docs/architecture.md](../docs/architecture.md); the wire shapes are in [contracts/](../contracts).
 
 ## Run it locally
 

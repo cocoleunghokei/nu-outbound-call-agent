@@ -64,6 +64,7 @@ CI calls these same targets, so passing locally means passing in CI.
 | --- | --- |
 | Product scope, timeline | `README.md`, `docs/Outbound_Call_Agent_Kickoff_OnePager.pdf` |
 | Product requirements and their IDs (`ON-`, `PC-`, `DC-`, `PO-`) | `docs/requirements.md` (snapshot; Notion is the master copy) |
+| System overview with diagrams (start here: components, data, one call, ownership) | `docs/system-overview.md` |
 | System architecture blueprint (components, protocols, delivery rules) | `docs/architecture.md` |
 | Wire contracts (JSON Schema; the generated Python and TypeScript types come from them) | `contracts/` (edit, then `make -C contracts gen`) |
 | Branch and PR workflow, DB setup | `CONTRIBUTING.md` |
