@@ -2,7 +2,7 @@
 
 > **Read-only snapshot. Notion is the master copy.**
 > Source: the "Product Requirements" section of the [NU Launch Labs Outbound Call Agent](https://app.notion.com/p/NU-Launch-Labs-Outbound-Call-Agent-402b6bc9644c80d7ad0ae5636298240f) Notion page.
-> Snapshot taken 2026-11-04 from the Notion version last updated Oct 26, 2026 (owners: Coco, Lotto · status: draft for team review). Refreshed 2026-11-05 with per-requirement owners and the System Architecture section.
+> Snapshot taken 2026-11-04 from the Notion version last updated Oct 26, 2026 (owners: Coco, Lotto · status: draft for team review). Refreshed 2026-11-05 with per-requirement owners and the System Architecture section. Refreshed 2026-11-06 with the tech doc decisions (ON-3, ON-5, DC-4, DC-11). These are not in Notion yet, because the workspace is at its free block limit.
 >
 > To change a requirement, edit it in Notion first, then refresh this file in a `docs` PR. If the two disagree, Notion wins.
 > Requirement IDs (`ON-`, `PC-`, `DC-`, `PO-`) are stable: specs, tests and code cite them, so never renumber or reuse one.
@@ -96,7 +96,7 @@
 | DC-1 | Opening disclosure | The first sentence names who we're calling for, says it's an AI assistant, and says the call is transcribed. E.g. "Hi, I'm an AI assistant calling on behalf of Alex Chen. This call is transcribed. I'd like to book a table for..." | P0 | Massachusetts requires every party's consent to recording/transcription (open notice at the start). Meta Muse lost trust by not disclosing. | Coco |
 | DC-2 | Phone menus and hold | Navigate IVR menus (DTMF), wait on hold, detect when a human picks up. | P2 | Eng: check Vapi support. Many doctor offices use IVR. |  |
 | DC-3 | Live transcript | The web app streams the transcript with speaker labels (Agent / Business / You), with under ~2s delay. | P0 |  | Coco |
-| DC-4 | Confidence-driven decisions | For every question or offer from the other side, the agent scores its candidate response against the brief (goal, profile, constraints, fallbacks).<br>**High:** act and log it.<br>**Low:** stall and ping, and if there's no reply, end the call (DC-9). When the other side counters or rejects a fallback, re-score the new offer. An offer that matches a stated fallback scores High. | P0 | Core differentiator. Eng: define the scoring rubric and thresholds in the tech doc. Log every score for debugging. | Coco |
+| DC-4 | Confidence-driven decisions | For every question or offer from the other side, the agent scores its candidate response against the brief (goal, profile, constraints, fallbacks).<br>**High:** act and log it.<br>**Medium:** every constraint is met but a preference is missed. Act, and flag the miss in the live feed.<br>**Low:** stall and ping, and if there's no reply, end the call (DC-9). When the other side counters or rejects a fallback, re-score the new offer. An offer that matches a stated fallback scores High. Ask-me-first fields and money (a deposit, a fee or a never-agree item) always ping, whatever the score. | P0 | Core differentiator. The rubric (2 gates, 4 checks, no numeric threshold) is in the [tech doc](tech-doc-during-call.md). Log every score for debugging. | Coco |
 | DC-5 | Explain decisions, hide the score | The score is never shown. Every action and ping shows a plain-language reason, e.g. "They offered 4pm. You said before 3pm." or "Matched your fallback: Tue 2pm." | P0 | Design: the reason is the main content of the ping card. | Coco |
 | DC-6 | Ask-first fields always ping | If the agent needs an Ask-me-first field (e.g. insurance ID), it pings the user regardless of confidence. | P0 | Shows up in the post-call "what was shared" log. | Coco |
 | DC-7 | Pause and ping, keep the line open | While waiting, the agent uses a natural hold script ("Let me check with Alex, one moment") and reassures the other side every ~15s. Default timeout is 45s, to be tuned from test calls. | P0 | The biggest unvalidated assumption: will a receptionist wait? Test this early with role-play calls. | Coco |
@@ -139,7 +139,7 @@
 
 The full blueprint is [docs/architecture.md](architecture.md) (status: Proposed, for the tech doc). In short: a browser web app talks to one backend service, which drives the call through Vapi on our Twilio number. Supabase provides Postgres, Auth and Realtime, an LLM API builds the pre-call brief and the post-call summary, and Web Push delivers pings.
 
-**Needs a decision (Coco, Lotto):** a "calling name" profile field that is always shared, because DC-1 requires the opening line to name who we're calling for, while ON-5 lets any field be Ask me first. See the opening-line rules in [docs/architecture.md](architecture.md).
+**Decided (Coco):** the profile has a required, always-shared calling name (ON-3, ON-5), because DC-1 says it in the opening line. The technical design for the During-call requirements is in [docs/tech-doc-during-call.md](tech-doc-during-call.md).
 
 ## AI Disclosure examples
 
@@ -155,6 +155,5 @@ The full blueprint is [docs/architecture.md](architecture.md) (status: Proposed,
 
 Copied as written above; to be fixed in Notion by the owners, then refreshed here.
 
-- **DC-4** and the "During call" decisions describe a *three-tier* confidence score, but only **High** and **Low** are defined. The middle tier is missing.
 - **PO-6** is cut off: "List of past calls with."
 - **PO-9** cites "PC-10's read access". Calendar read access is **PC-9**; there is no PC-10.
