@@ -1,10 +1,10 @@
 # System architecture blueprint
 
-**Status:** Proposed, for the tech doc (Nov 2–6). Draft 2026-11-04.
+**Status:** Accepted. Implemented as the backend foundation (Python 3.12 + FastAPI, plain SQL via psycopg 3, hosted on Railway); `backend/README.md` has the ownership map. Draft 2026-11-04, accepted 2026-11-07.
 **Inputs:** [docs/requirements.md](requirements.md) (requirement IDs below refer to it) and the [Vapi API test design](superpowers/specs/2026-10-28-vapi-api-test-design.md).
 **Depends on:** the Vapi go/no-go from the probe session. If Vapi fails probe 3, the same shape applies with Retell in the voice-platform box. Only the adapter changes.
 
-This is a high-level design. It fixes the components, the edges between them, the protocol on each edge, and the delivery rules the pause-and-ping loop needs. It leaves the language, framework and host to the tech doc ([docs/tech-doc-during-call.md](tech-doc-during-call.md): host is Railway, and the language and framework are still to confirm).
+This is a high-level design. It fixes the components, the edges between them, the protocol on each edge, and the delivery rules the pause-and-ping loop needs. The language, framework and host are decided: Python 3.12 + FastAPI, plain SQL via psycopg 3, hosted on Railway (see [docs/tech-doc-during-call.md](tech-doc-during-call.md) and `backend/README.md`).
 
 ## 0. Context and sizing
 
@@ -160,13 +160,14 @@ This matches the probe kit, so probe results carry over. It is an **async** tool
     "description": "Ask the user when an offer breaks a hard constraint with no matching fallback, when the other side asks for an ask-first field, or before agreeing to any payment, deposit or fee, or to a never-agree item, whatever your confidence.",
     "parameters": {
       "type": "object",
-      "required": ["question", "reason", "suggested_replies", "confidence"],
+      "required": ["question", "reason", "suggested_replies", "confidence", "dimensions"],
       "properties": {
         "question": { "type": "string", "maxLength": 200 },
         "reason":   { "type": "string", "maxLength": 200, "description": "Plain language, e.g. 'They offered 4pm. You said before 3pm.' (DC-5)" },
         "suggested_replies": { "type": "array", "minItems": 2, "maxItems": 4, "items": { "type": "string", "maxLength": 60 } },
         "field_requested": { "type": "string", "description": "Profile field key when the trigger is an ask-first field (DC-6)" },
-        "confidence": { "enum": ["high", "low"], "description": "The score behind this ask. Mandatory pings (ask-first, payment) report it too. Stored in pings.confidence, backend-only; never in the card or the push (DC-4, DC-5)" }
+        "confidence": { "enum": ["high", "medium", "low"], "description": "The tier behind this call. Stored backend-only (agent_scores); never in the card or the push (DC-4, DC-5)" },
+        "dimensions": { "type": "object", "description": "The six DC-4 booleans behind the tier: needs_ask_first_field, involves_money, meets_constraints, matches_fallback, answerable_from_brief, understood. All required, no extras. Backend-only." }
       }
     }
   }
@@ -175,7 +176,7 @@ This matches the probe kit, so probe results carry over. It is an **async** tool
 
 ### The `report_decision` tool (DC-4, DC-5)
 
-The in-call agent scores each offer or question against the brief, as DC-4 requires. It calls `report_decision` for every action it takes on its own. It calls `ask_user` instead whenever the score is Low, and **always, regardless of score**, for an ask-first field (DC-6) and before agreeing to any payment, deposit or fee, or to a never-agree item from the brief (DC-13, PC-5). These overrides are in the tool description and the system prompt, and the backend checks them after the call: a `report_decision` of `accept` on a situation that mentions money, with no ping before it, is flagged in the summary as a guardrail breach. The tool is async and fire-and-forget. The backend stores each report as an `agent.decision` event. The score is kept for debugging and is never sent to the browser; the reason is shown (DC-5). The scoring rubric and thresholds belong in the tech doc; this fixes only where the score is produced and how it is reported.
+The in-call agent scores each offer or question against the brief, as DC-4 requires. It calls `report_decision` for every action it takes on its own. It calls `ask_user` instead whenever the tier is Low, and **always, regardless of score**, for an ask-first field (DC-6) and before agreeing to any payment, deposit or fee, or to a never-agree item from the brief (DC-13, PC-5). These overrides are in the tool description and the system prompt, and the backend checks them after the call: a `report_decision` of `accept` on a situation that mentions money, with no ping before it, is flagged in the summary as a guardrail breach. The tool is async and fire-and-forget. The backend stores each report as an `agent.decision` event. The tier and its six `dimensions` are kept for debugging and are never sent to the browser; the reason is shown (DC-5). The scoring rubric and thresholds belong in the tech doc; this fixes only where the score is produced and how it is reported.
 
 ```json
 {
@@ -185,11 +186,12 @@ The in-call agent scores each offer or question against the brief, as DC-4 requi
     "name": "report_decision",
     "parameters": {
       "type": "object",
-      "required": ["situation", "action", "confidence", "reason"],
+      "required": ["situation", "action", "confidence", "dimensions", "reason"],
       "properties": {
         "situation":  { "type": "string", "maxLength": 200, "description": "What the other side offered or asked" },
         "action":     { "enum": ["accept", "counter", "decline", "share_field", "take_fallback", "end_call"] },
-        "confidence": { "enum": ["high", "low"] },
+        "confidence": { "enum": ["high", "medium", "low"] },
+        "dimensions": { "type": "object", "description": "The same six DC-4 booleans as ask_user. Backend-only." },
         "reason":     { "type": "string", "maxLength": 200 },
         "field_key":  { "type": "string", "description": "For share_field: the share-freely field the agent is about to say" }
       }
@@ -270,9 +272,13 @@ Every mutating request carries an `Idempotency-Key: <uuid>` header and the Supab
 | Pause (DC-11) | `say` hold line, then `{"type":"control","control":"mute-assistant"}`. Vapi's events don't say which utterance a `speech-update` belongs to, so the gate can't tie one to the hold line. It uses a quiet rule instead: the control lane holds back any new filler, and mutes once the assistant has been silent for 700 ms after at least one assistant *stopped* event that came after the `say`. With no such quiet within 4 s it mutes anyway. Probe 6 tests pause during silence, during an agent sentence and during a filler (§7). |
 | End (DC-11) | `{"type":"say","content":"<goodbye>","endCallAfterSpoken":true}`, so Vapi hangs up only after the goodbye has played. `end-call` is the fallback if the call is still up 6 s later. |
 
+**Tool contracts are args-only.** The JSON above shows the shape the model fills in. The authoritative schemas are `contracts/tools/<name>.args.v1.json`; the backend builds the Vapi tool definitions from them (`app/voice/tools.py`) and validates every `tool-calls` argument object against them. Tool names, descriptions and the async flag are fixed in the backend; a config that supplies its own `model.tools` is overwritten.
+
+**Where scores live (DC-5).** `confidence` and `dimensions` are stored in `agent_scores` (backend-only). Outside it they exist in only two backend-only places: the redacted raw delivery log (`vapi_raw_events`), and `tool_calls.arguments` while the receipt is `pending`. They are stripped from `tool_calls.arguments` when the receipt is handled or failed. Handlers and browser payloads never see them: browser-readable payloads are built from explicit allow-lists, and `agent.decision` has no score fields.
+
 ### Data model (all tables RLS-enabled; browser reads only its own rows)
 
-`profiles`, `profile_fields` (key, value, `sharing` = `share_freely` \| `ask_first`), `briefs`, `calls` (status, outcome, `vapi_call_id`, max length), `call_events` (append-only, unique `(call_id, seq)` and `(call_id, dedup_key)`, `processed_at`), `pings` (kind, state, `expires_at`, unique `vapi_tool_call_id`, at most one open per call), `call_profile_snapshots`, `shared_fields` (PO-3, with disclosure state), `outbox` (§4.0, three lanes), `push_subscriptions`, `idempotency_keys`. Backend-only, with no browser access: `vapi_raw_events`, `call_events_failed`. Calls, call events, pings, shared fields and the outbox are written only by the backend.
+`profiles`, `profile_fields` (key, value, `sharing` = `share_freely` \| `ask_first`), `briefs`, `calls` (status, outcome, `vapi_call_id`, max length), `call_events` (append-only, unique `(call_id, seq)` and `(call_id, dedup_key)`, `processed_at`), `pings` (kind, state, `expires_at`, unique `vapi_tool_call_id`, at most one open per call), `call_profile_snapshots`, `shared_fields` (PO-3, with disclosure state), `outbox` (§4.0, three lanes), `push_subscriptions`, `idempotency_keys`, `tool_calls` (one receipt per Vapi tool call: `pending`, `handled` or `failed`), `agent_scores` (`confidence` and `dimensions` per scored tool call) and `call_secrets` (the control and listen URLs, deleted when the call ends). Backend-only, with no browser access: `vapi_raw_events`, `call_events_failed`, `tool_calls`, `agent_scores`, `call_secrets`, `call_profile_snapshots`, `outbox` and `idempotency_keys`. Calls, call events, pings, shared fields and the outbox are written only by the backend.
 
 **Privacy by construction (ON-5, DC-6, DC-13).**
 - **Each call uses a snapshot.** At call start, the backend copies the user's field values and sharing settings into `call_profile_snapshots`. Everything during the call (the prompt, approvals, the injected value) uses the snapshot. Edits apply to the next call (ON-7).
@@ -299,6 +305,7 @@ One rule carries most of this section. **Every decision is committed to Postgres
   - **jobs**: post-call processing.
 - **Timers are rows too.** A ping's filler and timeout times are columns on the ping. The in-process timer is only a wake-up; the sweeper (every 2 s while any ping is open, otherwise every 10 s) finds overdue rows on its own, so a lost timer only costs latency.
 - **On start-up** the backend replays: `pending` outbox rows are sent, overdue pings run the timeout path, and events with `processed_at IS NULL` are processed again. Each step is idempotent, so a replay is safe.
+- **Tool calls leave a receipt.** Each Vapi tool call is stored in `tool_calls` as `pending` and answered `"received"` at once. A registered handler runs inside the ingress transaction, in its own savepoint, and the receipt becomes `handled` or `failed`; a redelivery never reruns it. A tool with no handler stays `pending`, and `dispatch_pending(pool, limit=50, *, tools)` runs it later: at start-up, and from Coco's sweeper, which passes `tools=reg.tools`. The call lock (`lock_call`) is always taken before any `pings`, `call_secrets`, `outbox` or `call_events` row.
 
 ### 4.1 Guarantees per flow
 
@@ -306,10 +313,10 @@ The guarantees are stated as they are, including where they are weaker than "exa
 
 | Flow | Guarantee | How |
 | --- | --- | --- |
-| Vapi webhooks → `call_events` (E7) | **Each delivered event is stored once.** Whether Vapi retries a failed delivery is unconfirmed (§7), so an event Vapi never redelivers is lost. Treat delivery as possibly duplicated and out of order. | A `dedup_key` from natural fields: `toolCallId` for tool calls, `(status)` for status updates, `(role, start time)` for final transcripts. `INSERT … ON CONFLICT DO NOTHING`. The sweeper's `GET /call/{id}` repairs lost status and end events. |
+| Vapi webhooks → `call_events` (E7) | **Each delivered event is stored once.** Whether Vapi retries a failed delivery is unconfirmed (§7), so an event Vapi never redelivers is lost. Treat delivery as possibly duplicated and out of order. | A `dedup_key` from natural fields: `toolCallId` for tool calls, `(status)` for status updates, `(role, start time)` for final transcripts. `INSERT … ON CONFLICT DO NOTHING`. Transcript `source_start_ts` and the dedup key currently come from Vapi's `message.timestamp` (§7). The sweeper's `GET /call/{id}` repairs lost status and end events. |
 | `ask_user` → ping | **One ping per tool call, and at most one open ping per call; a newer question replaces an older one** | Unique `pings.vapi_tool_call_id`, and a partial unique index on `pings(call_id) WHERE state = 'open'`. A second `ask_user` while one is open means the situation changed (for example, Thursday was withdrawn and Friday offered). "Newer" means a later **source timestamp** (the timestamp Vapi puts on the tool-call message), not a later arrival. `calls.latest_ask_at` is a per-call watermark across every ping, whatever its state. A question whose timestamp is not later than the watermark is stored as `superseded` on arrival and never shown, even when no ping is open. Ties are broken by `toolCallId`, so the order is the same on every replay. Otherwise, in one transaction, under the ping lock, the old ping becomes `superseded` and the new one opens with a fresh 45 s timer. The card swaps to the new question and says the offer changed. A reply to the superseded ping gets `409 ping_closed`. The prompt tells the agent to put everything it still needs into the newer question. Every injected answer quotes the question it answers, so the agent can't apply it to the wrong one. |
 | Ping resolution: reply vs. timeout | **Exactly one winner, chosen atomically against the deadline** | In one transaction: `SELECT … FROM pings WHERE ping_id = $id FOR UPDATE`, then compare `expires_at` with `clock_timestamp()` (wall-clock time after the lock, not `now()`, which is the transaction start). The reply wins only if the ping is open and not expired; the timeout wins only if it is open and expired. The winner updates the state and writes its outbox command in the same transaction. A reply that loses gets `409 ping_closed`. Once a reply has won, its delivery is no longer bound by `expires_at`; it has its own 2 s send budget. |
-| Reply, timeout and instruction → control URL (E8) | **Bounded best effort, with delivery tracked.** Not at-least-once: after one retry a send can still be lost, and that is shown, not hidden. Vapi accepts no idempotency key. | Sent from the outbox. One automatic retry, only when the request provably never reached Vapi (§5.3). A 5xx or a timeout after the request went out may have been applied, so it marks the row `uncertain`, not retried, and the ping card says "may not have reached the call", with Resend and End call. On start-up, a reply row still `pending` (never sent) is sent. A row that may have gone out becomes `uncertain`, and only the user's Resend sends it again: a repeated sentence is the user's call. |
+| Reply, timeout and instruction → control URL (E8) | **Bounded best effort, with delivery tracked.** Not at-least-once: after one retry a send can still be lost, and that is shown, not hidden. Vapi accepts no idempotency key. | Sent from the outbox. The adapter itself never retries: it raises `VoiceNotSent` (the request provably never left) or `VoiceUncertain` (it may have been processed: timeout, dropped connection or 5xx). The outbox worker retries once, and only on `VoiceNotSent` (§5.3). A `VoiceUncertain` send may have been applied, so it marks the row `uncertain`, not retried, and the ping card says "may not have reached the call", with Resend and End call. On start-up, a reply row still `pending` (never sent) is sent. A row that may have gone out becomes `uncertain`, and only the user's Resend sends it again: a repeated sentence is the user's call. |
 | Filler `say` | **At most once** | A control-lane row with no retry, and never replayed on start-up. The pre-send state check drops it if the ping closed or the call was paused or ended after it was queued. A late filler is worse than a missing one. |
 | Push notification (E5) | **At most once, best effort** | `TTL` = seconds left until `expires_at`, `tag` = `ping_id`. On click, the tab reads the ping's current state before showing the reply buttons; when the ping closes, the open tab closes the notification. The in-app card over Realtime is the source of truth. A `410 Gone` deletes the subscription. |
 | Browser commands (E1) | **One effect per `Idempotency-Key`** | The key is claimed with an insert into `idempotency_keys(user_id, key)` in the same transaction as the command's state change. A concurrent duplicate gets `409 in_progress`; a later one gets the stored response (kept 24 h). External effects follow the outbox states above, so "accepted" never means "delivered". |
@@ -326,7 +333,7 @@ The guarantees are stated as they are, including where they are weaker than "exa
   - **Pause cap (proposed 2 min, tuned from test calls):** queues `unmute`, then a call-back offer and goodbye, and the outcome is Needs follow-up (DC-11).
   - **Resume** also unmutes.
   - **End** cancels the open ping and marks every pending control row for the call `cancelled`, then queues unmute (if paused) and the goodbye `say` with `endCallAfterSpoken`. Only if the call is still live 6 s later does it send `end-call`. Nothing queued after End is sent.
-- Call status is a state machine: `creating → dialing → in_phone_menu? → talking ⇄ waiting_on_you ⇄ on_hold → ended`, with `creation_uncertain` and `failed` off `creating`. Transitions out of `ended` are rejected, so a late `status-update` can't revive a call. `waiting_on_you` comes from an open ping and `on_hold` from a user pause, not from Vapi events (DC-14).
+- Call status is a state machine: `creating → dialing → in_phone_menu? → talking ⇄ waiting_on_you ⇄ on_hold → ended`, with `creation_uncertain` and `failed` off `creating`. Transitions out of `ended` or `failed` are rejected (`end_call_transition` treats both as terminal), so a late `status-update` can't revive a call. `waiting_on_you` comes from an open ping and `on_hold` from a user pause, not from Vapi events (DC-14).
 - Transcript events are ordered by Vapi's start timestamp, not arrival time.
 
 ### 4.3 Dead-lettering and raw payloads
@@ -367,7 +374,7 @@ There is no broker, so "dead letter" means a row. An event that fails validation
 | --- | --- | --- |
 | Browser → Backend | Supabase JWT (bearer) | Verified against Supabase's JWKS on every request. `user_id` comes from the token, never from the body. |
 | Browser → Realtime / Postgres reads | Same JWT, anon key | RLS on every table; channel joins checked by RLS. |
-| Backend → Postgres | Service-role credential | Bypasses RLS, so every backend query filters by the authenticated `user_id`. Used only by the backend. |
+| Backend → Postgres | Postgres connection string (`DATABASE_URL`, Supabase session pooler). Never the service-role API key. | Connects as the database owner, so RLS does not apply: every backend query filters by the authenticated `user_id`. Used only by the backend. |
 | Vapi → Backend | Shared secret in a header, compared in constant time. Use Vapi's HMAC signature instead if the account supports it. | The event must match a call we created, by `vapi_call_id` or by our `call_id` in `metadata`. The second covers events that arrive before `POST /call` returns, since the `calls` row is committed first (§4.1). Unknown calls are rejected. |
 | Backend → Vapi | Private API key | Server-side only. The public key is unused in P0. |
 | Control and listen URLs | Capability URLs (the URL is the credential) | Never sent to the browser, never logged in full, dropped once the call ends. |
@@ -381,8 +388,8 @@ All secrets live in the host's secret store or `.env` (git-ignored); names go in
 | Call | Timeout | Retries | Breaker |
 | --- | --- | --- | --- |
 | Webhook handler total | Ack within 500 ms, after the commit (§4.0) | — (Vapi's own retry behaviour, if any, to be confirmed) | — |
-| Control URL (E8) | 2 s | 1, only when the request provably never reached Vapi (connection refused, DNS or TLS failure), 200–500 ms jitter. A 5xx or a timeout may have been applied, so it is `uncertain`, not retried. | — (per-call, short-lived) |
-| Vapi REST (E6) | 5 s connect, 10 s total | Reads: 2, exponential backoff with full jitter, base 200 ms, cap 2 s. `POST /call`: look up first, never blind (§4.1). | 3 failures → open 60 s |
+| Control URL (E8) | 2 s | 1, from the outbox and only on `VoiceNotSent` (the request provably never reached Vapi: connection refused, DNS or TLS failure), 200–500 ms jitter. The adapter never retries. A 5xx or a timeout (`VoiceUncertain`) may have been applied, so it is `uncertain`, not retried. | — (per-call, short-lived) |
+| Vapi REST (E6) | 5 s connect, 10 s total | Reads: 2 (made by the caller, not the adapter), exponential backoff with full jitter, base 200 ms, cap 2 s. `POST /call`: look up first, never blind (§4.1). | 3 failures → open 60 s |
 | LLM (E12) | 20 s | 1 | 3 failures → open 60 s; fall back to templates |
 | Push (E5) | 3 s | 0 | — |
 | Postgres statement | 2 s | 0 inside a transaction | — |
@@ -394,7 +401,7 @@ All secrets live in the host's secret store or `.env` (git-ignored); names go in
 - Per user: 1 live call, the DC-15 daily call cap, 30 commands and replies per minute, 10 brief builds per hour.
 - App-wide: 3 concurrent calls, and a daily spend cap checked against Vapi's per-call cost, after which new calls are refused.
 - Number validation on the server (PC-7): US E.164 only; block 911, other N11 codes and premium-rate prefixes; reject numbers marked personal (out of scope in the PRD).
-- The webhook endpoint is open to the internet (Vapi publishes no fixed IP range we rely on), so the secret check and the known-call check run before any parsing beyond the header.
+- The webhook endpoint is open to the internet, so the secret check and the known-call check run before any parsing beyond the header. Vapi documents a static webhook range, `167.150.224.0/23`. Setting `VAPI_IP_ALLOWLIST=true` rejects other source addresses, as an optional extra layer. It is off by default, and the secret stays the real check (behind a proxy the source address may not be Vapi's).
 
 ### 5.5 Discovery and load balancing
 
@@ -429,6 +436,8 @@ Business      Vapi               Backend                       Postgres/Realtime
 | Does Vapi retry webhooks, and do events carry stable IDs? | Probe logs | Dedup keys stay on natural fields (current design). |
 | Does every `tool-calls` message carry a source timestamp, so two `ask_user` calls can be ordered? | Probe logs (scenario B) | Don't supersede automatically: keep the open ping, record the second, and send "one question at a time" to the agent, which re-asks after the answer. |
 | Does Realtime's Postgres Changes path fit the 2 s transcript budget? | First backend spike | Switch E3 to backend broadcast, or SSE. |
+| Is the transcript `message.timestamp` stable across redeliveries and unique per utterance? The transcript `source_start_ts` and dedup key use it. | Probe logs (replay the same call twice, compare) | Dedup on `(role, text, timestamp)`, or add a content hash; two distinct utterances sharing a timestamp would otherwise be merged. |
+| Vapi assumptions the adapter makes: (1) `GET /call?createdAtGt=…&limit=100` is the list call `find_call_by_app_id` uses; (2) list items carry `monitor` URLs; (3) the control URL needs no auth header; (4) transcript roles are `assistant`/`bot` (our `agent`) and `user`/`customer` (our `business`). | Probe session | (1) and (2): adjust the lookup, and a call that cannot be found stays `creation_uncertain`. (3): add the header in `send_control`. (4): extend `ROLE_MAP`; an unknown role goes to `call_events_failed`. |
 | Does the quiet rule let the hold line finish when Pause lands during an agent sentence or a filler? Does `endCallAfterSpoken` let the goodbye finish before hang-up? | Probe 6 | The 4 s and 6 s fallbacks are recovery paths, not a pass: if the normal path misses DC-11's 2 s, probe 6 is a Partial and the tech doc names the workaround. Measure the normal path separately. |
 | Can the user listen live and take over (DC-12, P1)? | Probe 10 | Takeover stays out of the demo. |
 | Is per-call cost reported late? | Report script | The spend cap uses an estimate from duration until the cost arrives. |
