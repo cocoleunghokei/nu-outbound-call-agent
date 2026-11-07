@@ -5,10 +5,24 @@
 //   node scripts/realtime-smoke.mjs --url <supabase api url> --anon-key <key> --call-id <uuid> \
 //     --owner-token <jwt> --other-token <jwt> --trigger "<shell command that causes one event>"
 //
-// Exit codes: 0 pass, 1 an assertion failed, 2 bad arguments or Realtime unreachable.
+// Needs Node.js 22+: @supabase/realtime-js uses Node's native WebSocket.
+//
+// Exit codes: 0 pass, 1 an assertion failed, 2 bad arguments, Node too old or Realtime
+// unreachable.
 import { spawn } from 'node:child_process'
 import { parseArgs } from 'node:util'
-import { createClient } from '@supabase/supabase-js'
+
+const MIN_NODE_MAJOR = 22
+const nodeMajor = Number(process.versions.node.split('.')[0])
+if (nodeMajor < MIN_NODE_MAJOR) {
+  console.error(
+    `realtime-smoke: needs Node.js ${MIN_NODE_MAJOR}+ (native WebSocket for Realtime);` +
+      ` this is Node ${process.versions.node}`,
+  )
+  process.exit(2)
+}
+// Imported after the version check, so an old Node gets the message above instead.
+const { createClient } = await import('@supabase/supabase-js')
 
 const OWNER_WITHIN_MS = 2000
 const OTHER_QUIET_MS = 3000
