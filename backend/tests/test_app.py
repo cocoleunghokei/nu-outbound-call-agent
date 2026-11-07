@@ -1,5 +1,8 @@
 """Tests for the app skeleton: error shape, CORS, package discovery."""
 
+import asyncio
+import logging
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,9 +10,11 @@ from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from app import main as main_module
 from app.config import Settings
 from app.errors import ApiError
 from app.main import create_app
+from app.registry import AppContext, Registries
 
 VERCEL_REGEX = r"https://.*\.vercel\.app"
 
@@ -102,7 +107,7 @@ def test_startup_hook_runs(tmp_path: Path) -> None:
         "@router.get('/started')\n"
         "def started() -> dict[str, bool]:\n"
         "    return state\n"
-        "async def hook() -> None:\n"
+        "async def hook(ctx) -> None:\n"
         "    state['started'] = True\n"
         "def register(reg) -> None:\n"
         "    reg.add_router(router)\n"
@@ -169,3 +174,115 @@ def test_env_example_loads_with_defaults() -> None:
     assert settings.cors_origins == ["http://localhost:5173"]
     assert settings.vapi_ip_allowlist is False
     assert settings.supabase_jwt_secret is None
+
+
+# --- owner hooks: AppContext, workers, shutdown -------------------------------------------
+
+
+def _write_package(root: Path, name: str, source: str) -> None:
+    package = root / name
+    package.mkdir()
+    (package / "__init__.py").write_text(source)
+
+
+def test_startup_hook_receives_app_context(tmp_path: Path) -> None:
+    _write_package(
+        tmp_path,
+        "ctx_owner",
+        "seen = {}\n"
+        "async def hook(ctx) -> None:\n"
+        "    seen['ctx'] = ctx\n"
+        "def register(reg) -> None:\n"
+        "    reg.on_startup(hook)\n",
+    )
+    app = make_app(packages_root=tmp_path)
+    with TestClient(app):
+        ctx = sys.modules["_discovered_ctx_owner"].seen["ctx"]
+        assert isinstance(ctx, AppContext)
+        assert ctx.settings is app.state.settings
+        assert ctx.registries is app.state.registries
+        assert ctx.pool is None  # no database_url in this test
+
+
+class _FakePool:
+    """Stands in for AsyncConnectionPool and records when it is opened and closed."""
+
+    def __init__(self, journal: list[str]) -> None:
+        self.journal = journal
+
+    async def open(self, wait: bool = False, timeout: float = 30.0) -> None:
+        self.journal.append("pool.open")
+
+    async def close(self) -> None:
+        self.journal.append("pool.close")
+
+
+def test_worker_runs_and_is_cancelled_before_shutdown_hooks_and_pool_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal: list[str] = []
+    pool = _FakePool(journal)
+    monkeypatch.setattr(main_module, "create_pool", lambda url: pool)
+
+    async def no_ingress_startup(pool: object, tools: object) -> None:
+        journal.append("ingress.startup")
+
+    monkeypatch.setattr(main_module.vapi_webhooks, "run_ingress_startup", no_ingress_startup)
+    started = asyncio.Event()
+
+    async def worker(ctx: AppContext) -> None:
+        assert ctx.pool is pool
+        journal.append("worker.start")
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            journal.append("worker.cancelled")
+            raise
+
+    async def on_shutdown(ctx: AppContext) -> None:
+        assert ctx.pool is pool
+        journal.append("shutdown.hook")
+
+    def register_hooks(reg: Registries) -> None:
+        reg.add_worker(worker)
+        reg.on_shutdown(on_shutdown)
+
+    app = create_app(Settings(database_url="postgresql://fake.example.test/db"))
+    register_hooks(app.state.registries)
+
+    async def scenario() -> None:
+        async with app.router.lifespan_context(app):
+            await asyncio.wait_for(started.wait(), 2)
+            journal.append("serving")
+
+    asyncio.run(scenario())
+    assert journal == [
+        "pool.open",
+        "ingress.startup",
+        "worker.start",
+        "serving",
+        "worker.cancelled",
+        "shutdown.hook",
+        "pool.close",
+    ]
+
+
+def test_crashing_worker_is_logged_and_app_keeps_serving(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    app = make_app()
+
+    async def crashing(ctx: AppContext) -> None:
+        raise RuntimeError("worker blew up")
+
+    app.state.registries.add_worker(crashing)
+    with caplog.at_level(logging.ERROR, logger="app.main"):
+        with TestClient(app) as client:
+            for _ in range(20):
+                if any("worker blew up" in (r.exc_text or "") for r in caplog.records):
+                    break
+                client.get("/health")
+            assert client.get("/health").status_code == 200
+    crash_logs = [r for r in caplog.records if "crashing" in r.getMessage()]
+    assert crash_logs, [r.getMessage() for r in caplog.records]
