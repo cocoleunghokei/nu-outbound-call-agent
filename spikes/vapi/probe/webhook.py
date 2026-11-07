@@ -202,7 +202,8 @@ class ProbeServer:
                 results.append({"name": name, "toolCallId": call_id, "result": "Logged."})
                 continue
             field = args.get("field_requested")
-            if isinstance(field, str) and field:
+            field = field.strip() if isinstance(field, str) else ""
+            if field:
                 self._log(cid).append("ask-first-trigger", {"field_requested": field,
                                                             "tool_call_id": call_id})
             with self._lock:
@@ -213,7 +214,7 @@ class ProbeServer:
                     self._last_left[cid] = TIMEOUT_S
                 msgs = s.on_ask(args, self.clock())
                 self._print_view(cid, s)
-                if isinstance(field, str) and field:
+                if field:
                     self.out(f"  ask-first field: {field}")
                 self._dispatch(cid, msgs)
             results.append({"name": ASK_USER_TOOL_NAME, "toolCallId": call_id,

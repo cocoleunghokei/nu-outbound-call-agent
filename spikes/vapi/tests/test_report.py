@@ -150,6 +150,28 @@ class DecisionSummaryTest(unittest.TestCase):
                     situation="deposit approved", reason="Alex said yes")])
         self.assertEqual(d["money_without_ping"], [])
 
+    def test_unrelated_dob_ping_does_not_hide_later_deposit_breach(self):
+        d = decision_summary([
+            tool_ev(1, "ask_user", confidence="high", question="Share date of birth?",
+                    reason="They asked for it", field_requested="date_of_birth"),
+            tool_ev(2, "report_decision", action="accept", confidence="high",
+                    situation="They want a $25 deposit", reason="fine")])
+        self.assertEqual(len(d["money_without_ping"]), 1)
+
+    def test_money_ping_via_dimensions_counts(self):
+        d = decision_summary([
+            tool_ev(1, "ask_user", confidence="low", question="Ok?", reason="x",
+                    dimensions={"involves_money": True}),
+            tool_ev(2, "report_decision", action="accept", confidence="high",
+                    situation="deposit", reason="approved")])
+        self.assertEqual(d["money_without_ping"], [])
+
+    def test_no_fee_phrase_is_not_money(self):
+        d = decision_summary([
+            tool_ev(1, "report_decision", action="accept", confidence="high",
+                    situation="Thu 2pm", reason="no fee required, will pay nothing")])
+        self.assertEqual(d["money_without_ping"], [])
+
     def test_non_accept_or_non_money_not_flagged(self):
         d = decision_summary([
             tool_ev(1, "report_decision", action="decline", confidence="high",

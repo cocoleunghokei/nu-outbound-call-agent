@@ -145,6 +145,10 @@ class BuildAssistantTest(unittest.TestCase):
         self.assertIn("Ask-me-first", gates)
         self.assertIn("money", gates)
         self.assertIn("Call report_outcome once before ending the call", c)
+        self.assertIn("At a gate, set confidence to your best tier from the four checks", c)
+        rules = c.split("RULES:")[1].split("IF ALEX CHEN")[0]
+        self.assertIn("call report_outcome first (refused_ai)", rules)
+        self.assertIn("call report_outcome first (needs_follow_up)", c.split("IF ALEX CHEN")[1])
 
     def test_fixed_voice_transcriber_and_limits(self):
         self.assertEqual(

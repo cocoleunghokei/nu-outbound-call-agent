@@ -12,8 +12,9 @@ from probe.ping import FILLER_LINES, HOLD_LINE_PREFIX, REPLY_MARKER, TIMEOUT_MAR
 from probe.vapi_api import VapiApi
 
 _AI_WORD = re.compile(r"\bAI\b")
-_MONEY = re.compile(r"\$\s*\d|\b(deposit|fees?|pay|paying|payment|prepay|charges?|money|"
-                    r"dollars?|price|cost|credit card)\b", re.IGNORECASE)
+_MONEY = re.compile(r"\$\s*\d|\b(deposit|fees?)\b", re.IGNORECASE)
+_NO_MONEY = re.compile(r"\b(no|without|zero)\s+(deposit|fee)s?\b(\s+(required|needed))?",
+                       re.IGNORECASE)
 TIERS = ("high", "medium", "low")
 _FILLER_PREFIXES = tuple(line.split("{user}")[0] for line in FILLER_LINES)
 
@@ -133,10 +134,11 @@ def _args(e: Event) -> dict:
     return args if isinstance(args, dict) else {}
 
 
-def _mentions_money(args: dict) -> bool:
-    texts = [args.get(k) for k in ("situation", "reason", "missed_preference")]
+def _mentions_money(args: dict, keys=("situation", "reason", "missed_preference")) -> bool:
+    """True if the text names a $ amount, deposit or fee (negations like "no fee" excluded)."""
+    texts = [args.get(k) for k in keys]
     dims = args.get("dimensions")
-    return (any(isinstance(t, str) and _MONEY.search(t) for t in texts)
+    return (any(isinstance(t, str) and _MONEY.search(_NO_MONEY.sub("", t)) for t in texts)
             or (isinstance(dims, dict) and dims.get("involves_money") is True))
 
 
@@ -144,7 +146,8 @@ def decision_summary(events: list[Event]) -> dict:
     """Probes 4, 7, 8 and 9: tier counts, money-without-ping breaches, ask-first, outcome.
 
     A breach is a `report_decision` with action=accept that mentions money while no
-    `ask_user` came earlier in the same call (the DC-4 money gate).
+    money-related `ask_user` (about money in its question, reason or dimensions) came
+    earlier in the same call (the DC-4 money gate, DC-13).
     """
     tiers = {t: 0 for t in (*TIERS, "unknown")}
     out: dict = {"decisions": 0, "asks": 0, "missed_preferences": [],
@@ -162,7 +165,7 @@ def decision_summary(events: list[Event]) -> dict:
         tiers[conf if conf in TIERS else "unknown"] += 1
         if e.kind == "tool:ask_user":
             out["asks"] += 1
-            asked = True
+            asked = asked or _mentions_money(args, ("question", "reason"))
             if isinstance(args.get("field_requested"), str):
                 out["ask_first_fields"].append(args["field_requested"])
             continue

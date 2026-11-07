@@ -336,6 +336,20 @@ class WebhookTest(unittest.TestCase):
         self.assertTrue(any("ask-first field: date_of_birth" in p for p in self.printed))
         self.assertEqual(len(self.control.sent), 1)
 
+    def test_whitespace_field_requested_is_not_a_trigger(self):
+        self.post(tool_body("ask_user", {**ARGS, "field_requested": "   "}))
+        self.assertEqual(self.event("ask-first-trigger"), [])
+
+    def test_field_requested_is_stripped(self):
+        self.post(tool_body("ask_user", {**ARGS, "field_requested": " address "}))
+        (e,) = self.event("ask-first-trigger")
+        self.assertEqual(e.payload["field_requested"], "address")
+
+    def test_ask_user_malformed_arguments_do_not_crash(self):
+        for raw in ("not json", "[1]", "null"):
+            self.assertEqual(self.post(tool_body("ask_user", None, raw=raw)).status, 200)
+        self.assertEqual(len(self.event("tool:ask_user")), 3)
+
     def test_non_string_field_requested_is_ignored(self):
         self.post(tool_body("ask_user", {**ARGS, "field_requested": 5}))
         self.assertEqual(self.event("ask-first-trigger"), [])
