@@ -1324,3 +1324,134 @@ def test_transcripts_display_order_uses_source_start_ts(
         ]
 
     asyncio.run(scenario())
+
+
+# --- fix round 1: scores leave the receipt; BoundCall comes from the locked row ---------
+
+
+async def score_rows(db_url: str, call: FreshCall) -> dict[str, int]:
+    found = await rows(
+        db_url,
+        "select tool_call_id, count(*) from public.agent_scores where call_id = %s"
+        " group by tool_call_id",
+        (call.call_id,),
+    )
+    return {r[0]: r[1] for r in found}
+
+
+def _assert_no_scores_on_receipts(state: dict[str, tuple[Any, ...]]) -> None:
+    for tool_call_id, (receipt_state, _, _, arguments) in state.items():
+        assert receipt_state in ("handled", "failed"), tool_call_id
+        decoded = json.loads(arguments)
+        assert "confidence" not in decoded and "dimensions" not in decoded, tool_call_id
+
+
+@pytest.mark.db
+def test_handled_scored_receipts_drop_scores_and_score_once(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    async def scenario() -> None:
+        body = fixture("tool-calls", fresh_call)
+        ids = [entry["id"] for entry in body["message"]["toolCallList"]]
+        app = create_app(make_settings(supabase_env.db_url))
+        ask, decide = Recorder("asked"), Recorder("decided")
+        registries(app).tools.register_tool_handler("ask_user", ask)
+        registries(app).tools.register_tool_handler("report_decision", decide)
+        async with serve(app) as client:
+            first = await post(client, body)
+            second = await post(client, body)  # redelivery of already-handled scored calls
+        assert first.json() == second.json()
+        assert len(ask.seen) + len(decide.seen) == 2
+        state = await receipts(supabase_env.db_url, fresh_call)
+        assert set(state) == set(ids)
+        _assert_no_scores_on_receipts(state)
+        assert await score_rows(supabase_env.db_url, fresh_call) == {ids[0]: 1, ids[1]: 1}
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_failed_scored_receipt_drops_scores(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    async def scenario() -> None:
+        body = fixture("tool-calls", fresh_call)
+
+        async def broken(conn: AsyncConnection[Any], ctx: ToolCallContext) -> str:
+            raise RuntimeError("owner failed")
+
+        app = create_app(make_settings(supabase_env.db_url))
+        registries(app).tools.register_tool_handler("ask_user", broken)
+        registries(app).tools.register_tool_handler("report_decision", broken)
+        async with serve(app) as client:
+            await post(client, body)
+        state = await receipts(supabase_env.db_url, fresh_call)
+        assert {v[0] for v in state.values()} == {"failed"}
+        _assert_no_scores_on_receipts(state)
+        assert await score_rows(supabase_env.db_url, fresh_call) == {}
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_dispatch_pending_scored_receipt_drops_scores_and_scores_once(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    async def scenario() -> None:
+        body = fixture("tool-calls", fresh_call)
+        ids = [entry["id"] for entry in body["message"]["toolCallList"]]
+        app = create_app(make_settings(supabase_env.db_url))
+        async with serve(app) as client:
+            await post(client, body)  # no handlers yet: both receipts pending, scores kept
+            pending = await receipts(supabase_env.db_url, fresh_call)
+            assert {v[0] for v in pending.values()} == {"pending"}
+            assert all("confidence" in json.loads(v[3]) for v in pending.values())
+            assert await score_rows(supabase_env.db_url, fresh_call) == {}
+            registries(app).tools.register_tool_handler("ask_user", Recorder("asked"))
+            registries(app).tools.register_tool_handler("report_decision", Recorder("decided"))
+            await dispatch_pending(app.state.pool, tools=registries(app).tools)
+            await dispatch_pending(app.state.pool, tools=registries(app).tools)
+            await post(client, body)  # redelivery after dispatch
+        state = await receipts(supabase_env.db_url, fresh_call)
+        assert {v[0] for v in state.values()} == {"handled"}
+        _assert_no_scores_on_receipts(state)
+        assert await score_rows(supabase_env.db_url, fresh_call) == {ids[0]: 1, ids[1]: 1}
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_event_handler_sees_ended_at_from_locked_row(
+    supabase_env: SupabaseEnv, fresh_call: FreshCall
+) -> None:
+    """The call ends while the webhook waits for the call lock: the handler must see it."""
+
+    async def scenario() -> None:
+        seen: list[BoundCall] = []
+
+        async def on_status(
+            conn: AsyncConnection[Any], call: BoundCall, raw: dict[str, Any]
+        ) -> None:
+            seen.append(call)
+
+        app = create_app(make_settings(supabase_env.db_url))
+        registries(app).events.register_event_handler("status-update", on_status)
+        async with serve(app) as client:
+            async with await psycopg.AsyncConnection.connect(supabase_env.db_url) as ender:
+                async with ender.transaction():
+                    assert await end_call_transition(
+                        ender, fresh_call.call_id, reason="test", source="backend"
+                    )
+                    # bind_call's plain read still sees ended_at null; lock_call blocks here.
+                    request = asyncio.create_task(
+                        post(client, fixture("status-update", fresh_call))
+                    )
+                    await asyncio.sleep(0.5)
+                    assert not request.done()
+            response = await request
+        assert response.status_code == 200
+        [call] = seen
+        assert call.ended_at is not None
+        assert call.call_id == fresh_call.call_id and call.user_id == fresh_call.user_id
+
+    asyncio.run(scenario())

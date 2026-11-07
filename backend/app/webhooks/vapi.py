@@ -65,6 +65,9 @@ RECEIVED = "received"
 SCORED_TOOLS = frozenset({"ask_user", "report_decision"})
 _CAPABILITY_KEYS = frozenset({"controlUrl", "listenUrl"})
 _MAX_ERROR_CHARS = 8000
+# A receipt keeps confidence/dimensions only while pending (dispatch_pending needs them to
+# write agent_scores); leaving pending strips them in the same UPDATE (DC-5).
+_STRIP_SCORES = "arguments - 'confidence' - 'dimensions'"
 
 
 class _DatabaseUnavailable(Exception):
@@ -181,6 +184,8 @@ async def run_tool_handler(
     the result and the scores (from the full ``arguments``) go to ``agent_scores``. On failure
     only that savepoint is rolled back; the receipt becomes ``failed`` with the redacted error
     and a ``call_events_failed`` row is written, so a redelivery never reruns the handler.
+    Either way ``confidence``/``dimensions`` are removed from the receipt's ``arguments`` in
+    the same UPDATE, so after the pending state scores live only in ``agent_scores``.
     """
     try:
         async with conn.transaction():
@@ -189,16 +194,16 @@ async def run_tool_handler(
                 raise TypeError(f"tool handler for {ctx.name} returned {type(result).__name__}")
             result = redact_text(result, secrets)
             await conn.execute(
-                "update public.tool_calls set state = 'handled', result = %s, error = null"
-                " where call_id = %s and tool_call_id = %s",
+                "update public.tool_calls set state = 'handled', result = %s, error = null,"
+                f" arguments = {_STRIP_SCORES} where call_id = %s and tool_call_id = %s",
                 (Jsonb(result), ctx.call_id, ctx.tool_call_id),
             )
             await _store_scores(conn, ctx, arguments)
     except Exception as exc:
         error = format_error(exc, secrets)
         await conn.execute(
-            "update public.tool_calls set state = 'failed', error = %s"
-            " where call_id = %s and tool_call_id = %s",
+            "update public.tool_calls set state = 'failed', error = %s,"
+            f" arguments = {_STRIP_SCORES} where call_id = %s and tool_call_id = %s",
             (error, ctx.call_id, ctx.tool_call_id),
         )
         await _dead_letter(conn, ctx.call_id, raw_event_id, error)
@@ -326,9 +331,20 @@ async def _ingest(
         except CallNotFound:
             call = None
         else:
-            control, listen = _monitor_urls(body)
-            if locked.ended_at is None and control and listen:
-                await write_call_secrets(conn, call.call_id, control, listen)
+            if locked.vapi_call_id is not None and locked.vapi_call_id != vapi_call_id_of(body):
+                call = None  # the binding changed while we waited for the lock
+            else:
+                # Rebuild from the locked row: bind_call's read was unlocked, so its ended_at
+                # can be stale, and handlers decide on it.
+                call = BoundCall(
+                    call_id=locked.id,
+                    user_id=locked.user_id,
+                    vapi_call_id=locked.vapi_call_id,
+                    ended_at=locked.ended_at,
+                )
+                control, listen = _monitor_urls(body)
+                if locked.ended_at is None and control and listen:
+                    await write_call_secrets(conn, call.call_id, control, listen)
     message = message_of(redacted_body)
     try:
         inserted = await (
@@ -405,6 +421,10 @@ async def dispatch_pending(
     ``select ... for update skip locked`` on the still-pending receipt (a row that is gone,
     handled or locked by another dispatcher is skipped). A failing handler marks its receipt
     ``failed`` and writes a dead letter. Never raises. Returns the number handled.
+
+    ``tools`` is the app's tool registry. Startup passes it from ``create_app``; Coco's
+    sweeper calls ``dispatch_pending(pool, tools=reg.tools)`` on each tick, with the ``reg``
+    it captured in its package's ``register(reg)``.
     """
     names = tools.names()
     if not names:
