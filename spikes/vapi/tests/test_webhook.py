@@ -24,6 +24,23 @@ TRANSCRIPT_BODY = {"message": {"type": "transcript", "call": {"id": "call_1"}, "
                                "transcriptType": "final", "transcript": "We have Thursday at 4."}}
 
 
+def tool_body(name, args, tc_id="tc_x", raw=None):
+    return {"message": {"type": "tool-calls", "call": {"id": "call_1"},
+                        "toolCallList": [{"id": tc_id, "type": "function", "function": {
+                            "name": name,
+                            "arguments": raw if raw is not None else json.dumps(args)}}]}}
+
+
+DECISION = {"situation": "Offered Thu 2pm", "action": "accept", "confidence": "medium",
+            "reason": "Meets constraint", "missed_preference": "No window seat",
+            "dimensions": {"needs_ask_first_field": False, "involves_money": False,
+                           "meets_constraints": True, "matches_fallback": False,
+                           "answerable_from_brief": True, "understood": True},
+            "future_field": 1}
+OUTCOME = {"outcome": "booked", "business_confirmed": True,
+           "details": {"date": "Thu", "time": "2pm", "extra": "x"}, "open_items": ["bring ID"]}
+
+
 class Resp:
     def __init__(self, status, body):
         self.status, self.body = status, body
@@ -149,7 +166,7 @@ class WebhookTest(unittest.TestCase):
     def test_sends_are_logged_to_call_log(self):
         self.post(TOOL_CALL_BODY)
         kinds = [e.kind for e in read_events(self.runs / "call_1.jsonl")]
-        self.assertEqual(kinds, ["vapi:tool-calls", "control-sent"])
+        self.assertEqual(kinds, ["vapi:tool-calls", "tool:ask_user", "control-sent"])
 
     def test_other_type_is_200_empty(self):
         resp = self.post({"message": {"type": "status-update", "call": {"id": "call_1"}}})
@@ -183,7 +200,7 @@ class WebhookTest(unittest.TestCase):
                    "message": {**TOOL_CALL_BODY["message"], "call": {"id": "call_x"}}})
         self.assertEqual(self.control.sent, [])
         self.assertEqual([e.kind for e in read_events(self.runs / "call_x.jsonl")],
-                         ["vapi:tool-calls"])
+                         ["vapi:tool-calls", "tool:ask_user"])
         self.assertFalse((self.runs / "unknown.jsonl").exists())
         self.assertIn("no control URL for call call_x", self.printed)
 
@@ -280,6 +297,60 @@ class WebhookTest(unittest.TestCase):
         self.assertFalse(self.srv.ping_for("call_1").is_open)
         kinds = [e.kind for e in read_events(self.runs / "call_1.jsonl")]
         self.assertEqual(kinds.count("control-failed"), 2)
+
+    def kinds(self):
+        return [e.kind for e in read_events(self.runs / "call_1.jsonl")]
+
+    def event(self, kind):
+        return [e for e in read_events(self.runs / "call_1.jsonl") if e.kind == kind]
+
+    def test_report_decision_is_logged_and_acknowledged_without_ping(self):
+        resp = self.post(tool_body("report_decision", DECISION, "tc_d"))
+        self.assertEqual(json.loads(resp.body), {"results": [
+            {"name": "report_decision", "toolCallId": "tc_d", "result": "Logged."}]})
+        (e,) = self.event("tool:report_decision")
+        self.assertEqual(e.payload["args"], DECISION)
+        self.assertEqual(e.payload["tool_call_id"], "tc_d")
+        self.assertEqual(self.control.sent, [])
+        self.assertFalse(self.srv.ping_for("call_1").is_open)
+
+    def test_report_outcome_is_logged_and_acknowledged(self):
+        resp = self.post(tool_body("report_outcome", OUTCOME, "tc_o"))
+        self.assertEqual(json.loads(resp.body)["results"][0]["result"], "Logged.")
+        (e,) = self.event("tool:report_outcome")
+        self.assertEqual(e.payload["args"], OUTCOME)
+        self.assertEqual(self.control.sent, [])
+
+    def test_ask_user_logs_tool_event_with_confidence(self):
+        args = {**ARGS, "confidence": "low", "extra": [1]}
+        self.post(tool_body("ask_user", args))
+        (e,) = self.event("tool:ask_user")
+        self.assertEqual(e.payload["args"], args)
+        self.assertEqual(self.event("ask-first-trigger"), [])
+
+    def test_field_requested_triggers_ask_first_event_and_print(self):
+        args = {**ARGS, "confidence": "high", "field_requested": "date_of_birth"}
+        self.post(tool_body("ask_user", args))
+        (e,) = self.event("ask-first-trigger")
+        self.assertEqual(e.payload["field_requested"], "date_of_birth")
+        self.assertTrue(any("ask-first field: date_of_birth" in p for p in self.printed))
+        self.assertEqual(len(self.control.sent), 1)
+
+    def test_non_string_field_requested_is_ignored(self):
+        self.post(tool_body("ask_user", {**ARGS, "field_requested": 5}))
+        self.assertEqual(self.event("ask-first-trigger"), [])
+
+    def test_malformed_arguments_do_not_crash(self):
+        for name in ("report_decision", "report_outcome"):
+            for raw in ("not json", "[1, 2]", "null"):
+                self.assertEqual(self.post(tool_body(name, None, raw=raw)).status, 200)
+        self.assertEqual(len(self.event("tool:report_decision")), 3)
+        self.assertEqual(self.event("tool:report_decision")[0].payload["args"], {})
+
+    def test_unknown_tool_is_ignored(self):
+        resp = self.post(tool_body("mystery", {"a": 1}))
+        self.assertEqual(json.loads(resp.body), {"results": []})
+        self.assertEqual(self.control.sent, [])
 
 
 if __name__ == "__main__":

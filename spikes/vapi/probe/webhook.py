@@ -11,7 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable
 
-from probe.assistant import ASK_USER_TOOL_NAME, SECRET_HEADER
+from probe.assistant import (ASK_USER_TOOL_NAME, REPORT_DECISION_TOOL_NAME,
+                             REPORT_OUTCOME_TOOL_NAME, SECRET_HEADER)
 from probe.control import ControlClient
 from probe.eventlog import EventLog, load_meta
 from probe.ping import TIMEOUT_S, PingSession
@@ -20,6 +21,7 @@ UNKNOWN = "unknown"
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _STOP = object()
 MAX_BODY_BYTES = 1_048_576
+LOG_ONLY_TOOLS = (REPORT_DECISION_TOOL_NAME, REPORT_OUTCOME_TOOL_NAME)
 
 
 class ProbeServer:
@@ -185,18 +187,24 @@ class ProbeServer:
             self._print_notices(cid, s)
 
     def _on_tool_calls(self, cid: str, message: dict) -> list[dict]:
+        """Handle ask_user (ping) and report_* (log only); ignore any other tool."""
         results = []
         calls = message.get("toolCallList")
         for tc in calls if isinstance(calls, list) else []:
             fn = tc.get("function") if isinstance(tc, dict) else None
-            if not isinstance(fn, dict) or fn.get("name") != ASK_USER_TOOL_NAME:
+            name = fn.get("name") if isinstance(fn, dict) else None
+            if name != ASK_USER_TOOL_NAME and name not in LOG_ONLY_TOOLS:
                 continue
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except (TypeError, ValueError):
-                args = {}
-            if not isinstance(args, dict):
-                args = {}
+            args = _parse_args(fn.get("arguments"))
+            call_id = tc.get("id")
+            self._log(cid).append(f"tool:{name}", {"tool_call_id": call_id, "args": args})
+            if name in LOG_ONLY_TOOLS:
+                results.append({"name": name, "toolCallId": call_id, "result": "Logged."})
+                continue
+            field = args.get("field_requested")
+            if isinstance(field, str) and field:
+                self._log(cid).append("ask-first-trigger", {"field_requested": field,
+                                                            "tool_call_id": call_id})
             with self._lock:
                 s = self._session(cid)
                 if not s.is_open:
@@ -205,8 +213,10 @@ class ProbeServer:
                     self._last_left[cid] = TIMEOUT_S
                 msgs = s.on_ask(args, self.clock())
                 self._print_view(cid, s)
+                if isinstance(field, str) and field:
+                    self.out(f"  ask-first field: {field}")
                 self._dispatch(cid, msgs)
-            results.append({"name": ASK_USER_TOOL_NAME, "toolCallId": tc.get("id"),
+            results.append({"name": ASK_USER_TOOL_NAME, "toolCallId": call_id,
                             "result": f"Waiting for {self.user_name} to reply."})
         return results
 
@@ -275,6 +285,17 @@ class ProbeServer:
                     self.out(f"control send crashed for call {cid}: {e}")
             finally:
                 self._q.task_done()
+
+
+def _parse_args(raw) -> dict:
+    """Tool-call arguments as a dict; {} when missing, malformed or not an object."""
+    if isinstance(raw, dict):
+        return raw
+    try:
+        args = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return args if isinstance(args, dict) else {}
 
 
 class _Handler(BaseHTTPRequestHandler):

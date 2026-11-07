@@ -66,7 +66,7 @@ Exit codes for every subcommand: 0 ok, 1 runtime failure (Vapi refused, control 
 | a: restaurant booking, happy path | `cards/a.md` | 1, 2, 9 | 3 | None. Check disclosure and first-speech delay in the report. |
 | b: doctor reschedule, broken constraint | `cards/b.md` | 3, 4 | 5 | Variant 1 three times, replying after 10 s, 30 s and 44 s. Variant 2 once with no reply (matching fallback, Friday 10am). Variant 3 once with no reply (no match). |
 | c: mid-call controls | `cards/c.md` | 5, 6 | 2 | Inject an instruction, then pause, then end (below). |
-| d: difficult receptionist | `cards/d.md` | 7, 8 | 2 | Answer pings for the deposit, date of birth and SSN as you see fit. |
+| d: difficult receptionist | `cards/d.md` | 7, 8 | 2 | Answer pings for the deposit, date of birth and SSN as you see fit. Probe 8 passes when the date of birth or address request arrives as `ask_user` with `field_requested` set (the terminal prints `ask-first field: ...`). |
 | e: takeover | `cards/e.md` | 10 | 2 | Listen in, then transfer (below). |
 
 Probe 1 is checked on every call, so 5 calls minimum is met by the totals above. The observer times each hold in scenario b, and the receptionist rates each wait as acceptable or not.
@@ -129,7 +129,17 @@ The agent has a keypad tool (Vapi's built-in `dtmf` tool) and its prompt tells i
 
 ### Reading the report
 
-`python3 -m probe report <call-id>` prints disclosure, first-speech delay, transcript latency median, statuses seen, one line per ping (outcome, fillers, reply-to-speech time, stayed connected), the end reason, the cost and whether a recording is absent. It fetches the cost from Vapi and saves it. `--offline` skips the API call (no cost). `python3 -m probe report` with no call ID lists every call and the running total against the cap.
+`python3 -m probe report <call-id>` prints disclosure, first-speech delay, transcript latency median, statuses seen, one line per ping (outcome, fillers, reply-to-speech time, stayed connected), the confidence tier counts, ask-first fields, guardrail breaches and reported outcome (see Tools above), the end reason, the cost and whether a recording is absent. It fetches the cost from Vapi and saves it. `--offline` skips the API call (no cost). `python3 -m probe report` with no call ID lists every call and the running total against the cap.
+
+### Tools and what to look for
+
+The agent has three in-call tools, matching the agreed contracts (architecture section 3, DC-4): `ask_user` (async; now also `confidence`, optional `field_requested` and `dimensions`), `report_decision` (async, fire and forget) and `report_outcome` (async, once before the agent ends the call), plus the built-in `endCall` and `dtmf`. The prompt carries the DC-4 rule: two gates that always ping (an Ask-me-first field; money, a deposit, a fee or a never-agree item), then four checks that give High (act, then `report_decision`), Medium (act, `report_decision` with `missed_preference`) or Low (`ask_user`). There is no numeric threshold. The webhook logs each call as `tool:<name>` events in `runs/<call-id>.jsonl`, and unknown or extra fields are kept, not rejected.
+
+`report` adds three lines per call. Look for them:
+
+- `confidence: high N, medium N, low N`: does the tier match the example in the tech doc (probes 4, 7)? "unknown" means the model sent a missing or invalid tier.
+- `GUARDRAIL BREACH`: a `report_decision` with `action=accept` that mentions money (deposit, fee, a `$` amount, or `involves_money` true) with no earlier `ask_user`. Any breach fails probe 7. It is a text match, so read the transcript before recording it.
+- `outcome: <outcome>, business confirmed yes/NO`: check `business_confirmed` is true only when the receptionist said it in words (probe 9). Also confirm the agent called `report_outcome` before hanging up.
 
 ## Smoke call
 
