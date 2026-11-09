@@ -614,7 +614,7 @@ function avatarSVG(look){
 
 /* ---------- data ---------- */
 const FIELDS = [
-  {k:'name', label:'Full name'}, {k:'phone', label:'Phone'}, {k:'email', label:'Email'},
+  {k:'name', label:'Full name'}, {k:'calling', label:'Calling name'}, {k:'phone', label:'Phone'}, {k:'email', label:'Email'},
   {k:'dob', label:'Date of birth'}, {k:'address', label:'Home address'},
 ];
 const EXT = [
@@ -624,9 +624,9 @@ const EXT = [
 const S = {
   agent:{look:'female', name:'Mia'},
   phase:'ob', notif:'default', tags:false, calendar:false, retention:true,
-  profile:{name:'', phone:'', email:'alex.chen@northeastern.edu', dob:'', address:''},
+  profile:{name:'', calling:'', phone:'', email:'alex.chen@northeastern.edu', dob:'', address:''},
   ext:{avail:'Weekdays before 3pm', party:'2', dietary:'Vegetarian', provider:'Dr. Lee, Brookline Family Medicine', insurance:'Blue Cross Blue Shield MA, BCB-4471-0923'},
-  share:{name:'free', phone:'free', email:'free', dob:'ask', address:'ask', avail:'free', party:'free', dietary:'free', provider:'free', insurance:'ask'},
+  share:{name:'free', calling:'free', phone:'free', email:'free', dob:'ask', address:'ask', avail:'free', party:'free', dietary:'free', provider:'free', insurance:'ask'},
   msgs:[], chips:[], awaiting:null, typing:false, brief:null, call:null, tab:'tasks', panel:false, drawer:false, modal:null, tasks:[],
   history:[
     {id:'h1', business:'Tatte Bakery & Cafe', number:'(617) 555-0133', goal:'Hold a table for 6 at 7pm Friday', tpl:'rest-book', outcome:'followup', date:'Mon, Oct 26',
@@ -654,7 +654,9 @@ const OUT = {
   cancelled:{label:'Cancelled', cls:'neutral', b:'b-neutral'}, followup:{label:'Needs follow-up', cls:'warn', b:'b-warn'}, failed:{label:'Failed', cls:'bad', b:'b-bad'},
 };
 const first = () => (S.profile.name || 'Alex Chen').split(' ')[0];
-const uname = () => S.profile.name || 'Alex Chen';
+/* ON-3: the calling name is what the agent says it is calling for; it falls back to the full name */
+const uname = () => (S.profile.calling || '').trim() || S.profile.name || 'Alex Chen';
+const CALLING_HINT = 'Always said at the start of every call, so it can’t be set to Ask me first.';
 const now = () => new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
 
 /* ---------- chat engine ---------- */
@@ -714,8 +716,15 @@ function askName(){
   ask('Before we start, what’s your name?', [], gotName, 'Type your full name');
 }
 function gotName(v){
-  user(v); S.profile.name = v.trim();
-  ask(`Nice to meet you, ${first()}. What number should businesses use to call you back?`, [], gotPhone, 'Type your phone number, e.g. (617) 555-0142');
+  user(v); S.profile.name = v.trim(); S.profile.calling = S.profile.name;
+  const opts = [...new Set([S.profile.name, first()])].filter(Boolean);
+  ask(`Nice to meet you, ${first()}. On every call I’ll say I’m calling on behalf of “${uname()}”. Want me to use a different name, like “${first()}”?`,
+    opts.map(n => ({label:`Use “${n}”`, fn:answerVia(gotCalling)})), gotCalling, 'Or type the name I should say on calls');
+}
+function gotCalling(v){
+  const c = String(v).replace(/^Use “(.*)”$/, '$1').trim();
+  user(v); S.profile.calling = c || S.profile.name;
+  ask(`Got it, I’ll introduce you as “${uname()}”. You can change it anytime under You. What number should businesses use to call you back?`, [], gotPhone, 'Type your phone number, e.g. (617) 555-0142');
 }
 function gotPhone(v){
   user(v);
@@ -745,7 +754,7 @@ function notifChoice(v){
   ready(); refresh();
 }
 function skipOb(){
-  Object.assign(S.profile, {name:'Alex Chen', phone:'(617) 555-0142', dob:'March 4, 2004', address:'360 Huntington Ave, Boston, MA'});
+  Object.assign(S.profile, {name:'Alex Chen', calling:'Alex Chen', phone:'(617) 555-0142', dob:'March 4, 2004', address:'360 Huntington Ave, Boston, MA'});
   S.msgs.forEach(m=>m.done = true); S.notif = 'granted';
   user('Skip setup');
   bot('Done. I filled in a demo profile for Alex.');
@@ -1146,6 +1155,8 @@ function msgHTML(m, i){
 }
 function shareRow(f, locked){
   const v = S.share[f.k], val = S.profile[f.k] ?? S.ext[f.k] ?? '';
+  if (f.k === 'calling') return `<div class="srow"><div><b>${f.label}</b><small>${esc(uname())}</small></div>
+    <span class="tg free" title="${CALLING_HINT}">Always shared</span></div>`;
   return `<div class="srow"><div><b>${f.label}</b>${val?`<small>${esc(val)}</small>`:''}</div>
     <div class="radios" role="radiogroup" aria-label="${f.label}">
       <button role="radio" aria-checked="${v==='free'}" class="${v==='free'?'on':''}" ${locked?'disabled':''} onclick="setShare('${f.k}','free')">Share freely</button>
@@ -1255,7 +1266,7 @@ function panelBody(){
       <button class="btn danger sm" onclick="if(confirm('Delete all calls, transcripts, and profile data? This can’t be undone.')){S.history=[];toast({title:'All data deleted',body:'Your calls and transcripts are gone.'});renderPanel()}">Delete all my data</button>
     </div>`;
   return `<div class="sec-t">Your details ${tag('ON-7','P0')}</div>
-    <div class="box" style="padding:4px 14px">${FIELDS.map(f=>`<div class="prow"><label for="pf-${f.k}">${f.label}</label><input class="input" id="pf-${f.k}" value="${esc(S.profile[f.k])}" oninput="S.profile['${f.k}']=this.value"></div>`).join('')}</div>
+    <div class="box" style="padding:4px 14px">${FIELDS.map(f=>`<div class="prow"><label for="pf-${f.k}">${f.label}</label><input class="input" id="pf-${f.k}" value="${esc(S.profile[f.k])}" oninput="S.profile['${f.k}']=this.value">${f.k==='calling'?`<p class="small muted" style="margin:4px 0 0">${CALLING_HINT}</p>`:''}</div>`).join('')}</div>
     <div class="sec-t">More details ${tag('ON-4','P1')}</div>
     <div class="box" style="padding:4px 14px">${EXT.map(f=>`<div class="prow"><label for="px-${f.k}">${f.label}</label><input class="input" id="px-${f.k}" value="${esc(S.ext[f.k])}" oninput="S.ext['${f.k}']=this.value"></div>`).join('')}</div>
     <div class="sec-t">Connections</div>
@@ -1551,7 +1562,7 @@ function vCall(id){
 }
 function setShare(k, v){ S.share[k] = v; refresh(); if (S.page !== 'chat') renderPage(); }
 function vPrivacy(){
-  const inp = (f, src, key) => `<div class="prow"><label for="pv-${f.k}">${f.label}</label><input class="input" id="pv-${f.k}" value="${esc(src[f.k])}" oninput="S.${key}['${f.k}']=this.value"></div>`;
+  const inp = (f, src, key) => `<div class="prow"><label for="pv-${f.k}">${f.label}</label><input class="input" id="pv-${f.k}" value="${esc(src[f.k])}" oninput="S.${key}['${f.k}']=this.value">${f.k==='calling'?`<p class="small muted" style="margin:4px 0 0">${CALLING_HINT}</p>`:''}</div>`;
   return `<div class="ph"><div><h1>Privacy & profile ${tag('ON-7','P0')}</h1><p>What ${esc(S.agent.name)} knows about you, and what it may say on a call. Changes apply to your next call.</p></div></div>
     <div class="agenda">
       <section>
