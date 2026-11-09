@@ -36,9 +36,15 @@ export function outcomeDisplay(item: Pick<CallHistoryItem, 'outcome' | 'endedAt'
   return OUTCOMES[outcome] ?? { label: 'Unknown', tone: 'neutral' }
 }
 
-/** Newest call first. Returns a new array. */
+/** Milliseconds since 1970 for sorting; an unreadable date counts as oldest. */
+function sortTime(iso: string): number {
+  const time = Date.parse(iso)
+  return Number.isNaN(time) ? 0 : time
+}
+
+/** Newest call first; a call with an unreadable date goes last. Returns a new array. */
 export function sortNewestFirst(items: readonly CallHistoryItem[]): CallHistoryItem[] {
-  return [...items].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+  return [...items].sort((a, b) => sortTime(b.createdAt) - sortTime(a.createdAt))
 }
 
 const dateFormat = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
