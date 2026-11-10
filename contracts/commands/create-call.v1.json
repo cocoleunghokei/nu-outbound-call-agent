@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "commands/create-call.v1.json",
+  "title": "CreateCallCommand",
+  "type": "object",
+  "required": [
+    "brief_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "brief_id": {
+      "type": "string",
+      "format": "uuid"
+    }
+  }
+}
