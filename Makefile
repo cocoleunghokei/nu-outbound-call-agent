@@ -20,7 +20,7 @@ check: hygiene secrets lint test build ## Run everything CI runs, except the dat
 hygiene: ## Repo-wide checks: secrets, whitespace, YAML, workflows, file sizes
 	pre-commit run --all-files
 
-secrets: ## Scan the whole git history for leaked keys
+secrets: ## Scan the history of HEAD (main plus this branch) for leaked keys
 	pre-commit run gitleaks-history --hook-stage manual --all-files
 
 lint: ## Lint each subproject that has a Makefile
