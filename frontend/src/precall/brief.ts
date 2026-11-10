@@ -52,8 +52,13 @@ function goalSummary(goal: string): string {
  * - `share_freely_keys` / `ask_first_keys`: the calling name, phone and the
  *   template's profile fields that the profile has, split by sharing setting.
  */
+/** The user's profile plus the fields they filled in during the chat (ON-5 default sharing). */
+export function profileWithAdditions(draft: CallDraft, profile: ProfileField[]): ProfileField[] {
+  return draft.profile_additions.reduce((p, f) => withProfileField(p, f.key, f.value), profile)
+}
+
 export function buildBrief(draft: CallDraft, template: CallTemplate | undefined, profile: ProfileField[]): BuiltBrief {
-  const fullProfile = draft.profile_additions.reduce((p, f) => withProfileField(p, f.key, f.value), profile)
+  const fullProfile = profileWithAdditions(draft, profile)
   const byKey = new Map(fullProfile.filter((f) => f.value.trim() !== '').map((f) => [f.key, f]))
   const missing: string[] = []
 
@@ -97,4 +102,36 @@ export function buildBrief(draft: CallDraft, template: CallTemplate | undefined,
     ask_first_keys: shareKeys.filter((key) => byKey.get(key)?.sharing === 'ask_first'),
   }
   return { brief, missing_fields: [...new Set(missing)] }
+}
+
+/** The DC-1 opening line, word for word as `FIRST_MESSAGE_TEMPLATE` in PR #19 `backend/app/voice/prompt_safety.py`. */
+export const FIRST_MESSAGE_TEMPLATE = "Hi, I'm an AI assistant calling on behalf of {calling_name}. This call is transcribed. {task_line}"
+
+/**
+ * Preview the agent's first sentence for the review card (PC-6), the same way
+ * the backend's `build_first_message` builds it: literals as typed,
+ * `field_ref`s from the profile, and never an Ask-me-first value. Returns
+ * null when something is missing, which also blocks Start.
+ */
+export function openingLine(brief: Brief, profile: ProfileField[]): string | null {
+  const field = (key: string) => profile.find((f) => f.key === key && f.value.trim() !== '')
+  const calling = field('calling_name')
+  if (!calling) return null
+  const values: Record<string, string> = {}
+  for (const [name, spec] of Object.entries(brief.task_vars)) {
+    if ('literal' in spec) {
+      values[name] = spec.literal
+      continue
+    }
+    const ref = field(spec.field_ref)
+    if (!ref || ref.sharing === 'ask_first') return null
+    values[name] = ref.value
+  }
+  let complete = true
+  const taskLine = brief.task_line.replace(PLACEHOLDER, (_match, name: string) => {
+    if (!(name in values)) complete = false
+    return values[name] ?? ''
+  })
+  if (!complete) return null
+  return FIRST_MESSAGE_TEMPLATE.replace('{calling_name}', calling.value).replace('{task_line}', taskLine)
 }

@@ -115,7 +115,7 @@ describe('missing-context questions (PC-4)', () => {
       ...SKIPPED,
       answers: { party_size: '6', day: 'Friday', time: '7pm' },
     })
-    expect(lastAgent(s)).toContain('(617) 555-0100')
+    expect(lastAgent(s)).toBe("Here's the plan. Give it a quick look, then start the call.")
   })
 
   it('never asks for a field the profile already has (doctor: name and DOB)', () => {
