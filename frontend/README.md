@@ -22,12 +22,16 @@ Open http://localhost:5173.
 - `src/App.tsx`: root component, start here
 - `src/lib/supabase.ts`: shared Supabase client (anon key only; every table it reads needs row-level security)
 - `src/index.css`: global styles
-- `src/live-call/`: live-call page (DC-3 transcript, DC-14 status, DC-8 ping card, DC-11 Pause/Resume/End, DC-4/DC-5 decision feed). `state.ts` folds the call's `call_events` rows into what the page shows; `ping.ts` holds the ping rules (reply clock, free-text cleanup, no free text on Ask-me-first pings). `controls.ts` holds the Pause/Resume/End rules and the feed labels. `mockCall.ts` plays a scripted fake call and answers ping replies and commands like the backend will, until the backend is connected. `types.ts` copies the contract shapes from PR #19 and goes away once that merges.
+- `src/live-call/`: live-call page (DC-3 transcript, DC-14 status, DC-8 ping card, DC-11 Pause/Resume/End, DC-4/DC-5 decision feed). `state.ts` folds the call's `call_events` rows into what the page shows; `ping.ts` holds the ping rules (reply clock, free-text cleanup, no free text on Ask-me-first pings). `controls.ts` holds the Pause/Resume/End rules and the feed labels. `mockCall.ts` plays a scripted fake call and answers ping replies and commands like the backend will, until the backend is connected. `backend.ts` and `useRealCall.ts` follow a real call instead: events load from Supabase and stream in through Realtime, replies and commands go to the backend API. `types.ts` copies the contract shapes from PR #19 and goes away once that merges.
 - `public/prototype/`: static, clickable design prototype, served as is at `/prototype/`. It isn't part of the React app, so don't import from it.
 
 ## Checks
 
 `make lint test build` from this folder (or `make check` from the repo root) runs the same checks as CI. Tests use Vitest (`npm test`); put them next to the code as `*.test.ts`.
+
+## Following a real call
+
+The live-call page plays the fake call unless all three are set: `VITE_LIVE_CALL_SOURCE=real`, `VITE_API_URL` (the backend, e.g. `http://localhost:8000`), and `?call=<call id>` in the address. You also need to be signed in to Supabase in the browser. To try it locally: `supabase start`, run the backend with `make -C backend seed-dev` and `uv run uvicorn app.main:app`, open `http://localhost:5173/?call=<CALL_ID>`, then `make -C backend replay CALL_ID=<CALL_ID>`.
 
 ## Patterns
 

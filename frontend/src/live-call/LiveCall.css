@@ -573,3 +573,15 @@
   color: var(--lc-warn);
   font-weight: 600;
 }
+
+/* Connection problems (real backend only) */
+.live-call .lc-notice {
+  margin-top: 12px;
+  border: 1.5px solid #f4d9a8;
+  background: #fff8ec;
+  color: #a35800;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
