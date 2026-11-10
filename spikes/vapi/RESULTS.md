@@ -36,7 +36,7 @@ Model (`VAPI_MODEL`):
 | 10. Live takeover (P1) | DC-12 | | | |
 | 11. Phone menus (P2) | DC-2 | | | |
 
-Evidence: call IDs and metrics from `report`.
+Evidence: call IDs and metrics from `report`. For probes 4, 7, 8 and 9 cite its `confidence`, `ask-first fields`, `GUARDRAIL BREACH` and `outcome` lines.
 
 ### Probe 9: app state map
 

@@ -1,0 +1,11 @@
+{
+  "outcome": "booked",
+  "business_confirmed": true,
+  "details": {
+    "date": "2026-11-12",
+    "time": "19:00",
+    "confirmation_number": "TB-1234",
+    "staff_name": "Sam"
+  },
+  "open_items": []
+}

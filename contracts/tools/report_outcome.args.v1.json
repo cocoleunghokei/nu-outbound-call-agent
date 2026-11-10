@@ -1,0 +1,50 @@
+{
+  "title": "ReportOutcomeArgs",
+  "type": "object",
+  "required": [
+    "outcome",
+    "business_confirmed"
+  ],
+  "properties": {
+    "outcome": {
+      "title": "ReportedOutcome",
+      "type": "string",
+      "enum": [
+        "booked",
+        "cancelled",
+        "rescheduled",
+        "needs_follow_up",
+        "refused_ai",
+        "wrong_number"
+      ]
+    },
+    "business_confirmed": {
+      "type": "boolean",
+      "description": "True only if the other side explicitly confirmed it, in words"
+    },
+    "details": {
+      "title": "OutcomeDetails",
+      "type": "object",
+      "properties": {
+        "date": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        },
+        "confirmation_number": {
+          "type": "string"
+        },
+        "staff_name": {
+          "type": "string"
+        }
+      }
+    },
+    "open_items": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

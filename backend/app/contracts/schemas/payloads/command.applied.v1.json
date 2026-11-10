@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "payloads/command.applied.v1.json",
+  "title": "CommandAppliedPayload",
+  "type": "object",
+  "required": [
+    "command"
+  ],
+  "properties": {
+    "command": {
+      "title": "CallCommandType",
+      "type": "string",
+      "enum": [
+        "instruction",
+        "pause",
+        "resume",
+        "end"
+      ]
+    }
+  }
+}

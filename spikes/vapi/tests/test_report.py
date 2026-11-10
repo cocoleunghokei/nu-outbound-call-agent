@@ -9,8 +9,8 @@ from probe.cli import main
 from probe.control import add_system_message, say
 from probe.eventlog import Event, RunMeta, load_meta, read_events, save_meta
 from probe.ping import HOLD_LINE_PREFIX, TIMEOUT_MARKER
-from probe.report import (format_block, disclosure_ok, first_speech_delay, median, ping_metrics,
-                          recording_absent, statuses_seen, summarize, transcript_latencies)
+from probe.report import (decision_summary, format_block, disclosure_ok, first_speech_delay,
+                          median, ping_metrics, recording_absent, statuses_seen, summarize, transcript_latencies)
 from probe.vapi_api import VapiApi
 from tests.helpers import FakeTransport, env_with_runs
 
@@ -109,6 +109,125 @@ class ReportTest(unittest.TestCase):
         self.assertTrue(recording_absent({}))
         self.assertFalse(recording_absent({"artifact": {"recordingUrl": "https://r"}}))
         self.assertFalse(recording_absent({"artifact": {"stereoRecordingUrl": "https://r"}}))
+
+
+def tool_ev(t, name, **args):
+    return Event(t, f"tool:{name}", {"tool_call_id": "tc", "args": args})
+
+
+class DecisionSummaryTest(unittest.TestCase):
+    def test_empty(self):
+        d = decision_summary([])
+        self.assertEqual(d["tiers"], {"high": 0, "medium": 0, "low": 0, "unknown": 0})
+        self.assertEqual((d["decisions"], d["asks"], d["money_without_ping"]), (0, 0, []))
+        self.assertEqual(d["ask_first_fields"], [])
+        self.assertIsNone(d["outcome"])
+
+    def test_tier_counts_cover_decisions_and_asks(self):
+        d = decision_summary([
+            tool_ev(1, "report_decision", action="accept", confidence="high", situation="s"),
+            tool_ev(2, "report_decision", action="accept", confidence="medium", situation="s",
+                    missed_preference="no window"),
+            tool_ev(3, "ask_user", confidence="low", question="q"),
+            tool_ev(4, "ask_user", question="q2"),
+            tool_ev(5, "report_decision", action="counter", confidence="bogus"),
+        ])
+        self.assertEqual(d["tiers"], {"high": 1, "medium": 1, "low": 1, "unknown": 2})
+        self.assertEqual((d["decisions"], d["asks"]), (3, 2))
+        self.assertEqual(d["missed_preferences"], ["no window"])
+
+    def test_accept_mentioning_money_without_prior_ask_is_flagged(self):
+        d = decision_summary([
+            tool_ev(1, "report_decision", action="accept", confidence="high",
+                    situation="They want a $25 deposit", reason="fine")])
+        self.assertEqual(len(d["money_without_ping"]), 1)
+        self.assertEqual(d["money_without_ping"][0]["t"], 1)
+
+    def test_money_after_ask_user_is_not_flagged(self):
+        d = decision_summary([
+            tool_ev(1, "ask_user", confidence="low", question="Pay a deposit?"),
+            tool_ev(2, "report_decision", action="accept", confidence="high",
+                    situation="deposit approved", reason="Alex said yes")])
+        self.assertEqual(d["money_without_ping"], [])
+
+    def test_unrelated_dob_ping_does_not_hide_later_deposit_breach(self):
+        d = decision_summary([
+            tool_ev(1, "ask_user", confidence="high", question="Share date of birth?",
+                    reason="They asked for it", field_requested="date_of_birth"),
+            tool_ev(2, "report_decision", action="accept", confidence="high",
+                    situation="They want a $25 deposit", reason="fine")])
+        self.assertEqual(len(d["money_without_ping"]), 1)
+
+    def test_money_ping_via_dimensions_counts(self):
+        d = decision_summary([
+            tool_ev(1, "ask_user", confidence="low", question="Ok?", reason="x",
+                    dimensions={"involves_money": True}),
+            tool_ev(2, "report_decision", action="accept", confidence="high",
+                    situation="deposit", reason="approved")])
+        self.assertEqual(d["money_without_ping"], [])
+
+    def test_no_fee_phrase_is_not_money(self):
+        d = decision_summary([
+            tool_ev(1, "report_decision", action="accept", confidence="high",
+                    situation="Thu 2pm", reason="no fee required, will pay nothing")])
+        self.assertEqual(d["money_without_ping"], [])
+
+    def test_non_accept_or_non_money_not_flagged(self):
+        d = decision_summary([
+            tool_ev(1, "report_decision", action="decline", confidence="high",
+                    situation="deposit asked", reason="no"),
+            tool_ev(2, "report_decision", action="accept", confidence="high",
+                    situation="Thu 2pm", reason="Meets constraint")])
+        self.assertEqual(d["money_without_ping"], [])
+
+    def test_money_in_dimensions_flags_accept(self):
+        d = decision_summary([
+            tool_ev(1, "report_decision", action="accept", confidence="high", situation="ok",
+                    reason="ok", dimensions={"involves_money": True})])
+        self.assertEqual(len(d["money_without_ping"]), 1)
+
+    def test_outcome_last_wins_and_ask_first_fields(self):
+        d = decision_summary([
+            tool_ev(1, "ask_user", field_requested="date_of_birth", confidence="high"),
+            tool_ev(2, "report_outcome", outcome="needs_follow_up", business_confirmed=False),
+            tool_ev(3, "report_outcome", outcome="booked", business_confirmed=True)])
+        self.assertEqual(d["ask_first_fields"], ["date_of_birth"])
+        self.assertEqual(d["outcome"], {"outcome": "booked", "business_confirmed": True})
+
+    def test_garbage_args_do_not_crash(self):
+        d = decision_summary([
+            Event(1, "tool:report_decision", {"args": "oops"}),
+            Event(2, "tool:report_outcome", {}),
+            tool_ev(3, "report_decision", action=5, situation=["x"])])
+        self.assertEqual(d["decisions"], 2)
+        self.assertEqual(d["outcome"], {"outcome": None, "business_confirmed": None})
+
+
+class DecisionReportTest(unittest.TestCase):
+    def test_summarize_and_block_show_decisions(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp)
+            (runs / "c1.jsonl").write_bytes((FIX / "run_happy.jsonl").read_bytes())
+            from probe.eventlog import EventLog
+            log = EventLog(runs / "c1.jsonl", lambda: 5.0)
+            log.append("tool:report_decision", {"args": {
+                "action": "accept", "confidence": "high", "situation": "$25 deposit"}})
+            log.append("tool:report_outcome", {"args": {
+                "outcome": "booked", "business_confirmed": True}})
+            s = summarize("c1", runs, None)
+            self.assertEqual(s["decisions"]["tiers"]["high"], 1)
+            block = format_block(s)
+            self.assertIn("confidence: high 1, medium 0, low 0", block)
+            self.assertIn("GUARDRAIL BREACH", block)
+            self.assertIn("outcome: booked, business confirmed yes", block)
+
+    def test_block_without_tool_calls(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = Path(tmp)
+            (runs / "c1.jsonl").write_bytes((FIX / "run_happy.jsonl").read_bytes())
+            block = format_block(summarize("c1", runs, None))
+            self.assertIn("outcome: not reported", block)
+            self.assertNotIn("GUARDRAIL", block)
 
 
 class SummarizeTest(unittest.TestCase):

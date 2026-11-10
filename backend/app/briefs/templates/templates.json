@@ -1,0 +1,40 @@
+[
+  {
+    "key": "restaurant_booking",
+    "label": "Restaurant: book a table",
+    "task_line": "I'd like to book a table for {party_size} on {day} at {time}.",
+    "required_fields": [
+      { "key": "calling_name", "source": "profile", "question": "What name should the booking be under?" },
+      { "key": "phone", "source": "profile", "question": "What's the best number for the reservation?" },
+      { "key": "party_size", "source": "call", "question": "How many people?", "suggestions": ["2", "4", "6"] },
+      { "key": "day", "source": "call", "question": "Which day?" },
+      { "key": "time", "source": "call", "question": "What time?" }
+    ],
+    "likely_questions": [
+      "Name for the reservation?",
+      "Phone number?",
+      "Any dietary needs or a special occasion?",
+      "Indoor or outdoor seating?"
+    ],
+    "default_constraints": []
+  },
+  {
+    "key": "doctor_booking",
+    "label": "Doctor: book an appointment",
+    "task_line": "I'd like to book an appointment with {provider_name}.",
+    "required_fields": [
+      { "key": "calling_name", "source": "profile", "question": "Who is the appointment for?" },
+      { "key": "date_of_birth", "source": "profile", "question": "What's your date of birth?" },
+      { "key": "provider_name", "source": "call", "question": "Which doctor?" },
+      { "key": "patient_status", "source": "call", "question": "Are you a new or existing patient?", "suggestions": ["Existing", "New"] },
+      { "key": "reason", "source": "call", "question": "What's the visit for?", "suggestions": ["Annual physical", "Sick visit"] }
+    ],
+    "likely_questions": [
+      "Date of birth?",
+      "New or existing patient?",
+      "Insurance carrier and member ID?",
+      "Reason for the visit?"
+    ],
+    "default_constraints": []
+  }
+]
