@@ -103,3 +103,52 @@ def add_message(content: str) -> dict[str, Any]:
 def say(content: str) -> dict[str, Any]:
     """A Vapi control message that speaks an exact sentence."""
     return {"type": "say", "content": content}
+
+
+# --- Pause / Resume / End (DC-11) -----------------------------------------------------------
+
+
+def hold_line() -> str:
+    """What the business hears the moment the user taps Pause."""
+    return "One moment please."
+
+
+def reassurance_line(calling_name: str) -> str:
+    """What the business hears every 15 s while the call is paused."""
+    return f"Thanks for holding, I'm still checking with {calling_name}. Just a moment longer."
+
+
+def goodbye_line(calling_name: str) -> str:
+    """The polite goodbye when the user taps End call."""
+    return (
+        f"I'm sorry, I need to go now. {calling_name} will follow up. "
+        "Thank you for your time. Goodbye."
+    )
+
+
+def pause_cap_goodbye_line(calling_name: str) -> str:
+    """The call-back offer when a pause runs past the cap."""
+    return (
+        f"I'm sorry for the wait. {calling_name} will call you back. "
+        "Thank you for your time. Goodbye."
+    )
+
+
+def say_and_hang_up(content: str) -> dict[str, Any]:
+    """Speak a sentence, then let Vapi end the call once it has been spoken."""
+    return {"type": "say", "content": content, "endCallAfterSpoken": True}
+
+
+def mute_assistant() -> dict[str, Any]:
+    """Silence the assistant while the call is paused."""
+    return {"type": "control", "control": "mute-assistant"}
+
+
+def unmute_assistant() -> dict[str, Any]:
+    """Let the assistant speak again."""
+    return {"type": "control", "control": "unmute-assistant"}
+
+
+def end_call() -> dict[str, Any]:
+    """Hang up now: the fallback if the goodbye did not end the call."""
+    return {"type": "end-call"}

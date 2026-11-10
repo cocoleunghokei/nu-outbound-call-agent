@@ -222,3 +222,58 @@ async def close_ping(
     await cancel_fillers(conn, ping.call_id, ping.ping_id)
     if state != "superseded":
         await set_status(conn, ping.call_id, "talking", only_from=frozenset({"waiting_on_you"}))
+
+
+async def freeze_ping(conn: AsyncConnection[Any], ping: PingRow) -> PingRow:
+    """Pause: store the time left and clear ``expires_at``, so the timeout can't fire (DC-11).
+
+    Re-announces the ping with its frozen clock so an open tab updates the card.
+    """
+    row = await (
+        await conn.execute(
+            "update public.pings set remaining_ms = greatest(0,"
+            " (extract(epoch from (expires_at - clock_timestamp())) * 1000)::int),"
+            " expires_at = null"
+            " where ping_id = %s and state = 'open' and expires_at is not null"
+            f" returning {PING_COLUMNS}",
+            (ping.ping_id,),
+        )
+    ).fetchone()
+    if row is None:
+        return ping
+    frozen = PingRow.from_row(row)
+    await _reannounce(conn, frozen)
+    return frozen
+
+
+async def restore_ping(conn: AsyncConnection[Any], ping: PingRow) -> PingRow:
+    """Resume: restart the clock where it stopped (``expires_at`` = now + time left)."""
+    row = await (
+        await conn.execute(
+            "update public.pings set expires_at = clock_timestamp()"
+            " + make_interval(secs => coalesce(remaining_ms, 0) / 1000.0)"
+            " where ping_id = %s and state = 'open' and expires_at is null"
+            f" returning {PING_COLUMNS}",
+            (ping.ping_id,),
+        )
+    ).fetchone()
+    if row is None:
+        return ping
+    restored = PingRow.from_row(row)
+    await _reannounce(conn, restored)
+    return restored
+
+
+async def _reannounce(conn: AsyncConnection[Any], ping: PingRow) -> None:
+    """Send ``ping.opened`` again for the same ping with its new clock (no dedup key).
+
+    The live screen treats a repeated ``ping.opened`` for the open ping as an update.
+    """
+    await append_event(
+        conn,
+        call_id=ping.call_id,
+        type="ping.opened",
+        source="backend",
+        payload=ping.payload(),
+        occurred_at=datetime.now(UTC),
+    )

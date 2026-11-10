@@ -84,14 +84,17 @@ Anything stored or logged goes through `app.webhooks.redact.redact` / `redact_te
 
 ## During call (`app/calls/`, Coco)
 
-The ask manager: the pause-and-ping loop (DC-6 to DC-9). Pause / Resume / End, the status machine and `report_decision` come next.
+The pause-and-ping loop (DC-6 to DC-9), Pause / Resume / End (DC-11), the call status machine (DC-14) and decision logging (DC-4). Call creation and the agent prompt come next.
 
 | File | What it does |
 | --- | --- |
 | `ask.py` | `ask_user` tool handler. Opens a ping with a 45 s clock (frozen if the call is paused), moves the call to `waiting_on_you`, queues the push (`notify` lane) and two "still checking" lines at 15 s and 30 s. An Ask-me-first `field_requested` becomes a `field_approval` ping with a server-written question and Share / Don't share. A newer question (by Vapi timestamp, then tool call id) replaces the open one; an older one is stored `superseded` and never shown. |
 | `reply.py` | `POST /calls/{call_id}/pings/{ping_id}/reply` (`{"choice": n}` or `{"text": "..."}`, `Idempotency-Key` required). Wins only if the ping is open and `clock_timestamp() < expires_at` under the ping's row lock, else `409 ping_closed`. Free text is cleaned and capped at 200 characters, and is refused on a `field_approval` ping: only Share releases a field, and its value goes only into the agent's `add-message`, never into an event. |
-| `sweeper.py` | Worker: every 0.5 s expires open pings whose clock ran out and queues the "did not reply" message; every 5 s runs `dispatch_pending`. |
-| `outbox.py` | Worker: sends due `control` rows per call in id order via the voice port, outside any transaction. Fillers are dropped if their ping closed or the call is paused, and never retried. `VoiceNotSent` is retried once; `VoiceUncertain` becomes `uncertain` and is never resent. On start-up a pending row that may have been sent becomes `uncertain`. Assumes one backend instance. |
+| `commands.py` | `POST /calls/{call_id}/commands` (`pause`, `resume`, `end`; `instruction` answers 422 until DC-10 lands). Pause: `on_hold` + `paused_at`, freezes an open ping (`expires_at` null, `remaining_ms` kept, re-announced as `ping.opened`), queues the hold line, a mute 4 s later and a reassurance every 15 s (unmute, say, mute). Resume: unmutes, restarts the ping clock where it stopped, re-queues held answers after the unmute. End (and the pause cap): cancels the open ping and every pending control row, queues the goodbye with `endCallAfterSpoken` (unmuting first if paused) and `end-call` 6 s later; after that nothing else is sent and `ask_user` is refused. Repeating a command is a no-op. |
+| `status.py` | `status-update` handler: `queued`/`ringing` -> `dialing`, `in-progress` -> `talking` (only before the call connected), `ended` -> `end_call_transition`. Never overrides `waiting_on_you` or `on_hold`. |
+| `decisions.py` | `report_decision` handler: writes `agent.decision` (situation, action, reason, `field_key`, `missed_preference`), deduplicated per tool call. |
+| `sweeper.py` | Worker: every 0.5 s expires open pings whose clock ran out (queues the "did not reply" message) and ends calls paused longer than 2 min with a call-back offer (outcome `needs_follow_up` if none yet); every 5 s runs `dispatch_pending`. |
+| `outbox.py` | Worker: sends due `control` rows per call in id order via the voice port, outside any transaction. Fillers are dropped if their ping closed or the call is paused, pause lines after Resume, and everything but the goodbye once the call is ending; fillers and reassurances are never retried. Replies and timeouts wait while the call is paused. `VoiceNotSent` is retried once; `VoiceUncertain` becomes `uncertain` and is never resent. On start-up a pending row that may have been sent becomes `uncertain`. Assumes one backend instance. |
 | `messages.py` | Every sentence put into a call, in one place to tune from test calls. |
 | `store.py`, `pings.py` | Shared helpers: profile snapshot reads, guarded status changes, outbox writes, ping open/close. |
 

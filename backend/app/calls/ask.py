@@ -23,6 +23,7 @@ from app.calls.pings import (
 from app.calls.store import (
     CONTROL_FILLER,
     calling_name,
+    is_ending,
     queue_control,
     queue_notify,
     set_status,
@@ -62,7 +63,7 @@ async def handle_ask_user(conn: AsyncConnection[Any], ctx: ToolCallContext) -> s
         await conn.execute("select status from public.calls where id = %s", (ctx.call_id,))
     ).fetchone()
     status = row[0] if row else "ended"
-    if status in TERMINAL_STATUSES:
+    if status in TERMINAL_STATUSES or await is_ending(conn, ctx.call_id):
         return messages.call_over_result()
 
     name = await calling_name(conn, ctx.call_id)
