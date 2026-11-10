@@ -102,3 +102,17 @@ The pause-and-ping loop (DC-6 to DC-9), Pause / Resume / End (DC-11), the call s
 | `store.py`, `pings.py` | Shared helpers: profile snapshot reads, guarded status changes, outbox writes, ping open/close. |
 
 Tests: `tests/test_calls_*.py` (`calls_helpers.py` seeds a call with a snapshot and a control URL). They need the local Supabase stack, like the other `db` tests. `test_calls_e2e.py` runs the real workers and checks the reply is handed to the voice adapter within 2 s.
+
+## Post-call (`app/postcall/`, Harper)
+
+The end of a call: the outcome (PO-1) and what was spoken (PO-3). The summary (PO-2, LLM) and the closed-tab call-ended push (PO-5) come next.
+
+| File | What it does |
+| --- | --- |
+| `handlers.py` | `report_outcome` tool handler: acknowledges; the arguments stay on the `tool_calls` receipt for the outcome job. `end-of-call-report` handler: `end_call_transition` (a no-op if `status-update: ended` came first), then queues the `outcome` and `shared_fields` jobs on the `jobs` lane, at most one of each per call. |
+| `jobs.py` | Worker: every 2 s runs due `jobs` rows under the call lock. `outcome` writes `calls.outcome` once (guarded `outcome is null`) and then appends `call.ended {outcome, ended_reason}` with `dedup_key = "call.ended"`, so `call.ended` goes out once, after the outcome is known. `shared_fields` marks each snapshot field the agent said as `spoken` and appends `field.shared`. A failing job retries with backoff (2 s doubling to 60 s) and is `failed` after 5 attempts; the two jobs never block each other. |
+| `decide.py` | The pure rules. Booked, Cancelled or Rescheduled need `business_confirmed` and the agreed time, date or confirmation number in the business's own words; else Needs follow-up. No `report_outcome`: `customer-did-not-answer`, `customer-busy` or `voicemail` is No answer, anything else Needs follow-up (never a guessed Failed). A pause-cap ending (DC-11) with no report is Needs follow-up. Spoken check: phone numbers by their last 10 digits, other values as whole words. |
+
+Not yet: the summary job, the 2-minute `GET /call` fallback when no `end-of-call-report` arrives, setting `sent_to_agent`, and a column for the outcome reason (it is only logged).
+
+Tests: `tests/test_postcall_decide.py` (pure) and `tests/test_postcall_db.py` (`db`). `tests/test_webhooks.py` uses `foundation_app()` (no owner packages) where it needs `report_outcome` to have no handler.
