@@ -123,7 +123,7 @@ def test_another_user_can_neither_read_nor_replace_the_brief(
     assert read.status_code == 404
     assert read.json()["error"]["code"] == "brief_not_found"
 
-    replaced = client.put(
+    replaced = client.patch(
         url, json=example_brief(goal="Bob was here"), headers=auth(bob, uuid.uuid4())
     )
     assert replaced.status_code == 404
@@ -165,7 +165,7 @@ def test_replace_after_review_then_refuse_once_a_call_started(
     url = f"/briefs/{created['brief_id']}"
     edited = example_brief(fallbacks=[{"text": "Saturday same time"}, {"text": "Friday 8:30pm"}])
 
-    replaced = client.put(url, json=edited, headers=auth(signed_up_user, uuid.uuid4()))
+    replaced = client.patch(url, json=edited, headers=auth(signed_up_user, uuid.uuid4()))
     assert replaced.status_code == 200, replaced.text
     assert replaced.json()["brief"]["fallbacks"] == edited["fallbacks"]
     assert replaced.json()["created_at"] == created["created_at"]
@@ -176,7 +176,7 @@ def test_replace_after_review_then_refuse_once_a_call_started(
             "insert into public.calls (user_id, brief_id, status) values (%s, %s, 'dialing')",
             (signed_up_user.user_id, created["brief_id"]),
         )
-    refused = client.put(url, json=example_brief(), headers=auth(signed_up_user, uuid.uuid4()))
+    refused = client.patch(url, json=example_brief(), headers=auth(signed_up_user, uuid.uuid4()))
     assert refused.status_code == 409
     assert refused.json()["error"]["code"] == "brief_in_use"
 

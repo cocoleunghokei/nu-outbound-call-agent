@@ -2,7 +2,9 @@
 
 - ``POST /briefs``: create. Body is a ``brief.v1`` brief. Needs ``Idempotency-Key``. 201.
 - ``GET /briefs/{brief_id}``: read, with readiness checked against the profile now.
-- ``PUT /briefs/{brief_id}``: replace after the user edits the review card (PC-6). Needs
+- ``PATCH /briefs/{brief_id}``: replace after the user edits the review card (PC-6). The
+  body is the whole brief (the chat always sends the full reviewed brief). PATCH, not PUT,
+  because the shared CORS setup in ``main.py`` allows PATCH from the browser. Needs
   ``Idempotency-Key``. 409 ``brief_in_use`` once a call was started from it.
 
 Every response: ``{brief_id, brief, missing_fields, opening_line, created_at}``. Start is
@@ -101,7 +103,7 @@ async def read_brief(request: Request, user_id: UserId, brief_id: uuid.UUID) -> 
     return _response(stored, readiness)
 
 
-@router.put("/{brief_id}", response_model=None)
+@router.patch("/{brief_id}", response_model=None)
 async def replace_brief(
     request: Request, user_id: UserId, key: IdempotencyKey, brief_id: uuid.UUID, body: BriefBody
 ) -> dict[str, Any] | JSONResponse:

@@ -204,7 +204,7 @@ def headers(key: bool = True) -> dict[str, str]:
 def test_routes_are_mounted_by_register(client: TestClient) -> None:
     """register(reg) mounts every route: unauthenticated calls get 401, never 404."""
     brief_url = f"/briefs/{uuid.uuid4()}"
-    for method, url in [("POST", "/briefs"), ("GET", brief_url), ("PUT", brief_url)]:
+    for method, url in [("POST", "/briefs"), ("GET", brief_url), ("PATCH", brief_url)]:
         response = client.request(method, url, json=example_brief())
         assert response.status_code == 401, (method, url, response.status_code)
 
@@ -246,12 +246,12 @@ def test_valid_requests_reach_the_database_step(client: TestClient) -> None:
     assert created.json()["error"]["code"] == "database_unavailable"
     read = client.get(f"/briefs/{uuid.uuid4()}", headers=headers(key=False))
     assert read.status_code == 503
-    replaced = client.put(f"/briefs/{uuid.uuid4()}", json=example_brief(), headers=headers())
+    replaced = client.patch(f"/briefs/{uuid.uuid4()}", json=example_brief(), headers=headers())
     assert replaced.status_code == 503
 
 
 def test_replace_requires_an_idempotency_key(client: TestClient) -> None:
-    response = client.put(
+    response = client.patch(
         f"/briefs/{uuid.uuid4()}", json=example_brief(), headers=headers(key=False)
     )
     assert response.status_code == 400
@@ -260,3 +260,25 @@ def test_replace_requires_an_idempotency_key(client: TestClient) -> None:
 def test_a_bad_brief_id_is_rejected(client: TestClient) -> None:
     response = client.get("/briefs/not-a-uuid", headers=headers(key=False))
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("POST", "/briefs"), ("GET", "/briefs/{id}"), ("PATCH", "/briefs/{id}")],
+)
+def test_browser_preflight_allows_every_brief_route(method: str, path: str) -> None:
+    """Regression: the shared CORS setup allows PATCH but not PUT, so the browser must be able
+    to send every method the brief routes use, with the Idempotency-Key header."""
+    origin = "https://preview-123.vercel.app"
+    settings = Settings(cors_origin_regex=r"https://.*\.vercel\.app")
+    response = TestClient(create_app(settings)).options(
+        path.replace("{id}", str(uuid.uuid4())),
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": method,
+            "Access-Control-Request-Headers": "Authorization, Content-Type, Idempotency-Key",
+        },
+    )
+    assert response.status_code == 200, (method, response.text)
+    assert method in response.headers["access-control-allow-methods"]
+    assert response.headers["access-control-allow-origin"] == origin
