@@ -1,5 +1,6 @@
 import { formatCallDate, outcomeDisplay } from '../history/format'
 import { actionLabel, agreedRows, disclosureLabel, fieldLabel } from './format'
+import { TranscriptView } from './TranscriptView'
 import type { CallResult } from './types'
 import '../history/CallHistory.css'
 import './CallResultView.css'
@@ -15,7 +16,7 @@ const NEEDS_CONFIRMATION = new Set(['booked', 'rescheduled', 'cancelled'])
 
 /**
  * End-of-call result page: outcome (PO-1), what was agreed, open items and
- * decisions (PO-2), and what was shared (PO-3).
+ * decisions (PO-2), what was shared (PO-3) and the full transcript (PO-4).
  */
 export function CallResultView({ result, onBack }: CallResultViewProps) {
   const { call } = result
@@ -105,6 +106,10 @@ export function CallResultView({ result, onBack }: CallResultViewProps) {
             ))}
           </ul>
         )}
+      </section>
+
+      <section className="cr-group" aria-label="Transcript">
+        <TranscriptView lines={result.transcript} businessName={call.businessName} />
       </section>
     </article>
   )
