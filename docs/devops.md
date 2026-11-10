@@ -24,14 +24,16 @@ The git hooks installed by `make setup` run the hygiene checks on each commit, s
 
 ## Plugging in the stack
 
-When `backend/` or `frontend/` gets code:
+Done for both the backend (`backend/`: Python 3.12 + FastAPI, uv) and the frontend (`frontend/`). Each has a `Makefile` with `lint`, `test` and `build`, a toolchain setup in the `build` job of `.github/workflows/ci.yml`, and an `.env.example`. If you add another subproject, repeat the same steps:
 
 1. Add a `Makefile` in that folder with `lint`, `test` and `build` targets. The root `make lint test build` picks it up automatically, and so does CI.
 2. Add the toolchain setup (for example `actions/setup-node` or `actions/setup-python` with dependency caching) to the `build` job in `.github/workflows/ci.yml`.
 3. Add the language's formatter and linter to `.pre-commit-config.yaml`.
-4. Add an `npm` or `pip` entry to `.github/dependabot.yml` (the frontend already has one).
+4. Add an `npm` or `pip` entry to `.github/dependabot.yml`.
 5. Add `.env.example` with every variable name the app reads, and no values.
 6. Update the stack table in `AGENTS.md`.
+
+The `database` job also runs the backend's database tests and the Realtime smoke check (`make -C backend realtime-smoke`) against the local Supabase stack. If that step fails, the job prints the last 200 lines of the Realtime container log.
 
 ## Frontend deploys (Vercel)
 
@@ -40,7 +42,13 @@ Vercel's GitHub integration builds `frontend/`. Every merge to `main` goes to pr
 - Root directory: `frontend` (Vite is detected automatically)
 - Environment variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, for Production and Preview
 
-Backend hosting gets its own workflow once it's picked in the tech doc.
+## Backend deploys (Railway)
+
+The backend is a Railway service built from `backend/`. Coco creates it. Like Vercel, there's no workflow file; it's set up in the Railway dashboard:
+
+- Root directory: `backend`. The start command and health check are in `backend/railway.toml`.
+- Environment variables: every name in `backend/.env.example` (the Postgres connection string through the Supabase session pooler, the Supabase JWT settings, the Vapi keys and webhook secret). Set `VOICE_PLATFORM=vapi` in production.
+- Deploys follow `main`. Vapi's server URL points at `https://<service>/webhooks/vapi` with the webhook secret in the `X-Vapi-Secret` header.
 
 ## One-time repository setup (admin)
 

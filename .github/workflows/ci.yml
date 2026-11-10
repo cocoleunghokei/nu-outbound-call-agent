@@ -34,6 +34,10 @@ jobs:
               - 'supabase/**'
               - 'scripts/check-db.sh'
               - 'scripts/sql/**'
+              - 'backend/**'
+              - 'contracts/**'
+              - 'frontend/scripts/**'
+              - 'frontend/package*.json'
               - '.github/workflows/ci.yml'
 
   hygiene:
@@ -58,7 +62,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # Add backend toolchain setup here once the backend stack is picked.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project backend --frozen
       - uses: actions/setup-node@v7
         with:
           node-version: 20
@@ -77,4 +85,21 @@ jobs:
       - uses: supabase/setup-cli@v3
         with:
           version: 2.122.0
+      - run: supabase start -x studio,imgproxy,mailpit,edge-runtime,logflare,vector
       - run: make db-check
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --project backend --frozen
+      - run: make -C backend test-db
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22  # realtime-smoke: @supabase/realtime-js needs native WebSocket
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --prefix frontend
+      - run: make -C backend realtime-smoke
+      - name: Realtime logs (on failure)
+        if: failure()
+        run: docker logs supabase_realtime_nu-outbound-call-agent 2>&1 | tail -200
