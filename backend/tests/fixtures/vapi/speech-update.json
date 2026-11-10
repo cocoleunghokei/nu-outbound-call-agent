@@ -1,0 +1,13 @@
+{
+  "message": {
+    "type": "speech-update",
+    "status": "started",
+    "role": "assistant",
+    "turn": 1,
+    "timestamp": 1794081601000,
+    "call": {
+      "id": "__VAPI_CALL_ID__",
+      "metadata": {"call_id": "__CALL_ID__"}
+    }
+  }
+}

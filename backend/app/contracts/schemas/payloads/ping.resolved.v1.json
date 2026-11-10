@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "payloads/ping.resolved.v1.json",
+  "title": "PingResolvedPayload",
+  "type": "object",
+  "required": [
+    "ping_id",
+    "state"
+  ],
+  "properties": {
+    "ping_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "state": {
+      "title": "PingState",
+      "type": "string",
+      "enum": [
+        "open",
+        "answered",
+        "expired",
+        "superseded",
+        "cancelled"
+      ],
+      "x-open-enum": true
+    },
+    "reply_text": {
+      "type": "string"
+    }
+  }
+}

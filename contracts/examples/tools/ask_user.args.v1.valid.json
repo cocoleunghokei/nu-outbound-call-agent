@@ -1,0 +1,17 @@
+{
+  "question": "They offered 4pm. Take it?",
+  "reason": "They offered 4pm. You said before 3pm.",
+  "suggested_replies": [
+    "Yes",
+    "No"
+  ],
+  "confidence": "low",
+  "dimensions": {
+    "needs_ask_first_field": true,
+    "involves_money": true,
+    "meets_constraints": false,
+    "matches_fallback": true,
+    "answerable_from_brief": true,
+    "understood": true
+  }
+}

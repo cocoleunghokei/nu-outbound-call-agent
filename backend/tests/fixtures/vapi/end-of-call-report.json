@@ -1,0 +1,21 @@
+{
+  "message": {
+    "type": "end-of-call-report",
+    "endedReason": "assistant-ended-call",
+    "timestamp": 1794081700000,
+    "summary": "Booked a table for two at 7pm for Alex Chen.",
+    "artifact": {
+      "transcript": "AI: Hi, I'm calling for Alex Chen. This call is transcribed.\nUser: Sure.",
+      "messages": [
+        {"role": "bot", "message": "Hi, I'm calling for Alex Chen.", "time": 1794081601000, "secondsFromStart": 1.0},
+        {"role": "user", "message": "Sure.", "time": 1794081603000, "secondsFromStart": 3.0}
+      ],
+      "recordingUrl": "https://storage.example.test/recordings/fake.wav"
+    },
+    "call": {
+      "id": "__VAPI_CALL_ID__",
+      "metadata": {"call_id": "__CALL_ID__"},
+      "monitor": {"controlUrl": "__CONTROL_URL__", "listenUrl": "__LISTEN_URL__"}
+    }
+  }
+}

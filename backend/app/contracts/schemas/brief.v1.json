@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "brief.v1.json",
+  "title": "Brief",
+  "type": "object",
+  "additionalProperties": false,
+  "description": "The reviewed brief (Lotto to Coco handoff). Field keys only, never profile values; values come from call_profile_snapshots at call start.",
+  "required": [
+    "goal",
+    "business_name",
+    "phone_e164",
+    "template_key",
+    "task_line",
+    "task_vars",
+    "constraints",
+    "preferences",
+    "fallbacks",
+    "never_agree",
+    "share_freely_keys",
+    "ask_first_keys"
+  ],
+  "properties": {
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "business_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "phone_e164": {
+      "type": "string",
+      "pattern": "^\\+[1-9][0-9]{1,14}$"
+    },
+    "template_key": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "task_line": {
+      "type": "string",
+      "maxLength": 120,
+      "description": "Template; {name} placeholders resolve from task_vars"
+    },
+    "task_vars": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "title": "TaskVarLiteral",
+            "type": "object",
+            "required": [
+              "literal"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "literal": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "title": "TaskVarFieldRef",
+            "type": "object",
+            "required": [
+              "field_ref"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "field_ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "title": "BriefConstraint",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "preferences": {
+      "type": "array",
+      "items": {
+        "title": "BriefPreference",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "fallbacks": {
+      "type": "array",
+      "items": {
+        "title": "BriefFallback",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "description": "Ranked, best first"
+    },
+    "never_agree": {
+      "type": "array",
+      "items": {
+        "title": "BriefNeverAgree",
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "share_freely_keys": {
+      "type": "array",
+      "items": {
+        "title": "ShareFreelyKey",
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "ask_first_keys": {
+      "type": "array",
+      "items": {
+        "title": "AskFirstKey",
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

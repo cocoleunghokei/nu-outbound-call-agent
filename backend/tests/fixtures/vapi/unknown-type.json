@@ -1,0 +1,11 @@
+{
+  "message": {
+    "type": "brand-new-vapi-event",
+    "timestamp": 1794081620000,
+    "detail": {"note": "a message type this backend has never seen"},
+    "call": {
+      "id": "__VAPI_CALL_ID__",
+      "metadata": {"call_id": "__CALL_ID__"}
+    }
+  }
+}
