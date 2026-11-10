@@ -1,0 +1,227 @@
+/* Chat home (PC-1). Colours, shapes and spacing follow Harper's prototype
+   (public/prototype/index.html). Scoped under .precall-chat so it can't
+   clash with the other screens' CSS. */
+
+.precall-chat {
+  --pc-bg: #f5f7fb;
+  --pc-surface: #ffffff;
+  --pc-surface-2: #f1f4f9;
+  --pc-ink: #111827;
+  --pc-muted: #6b7280;
+  --pc-line: #e5e9f0;
+  --pc-brand: #1a6dff;
+  --pc-brand-soft: #e8f0ff;
+  --pc-shadow: 0 1px 2px rgba(17, 24, 39, 0.04), 0 12px 32px -18px rgba(26, 109, 255, 0.28);
+
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  color: var(--pc-ink);
+  font-size: 15px;
+  line-height: 1.5;
+  background: linear-gradient(180deg, var(--pc-surface) 0%, var(--pc-surface) 55%, #eef3fd 100%);
+}
+
+.precall-chat *,
+.precall-chat *::before,
+.precall-chat *::after {
+  box-sizing: inherit;
+}
+
+.precall-chat button,
+.precall-chat input {
+  font: inherit;
+  color: inherit;
+}
+
+.precall-chat button {
+  cursor: pointer;
+}
+
+.precall-chat :focus-visible {
+  outline: 2px solid var(--pc-brand);
+  outline-offset: 2px;
+}
+
+.precall-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px;
+}
+
+.precall-topbar h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.precall-pill {
+  border: 1px solid var(--pc-line);
+  background: var(--pc-surface);
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-weight: 600;
+  box-shadow: var(--pc-shadow);
+}
+
+.precall-pill:hover {
+  background: var(--pc-surface-2);
+}
+
+.precall-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 22px 18px;
+}
+
+.precall-feed-in {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.precall-msg {
+  margin: 0;
+  max-width: min(82%, 560px);
+  padding: 11px 16px;
+  border-radius: 22px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  animation: precall-in 0.22s ease-out;
+}
+
+.precall-msg.agent {
+  align-self: flex-start;
+  background: var(--pc-surface-2);
+}
+
+.precall-msg.user {
+  align-self: flex-end;
+  background: var(--pc-brand);
+  color: #fff;
+}
+
+.precall-msg.sub {
+  align-self: flex-start;
+  font-size: 13.5px;
+  color: var(--pc-muted);
+  background: none;
+  padding: 0 6px;
+}
+
+@keyframes precall-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .precall-msg {
+    animation: none;
+  }
+}
+
+.precall-chips {
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 0 22px 10px;
+}
+
+.precall-chip {
+  border: 1.5px solid #cfddfb;
+  background: var(--pc-surface);
+  color: var(--pc-brand);
+  border-radius: 999px;
+  padding: 8px 15px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.precall-chip:hover {
+  background: var(--pc-brand-soft);
+}
+
+.precall-chip.quiet {
+  color: var(--pc-muted);
+  border-color: var(--pc-line);
+}
+
+.precall-composer-wrap {
+  padding: 0 22px 18px;
+}
+
+.precall-composer {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-line);
+  border-radius: 999px;
+  padding: 7px 7px 7px 16px;
+  box-shadow: var(--pc-shadow);
+}
+
+.precall-composer.await,
+.precall-composer:focus-within {
+  border-color: var(--pc-brand);
+  box-shadow: 0 0 0 4px var(--pc-brand-soft), var(--pc-shadow);
+}
+
+/* The composer's own ring shows focus, so the input doesn't need a second one. */
+.precall-composer input:focus-visible {
+  outline: none;
+}
+
+.precall-composer input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  padding: 8px 0;
+}
+
+.precall-send {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  border: 0;
+  border-radius: 50%;
+  background: var(--pc-brand);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.precall-send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .precall-topbar,
+  .precall-feed,
+  .precall-chips,
+  .precall-composer-wrap {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
