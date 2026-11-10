@@ -50,7 +50,11 @@ def set_profile(env: SupabaseEnv, user_id: uuid.UUID, fields: dict[str, tuple[st
             )
 
 
-ALEX = {"calling_name": ("Alex", "share_freely"), "date_of_birth": ("2004-03-15", "ask_first")}
+ALEX = {
+    "calling_name": ("Alex", "share_freely"),
+    "phone": ("+16175550142", "share_freely"),
+    "date_of_birth": ("2004-03-15", "ask_first"),
+}
 
 
 @pytest.fixture
@@ -186,7 +190,8 @@ def test_readiness_follows_the_profile_as_it_is_now(
 ) -> None:
     """No calling name: Start is blocked. Once the profile has one, the same brief is ready."""
     created = create(client, signed_up_user)
-    assert created["missing_fields"] == ["calling_name"]
+    # restaurant_booking needs calling_name and phone from the profile.
+    assert created["missing_fields"] == ["calling_name", "phone"]
     assert created["opening_line"] is None
 
     set_profile(supabase_env, signed_up_user.user_id, ALEX)
