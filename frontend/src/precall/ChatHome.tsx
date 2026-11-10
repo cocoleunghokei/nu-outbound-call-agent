@@ -1,13 +1,18 @@
 import { Fragment, useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
 import './ChatHome.css'
-import type { Brief } from './types'
 import { ReviewCard } from './ReviewCard'
-import { chatReducer, completedDraft, initialChatState, reviewOf, type ChatContext } from './chat'
+import { chatReducer, completedDraft, initialChatState, reviewOf, type ChatAction, type ChatContext } from './chat'
+import { emptySession, reviewView, singleFlight, type SaveSession, type ServerCheck, type Starter } from './start'
 
 interface ChatHomeProps {
   context: ChatContext
-  /** Called once with the reviewed brief when the user taps Start (PC-6). */
-  onStart: (brief: Brief) => void
+  /**
+   * Runs Start for the reviewed brief (PC-6): `demoStarter` logs it, the API
+   * starter saves it and hands it to `POST /calls`. See `start.ts`.
+   */
+  starter: Starter
+  /** Small top-bar note, e.g. "Demo mode (fake data)". Hidden when null. */
+  modeNote?: { text: string; title: string } | null
 }
 
 /**
@@ -16,10 +21,19 @@ interface ChatHomeProps {
  * the state and sends user actions. Visual design follows Harper's prototype
  * (`public/prototype/`).
  */
-export function ChatHome({ context, onStart }: ChatHomeProps) {
+export function ChatHome({ context, starter, modeNote = null }: ChatHomeProps) {
   const [reducer] = useState(() => chatReducer(context))
   const [state, dispatch] = useReducer(reducer, context, initialChatState)
   const [text, setText] = useState('')
+  // Start in flight (no double submit), and the server's check of the saved brief.
+  const [busy, setBusy] = useState(false)
+  const [server, setServer] = useState<ServerCheck | null>(null)
+  const [runStarter] = useState(() =>
+    singleFlight((run: Starter, ...args: Parameters<Starter>) => run(...args)),
+  )
+  // What has been saved for this draft, and which draft it is; both reset on "new call".
+  const session = useRef<SaveSession>(emptySession)
+  const draftGeneration = useRef(0)
   const feedEnd = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
 
@@ -38,20 +52,58 @@ export function ChatHome({ context, onStart }: ChatHomeProps) {
     setText('')
   }
 
+  /** Dispatch a chat action; a new call also forgets what was saved for the old draft. */
+  function act(action: ChatAction) {
+    if (action.type === 'new_call') {
+      draftGeneration.current += 1
+      session.current = emptySession
+      setServer(null)
+    }
+    dispatch(action)
+  }
+
   const draft = completedDraft(state)
   const review = reviewOf(state, context)
 
-  function start() {
-    if (!review || review.missing_fields.length > 0 || state.stage !== 'draft_ready') return
-    onStart(review.brief)
-    dispatch({ type: 'start' })
+  async function start() {
+    if (!review || state.stage !== 'draft_ready') return
+    const local = { missing_fields: review.missing_fields, opening_line: null }
+    if (reviewView(review.brief, local, server).missing_fields.length > 0) return
+    const generation = draftGeneration.current
+    setBusy(true)
+    const out = await runStarter(starter, review.brief, session.current)
+    if (out === null) return // a Start is already in flight; it clears `busy` itself
+    setBusy(false)
+    if (generation !== draftGeneration.current) return // the user moved on to a new call
+    session.current = out.session
+    const result = out.result
+    if (result.server) setServer(result.server)
+    switch (result.kind) {
+      case 'started':
+        dispatch({ type: 'start' })
+        break
+      case 'saved_not_connected':
+        dispatch({ type: 'saved_not_connected' })
+        break
+      case 'blocked':
+      case 'error':
+        dispatch({ type: 'note', text: result.message })
+        break
+    }
   }
 
   return (
     <section className="precall-chat" aria-label="Chat">
       <header className="precall-topbar">
-        <h1>Chat</h1>
-        <button type="button" className="precall-pill" onClick={() => dispatch({ type: 'new_call' })}>
+        <div className="precall-title">
+          <h1>Chat</h1>
+          {modeNote && (
+            <span className="precall-mode" title={modeNote.title}>
+              {modeNote.text}
+            </span>
+          )}
+        </div>
+        <button type="button" className="precall-pill" onClick={() => act({ type: 'new_call' })}>
           + New call
         </button>
       </header>
@@ -68,8 +120,11 @@ export function ChatHome({ context, onStart }: ChatHomeProps) {
                   draft={draft}
                   profile={context.profile}
                   started={state.stage === 'started'}
-                  onEdit={(target) => dispatch({ type: 'edit', target })}
-                  onStart={start}
+                  outcome={state.startOutcome}
+                  server={server}
+                  busy={busy}
+                  onEdit={(target) => act({ type: 'edit', target })}
+                  onStart={() => void start()}
                 />
               )}
             </Fragment>
@@ -85,7 +140,7 @@ export function ChatHome({ context, onStart }: ChatHomeProps) {
               key={chip.label}
               type="button"
               className={`precall-chip${chip.quiet ? ' quiet' : ''}`}
-              onClick={() => dispatch(chip.action)}
+              onClick={() => act(chip.action)}
             >
               {chip.label}
             </button>
