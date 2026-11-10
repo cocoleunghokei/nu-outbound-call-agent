@@ -51,7 +51,7 @@ Decisions made while building the backend for Pause / Resume / End (DC-11) and t
 | 4 | The pause cap ends the call as Needs follow-up. Who writes `calls.outcome`? | The backend does not write the outcome for now. The call still ends with a call-back offer, and the feed shows why. | **Pending: Harper (post-call)** |
 | 5 | `instruction` commands (DC-10) arrive at the same `/commands` endpoint. | The endpoint answers `422 unsupported_command` until Lotto's handler lands. | **Pending: Lotto (DC-10)** |
 | 6 | The agent's prompt needs guardrail rules (DC-13: never claim to be human, no payments without a ping, refused-AI handling), which are Lotto's. | Use the probe kit's reviewed rules as a placeholder (`GUARDRAIL_RULES` in `app/calls/prompt.py`), to be replaced wholesale by Lotto's. | **Pending: Lotto (DC-13)** |
-| 7 | Which model, voice and transcriber does the agent use? | The probe kit's: `gpt-5.4-mini`, Vapi "Clara", Deepgram nova-3. | **Pending: Vapi session** |
+| 7 | Which model does the agent use? | **DeepSeek-V3** (`provider: deep-seek`, `model: deepseek-chat`), not a reasoning model, to keep replies fast on a live call. The API key goes in the Vapi dashboard (Integrations), never in the repo; Coco gets it from Lotto. Vapi does not document tool calling for DeepSeek, so the Vapi session must confirm `ask_user` and `report_decision` fire reliably. Voice and transcriber stay as in the probe kit (Vapi "Clara", Deepgram nova-3). | Decided (Coco, 2026-11-10); tool calling **to verify in the Vapi session** |
 
 ## Risks and next steps
 

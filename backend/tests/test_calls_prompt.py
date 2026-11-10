@@ -166,6 +166,10 @@ def test_config_points_vapi_at_our_webhook_with_the_secret() -> None:
     }
     assert set(built["serverMessages"]) >= {"status-update", "speech-update", "tool-calls"}
     assert built["maxDurationSeconds"] == 900
+    assert {k: built["model"][k] for k in ("provider", "model")} == {
+        "provider": "deep-seek",
+        "model": "deepseek-chat",
+    }
     assert built["monitorPlan"] == {"listenEnabled": True, "controlEnabled": True}
 
 
