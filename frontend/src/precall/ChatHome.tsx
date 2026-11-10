@@ -54,7 +54,7 @@ export function ChatHome({ context }: ChatHomeProps) {
           ))}
           {draft && (
             <p className="precall-msg sub">
-              Next: your limits and backup options, then a review before I dial.
+              Next: a quick review of everything before I dial.
             </p>
           )}
           <div ref={feedEnd} />

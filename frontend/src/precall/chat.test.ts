@@ -3,6 +3,8 @@ import {
   ANSWER_MAX,
   BUSINESS_NAME_MAX,
   GOAL_MAX,
+  LIST_ITEM_MAX,
+  LIST_MAX_ITEMS,
   callingNameOf,
   chatReducer,
   completedDraft,
@@ -21,6 +23,21 @@ function run(...actions: ChatAction[]): ChatState {
 }
 
 const send = (text: string): ChatAction => ({ type: 'send', text })
+const done = (label: string): ChatAction => ({ type: 'list_done', label })
+
+/** Skip all four PC-5 lists. The fallback list needs two taps: the chat nudges once. */
+const SKIP_LISTS: ChatAction[] = [
+  done('No limits'),
+  done('No preferences'),
+  done('No backup, ask me'),
+  done('No backup, ask me'),
+  done('Nothing else'),
+]
+
+/** A draft's empty PC-5 lists and bookkeeping, before any list is finished. */
+const FRESH = { answers: {}, profile_additions: [], constraints: [], preferences: [], fallbacks: [], never_agree: [], done_lists: [] }
+/** The same, after all four lists were skipped. */
+const SKIPPED = { ...FRESH, done_lists: ['constraints', 'preferences', 'fallbacks', 'never_agree'] }
 const lastAgent = (s: ChatState) => [...s.messages].reverse().find((m) => m.from === 'agent')?.text ?? ''
 
 describe('chat home (PC-1)', () => {
@@ -37,7 +54,7 @@ describe('chat home (PC-1)', () => {
   })
 
   it('gives every message a unique id', () => {
-    const s = run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122'))
+    const s = run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122'), ...SKIP_LISTS)
     const ids = s.messages.map((m) => m.id)
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -50,8 +67,7 @@ describe('template flow', () => {
     expect(s.draft).toEqual({
       template_key: 'restaurant_booking',
       goal: 'Restaurant: book a table',
-      answers: {},
-      profile_additions: [],
+      ...FRESH,
     })
     expect(s.awaiting).toBe('business_name')
     expect(s.chips).toEqual([])
@@ -86,14 +102,18 @@ describe('missing-context questions (PC-4)', () => {
     s = reduce(s, send('Friday'))
     expect(s.fieldKey).toBe('time')
     s = reduce(s, send('7pm'))
+    // All details answered: on to the PC-5 lists.
+    expect(s.awaiting).toBe('list_item')
+    expect(s.listKey).toBe('constraints')
+    s = SKIP_LISTS.reduce(reduce, s)
     expect(s.stage).toBe('draft_ready')
     expect(completedDraft(s)).toEqual({
       template_key: 'restaurant_booking',
       goal: 'Restaurant: book a table',
       business_name: 'Corner Table Bistro',
       phone_e164: '+16175550100',
+      ...SKIPPED,
       answers: { party_size: '6', day: 'Friday', time: '7pm' },
-      profile_additions: [],
     })
     expect(lastAgent(s)).toContain('(617) 555-0100')
   })
@@ -150,8 +170,133 @@ describe('missing-context questions (PC-4)', () => {
 
   it('asks no template questions for a custom call', () => {
     const s = run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122'))
-    expect(s.stage).toBe('draft_ready')
+    expect(s.listKey).toBe('constraints')
     expect(s.messages.some((m) => m.text.startsWith('I already have'))).toBe(false)
+  })
+})
+
+describe('constraints and fallbacks (PC-5)', () => {
+  /** A custom call that has just reached the first PC-5 question. */
+  const atLists = () => run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122'))
+
+  it('asks limits, preferences, backups and never-agree items, in that order', () => {
+    let s = atLists()
+    const asked: string[] = []
+    for (let i = 0; i < 10 && s.awaiting === 'list_item' && s.listKey; i++) {
+      if (asked[asked.length - 1] !== s.listKey) asked.push(s.listKey)
+      s = reduce(s, s.chips[s.chips.length - 1].action)
+    }
+    expect(asked).toEqual(['constraints', 'preferences', 'fallbacks', 'never_agree'])
+    expect(s.stage).toBe('draft_ready')
+  })
+
+  it('collects several items per list, in order, with a follow-up each time', () => {
+    let s = reduce(atLists(), send('Pickup before 6pm'))
+    expect(lastAgent(s)).toBe('Got it. Any other limits?')
+    expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
+    s = reduce(s, send('Not on Sunday'))
+    expect(s.draft.constraints).toEqual([{ text: 'Pickup before 6pm' }, { text: 'Not on Sunday' }])
+    s = reduce(s, done("That's all"))
+    expect(s.listKey).toBe('preferences')
+    expect(s.chips.map((c) => c.label)).toEqual(['No preferences'])
+  })
+
+  it('keeps backups ranked best first and numbers them', () => {
+    let s = [done('No limits'), done('No preferences')].reduce(reduce, atLists())
+    expect(s.listKey).toBe('fallbacks')
+    s = reduce(s, send('Any cake they have ready'))
+    expect(lastAgent(s)).toBe("Saved as backup #1. Another backup in case that's taken too?")
+    s = reduce(s, send('Cupcakes'))
+    expect(lastAgent(s)).toContain('backup #2')
+    expect(s.draft.fallbacks).toEqual([{ text: 'Any cake they have ready' }, { text: 'Cupcakes' }])
+  })
+
+  it('nudges once when the user skips backups, then accepts a second "no"', () => {
+    let s = [done('No limits'), done('No preferences')].reduce(reduce, atLists())
+    s = reduce(s, done('No backup, ask me'))
+    expect(s.listKey).toBe('fallbacks')
+    expect(s.fallbackNudged).toBe(true)
+    expect(lastAgent(s)).toContain("I'll have to ping you mid-call")
+    s = reduce(s, done('No backup, ask me'))
+    expect(s.listKey).toBe('never_agree')
+    expect(s.draft.fallbacks).toEqual([])
+  })
+
+  it('accepts a backup typed after the nudge', () => {
+    let s = [done('No limits'), done('No preferences'), done('No backup, ask me')].reduce(reduce, atLists())
+    s = reduce(s, send('Tomorrow morning instead'))
+    expect(s.draft.fallbacks).toEqual([{ text: 'Tomorrow morning instead' }])
+    expect(s.listKey).toBe('fallbacks')
+  })
+
+  it('does not nudge when at least one backup was given', () => {
+    let s = [done('No limits'), done('No preferences'), send('Cupcakes')].reduce(reduce, atLists())
+    s = reduce(s, done("That's all"))
+    expect(s.listKey).toBe('never_agree')
+    expect(s.fallbackNudged).toBe(false)
+  })
+
+  it('offers "A deposit or fee" as a one-tap never-agree item, and hides it once added', () => {
+    let s = [done('No limits'), done('No preferences'), send('Cupcakes'), done("That's all")].reduce(reduce, atLists())
+    expect(s.listKey).toBe('never_agree')
+    expect(s.chips.map((c) => c.label)).toEqual(['A deposit or fee', 'Nothing else'])
+    s = reduce(s, s.chips[0].action)
+    expect(s.draft.never_agree).toEqual([{ text: 'A deposit or fee' }])
+    expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
+    s = reduce(s, done("That's all"))
+    expect(completedDraft(s)).toMatchObject({
+      constraints: [],
+      preferences: [],
+      fallbacks: [{ text: 'Cupcakes' }],
+      never_agree: [{ text: 'A deposit or fee' }],
+    })
+  })
+
+  it('ignores a duplicate item (any case) and asks again', () => {
+    let s = reduce(atLists(), send('Before 6pm'))
+    s = reduce(s, send('before 6PM'))
+    expect(s.draft.constraints).toEqual([{ text: 'Before 6pm' }])
+    expect(lastAgent(s)).toBe('You already added that. Anything else?')
+  })
+
+  it('rejects an item that is too long', () => {
+    const s = reduce(atLists(), send('x'.repeat(LIST_ITEM_MAX + 1)))
+    expect(s.draft.constraints).toEqual([])
+    expect(s.listKey).toBe('constraints')
+  })
+
+  it(`stops a list at ${LIST_MAX_ITEMS} items and moves on`, () => {
+    let s = atLists()
+    for (let i = 1; i <= LIST_MAX_ITEMS; i++) s = reduce(s, send(`Limit ${i}`))
+    expect(s.draft.constraints).toHaveLength(LIST_MAX_ITEMS)
+    expect(s.listKey).toBe('preferences')
+  })
+
+  it('starts the limits with the template defaults and says so (PC-2)', () => {
+    const withDefaults: ChatContext = {
+      ...ctx,
+      templates: fakeTemplates.map((t) =>
+        t.key === 'restaurant_booking' ? { ...t, default_constraints: [{ text: 'Same day only' }] } : t,
+      ),
+    }
+    const r = chatReducer(withDefaults)
+    const s = [
+      { type: 'pick_template', templateKey: 'restaurant_booking' } as const,
+      send('Corner Table Bistro'),
+      send('617 555 0100'),
+      send('6'),
+      send('Friday'),
+      send('7pm'),
+    ].reduce(r, initialChatState(withDefaults))
+    expect(s.listKey).toBe('constraints')
+    expect(s.draft.constraints).toEqual([{ text: 'Same day only' }])
+    expect(lastAgent(s)).toBe("I've added the usual limits for this call: Same day only. Any other limits?")
+    expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
+  })
+
+  it('ignores "list_done" when no list is being asked', () => {
+    const start = initialChatState(ctx)
+    expect(reduce(start, done('No limits'))).toBe(start)
   })
 })
 
@@ -159,7 +304,7 @@ describe('custom call flow (PC-3)', () => {
   it('asks for the goal, then the business, then the number', () => {
     let s = run({ type: 'pick_custom' })
     expect(s.awaiting).toBe('goal')
-    expect(s.draft).toEqual({ template_key: null, answers: {}, profile_additions: [] })
+    expect(s.draft).toEqual({ template_key: null, ...FRESH })
 
     s = reduce(s, send('  Ask if they can hold a cake for pickup tomorrow  '))
     expect(s.draft.goal).toBe('Ask if they can hold a cake for pickup tomorrow')
@@ -167,13 +312,13 @@ describe('custom call flow (PC-3)', () => {
 
     s = reduce(s, send('Sunrise Bakery'))
     s = reduce(s, send('+1 617 555 0122'))
+    s = SKIP_LISTS.reduce(reduce, s)
     expect(completedDraft(s)).toEqual({
       template_key: null,
       goal: 'Ask if they can hold a cake for pickup tomorrow',
       business_name: 'Sunrise Bakery',
       phone_e164: '+16175550122',
-      answers: {},
-      profile_additions: [],
+      ...SKIPPED,
     })
   })
 
@@ -182,8 +327,7 @@ describe('custom call flow (PC-3)', () => {
     expect(s.draft).toEqual({
       template_key: null,
       goal: 'Ask if they have a table for 6 tonight',
-      answers: {},
-      profile_additions: [],
+      ...FRESH,
     })
     expect(s.awaiting).toBe('business_name')
   })
@@ -221,7 +365,7 @@ describe('phone number in the chat (PC-7)', () => {
   it('accepts a valid number after a rejected one', () => {
     let s = reduce(atPhone(), send('911'))
     s = reduce(s, send('617-555-0122'))
-    expect(s.stage).toBe('draft_ready')
+    expect(s.listKey).toBe('constraints')
     expect(s.draft.phone_e164).toBe('+16175550122')
   })
 })
@@ -243,6 +387,7 @@ describe('starting a new call any time (PC-1)', () => {
       send('Dr. Lee'),
       send('Existing'),
       send('Check-up'),
+      ...SKIP_LISTS,
     )
     expect(ready.chips.map((c) => c.label)).toEqual(['Start a new call'])
     const again = reduce(ready, { type: 'new_call' })
@@ -264,7 +409,14 @@ describe('ignored input', () => {
   })
 
   it('points to "Start a new call" when the user types after the draft is ready', () => {
-    const ready = run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122'))
+    const ready = run(
+      { type: 'pick_custom' },
+      send('Hold a cake'),
+      send('Sunrise Bakery'),
+      send('617 555 0122'),
+      ...SKIP_LISTS,
+    )
+    expect(ready.stage).toBe('draft_ready')
     const s = reduce(ready, send('hello?'))
     expect(lastAgent(s)).toContain('Start a new call')
     expect(completedDraft(s)).toEqual(completedDraft(ready))
