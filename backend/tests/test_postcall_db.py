@@ -90,9 +90,11 @@ def test_confirmed_booking_is_booked_and_call_ended_goes_out_once(
             assert reply.json()["results"][0]["toolCallId"] == tc
             await post(client, fixture("end-of-call-report", call))
 
+            # The test database is shared, so a pass may also run other tests' jobs: check
+            # this call's rows and events below, not how many jobs a pass finished.
             pool = app.state.pool
-            assert await run_due_jobs(pool) == 2
-            assert await run_due_jobs(pool) == 0  # nothing left, and nothing runs twice
+            await run_due_jobs(pool)
+            await run_due_jobs(pool)  # a second pass must change nothing for this call
 
         assert await outcome_of(db, call) == "booked"
         events = await event_rows(db, call)
