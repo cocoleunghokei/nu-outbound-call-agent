@@ -1,0 +1,45 @@
+{
+  "goal": "Book a table for 4",
+  "business_name": "Test Bistro",
+  "phone_e164": "+14155550123",
+  "template_key": "restaurant_booking",
+  "task_line": "Book a table for {party_size} under {name}.",
+  "task_vars": {
+    "party_size": {
+      "literal": "4"
+    },
+    "name": {
+      "field_ref": "calling_name"
+    }
+  },
+  "constraints": [
+    {
+      "text": "Between 6pm and 8pm"
+    }
+  ],
+  "preferences": [
+    {
+      "text": "Window seat"
+    }
+  ],
+  "fallbacks": [
+    {
+      "text": "Friday same time"
+    }
+  ],
+  "never_agree": [
+    {
+      "text": "A deposit"
+    }
+  ],
+  "share_freely_keys": [
+    "calling_name",
+    "phone"
+  ],
+  "ask_first_keys": [
+    "date_of_birth"
+  ],
+  "profile_values": {
+    "date_of_birth": "1990-01-01"
+  }
+}

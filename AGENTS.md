@@ -11,7 +11,7 @@ A web app that places phone calls for the user, such as booking or cancelling a 
 | Area | Status |
 | --- | --- |
 | Database | Supabase (Postgres 17). Schema lives only in `supabase/migrations/`. |
-| Backend (`backend/`) | Not picked yet (tech doc, Nov 2–6). No code. |
+| Backend (`backend/`) | Python 3.12 + FastAPI (uv), plain SQL via psycopg 3, hosted on Railway. See `backend/README.md`. |
 | Frontend (`frontend/`) | React 19 + TypeScript, built with Vite, npm. Supabase client in `src/lib/supabase.ts`. Hosted on Vercel (root directory `frontend`). `public/prototype/` is a static design prototype, not app code. |
 | CI/CD | GitHub Actions in `.github/workflows/`, driven by the root `Makefile`. |
 
@@ -64,7 +64,9 @@ CI calls these same targets, so passing locally means passing in CI.
 | --- | --- |
 | Product scope, timeline | `README.md`, `docs/Outbound_Call_Agent_Kickoff_OnePager.pdf` |
 | Product requirements and their IDs (`ON-`, `PC-`, `DC-`, `PO-`) | `docs/requirements.md` (snapshot; Notion is the master copy) |
+| System overview with diagrams (start here: components, data, one call, ownership) | `docs/system-overview.md` |
 | System architecture blueprint (components, protocols, delivery rules) | `docs/architecture.md` |
+| Wire contracts (JSON Schema; the generated Python and TypeScript types come from them) | `contracts/` (edit, then `make -C contracts gen`) |
 | Branch and PR workflow, DB setup | `CONTRIBUTING.md` |
 | CI/CD pipeline, required checks, deploys | `docs/devops.md` |
 | Module-specific notes | `backend/README.md`, `frontend/README.md` (add edge cases and patterns there as code lands) |

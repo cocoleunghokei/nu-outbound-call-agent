@@ -6,6 +6,7 @@
 #   2. Rebuild it from supabase/migrations/ (and seed.sql, if present).
 #   3. Run the Supabase schema linter and fail on errors.
 #   4. Fail if any table in the public schema has row-level security disabled.
+#   5. Run the pgTAP tests in supabase/tests/ (row-level security and grants).
 #
 # Used by `make db-check` locally and by the `database` job in CI.
 # Requires: Docker and the Supabase CLI (set SUPABASE_BIN to override the binary).
@@ -31,5 +32,8 @@ echo "==> Linting schema"
 
 echo "==> Checking row-level security on public tables"
 "$SUPABASE_BIN" db query --local --file scripts/sql/assert_rls_enabled.sql >/dev/null
+
+echo "==> Running pgTAP tests"
+"$SUPABASE_BIN" test db
 
 echo "==> Database checks passed"
