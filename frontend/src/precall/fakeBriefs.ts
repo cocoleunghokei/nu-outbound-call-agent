@@ -116,8 +116,9 @@ export const fakeBriefRecords: BriefRecord[] = [
       // DOB is Ask me first: the agent pings before sharing it (DC-6).
       ask_first_keys: ['date_of_birth'],
     },
-    // patient_status and reason aren't known yet, and PC-5 wants at least one fallback.
-    missing_fields: ['patient_status', 'reason', 'fallbacks'],
+    // patient_status and reason aren't known yet. No backup is fine: PC-5 only
+    // prompts for one, so an empty fallbacks list never blocks the call.
+    missing_fields: ['patient_status', 'reason'],
     created_at: '2026-11-10T15:05:00Z',
   },
   // Custom call (PC-3): no template.
