@@ -1,0 +1,159 @@
+/* End-of-call result page (PO-1 to PO-3). Colours follow the design prototype. */
+.cr {
+  --cr-ink: #111827;
+  --cr-muted: #6b7280;
+  --cr-line: #e5e9f0;
+  --cr-surface-2: #f1f4f9;
+  --cr-brand: #1a6dff;
+  --cr-warn: #7a4300;
+  --cr-warn-soft: #fff3df;
+
+  max-width: 560px;
+  color: var(--cr-ink);
+}
+
+.cr-back {
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--cr-brand);
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.cr-back:focus-visible {
+  outline: 2px solid var(--cr-brand);
+  outline-offset: 2px;
+}
+
+.cr-head {
+  padding: 8px 0 14px;
+  border-bottom: 1px solid var(--cr-line);
+}
+
+.cr-title {
+  font-size: 20px;
+  margin: 8px 0 2px;
+}
+
+.cr-sub {
+  margin: 0;
+  color: var(--cr-muted);
+  font-size: 14px;
+}
+
+.cr-warn {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--cr-warn-soft);
+  color: var(--cr-warn);
+  font-size: 13.5px;
+}
+
+.cr-group {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--cr-line);
+}
+
+.cr-group:last-child {
+  border-bottom: 0;
+}
+
+.cr-group h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+
+.cr-muted {
+  margin: 0;
+  color: var(--cr-muted);
+  font-size: 14px;
+}
+
+.cr-agreed {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.cr-agreed div {
+  background: var(--cr-surface-2);
+  border-radius: 12px;
+  padding: 8px 12px;
+}
+
+.cr-agreed dt {
+  color: var(--cr-muted);
+  font-size: 12px;
+}
+
+.cr-agreed dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.cr-plain,
+.cr-decisions,
+.cr-shared {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cr-plain li {
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.cr-decisions li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 6px 0;
+}
+
+.cr-action {
+  background: var(--cr-surface-2);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cr-decisions b {
+  display: block;
+  font-size: 14px;
+}
+
+.cr-decisions small {
+  display: block;
+  color: var(--cr-muted);
+  font-size: 13px;
+}
+
+.cr-decisions .cr-missed {
+  color: var(--cr-warn);
+}
+
+.cr-shared li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--cr-line);
+  font-size: 14px;
+}
+
+.cr-shared li:last-child {
+  border-bottom: 0;
+}
+
+.cr-shared span {
+  color: var(--cr-muted);
+  text-align: right;
+}

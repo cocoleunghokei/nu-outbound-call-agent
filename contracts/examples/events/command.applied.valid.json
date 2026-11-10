@@ -1,0 +1,12 @@
+{
+  "event_id": "6f1f1b2e-6a53-4b8e-9d52-0d5a3a1c0001",
+  "call_id": "6f1f1b2e-6a53-4b8e-9d52-0d5a3a1c0002",
+  "seq": 1,
+  "type": "command.applied",
+  "occurred_at": "2026-11-09T18:00:00.000Z",
+  "source": "backend",
+  "schema_version": 1,
+  "payload": {
+    "command": "resume"
+  }
+}
