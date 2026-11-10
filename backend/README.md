@@ -81,3 +81,18 @@ Handlers run inside the ingress transaction, in their own savepoint, with the ca
 **Event handlers must be idempotent.** The receipt rule above is for tool handlers only. An event handler (`status-update`, `speech-update`, `end-of-call-report`) has no receipt: it runs again on every redelivery of the same message, and one that raises is dead-lettered into `call_events_failed` and never retried. So write it to be safe to run twice: pass a `dedup_key` to `append_event` (for example `status:<status>`, so a repeated status appends nothing), and make every UPDATE guarded (`... where status = 'talking'`, `... where state = 'open'`) so a second run changes nothing. End a call only through `end_call_transition`, which already does nothing for a terminal call.
 
 Anything stored or logged goes through `app.webhooks.redact.redact` / `redact_text`. Every log line passes through `RedactingFormatter` (installed on the root and uvicorn handlers at startup), which scrubs the process-wide `SecretRegistry`: settings secrets plus every capability URL seen since startup. Never log a raw Vapi body.
+
+## During call (`app/calls/`, Coco)
+
+The ask manager: the pause-and-ping loop (DC-6 to DC-9). Pause / Resume / End, the status machine and `report_decision` come next.
+
+| File | What it does |
+| --- | --- |
+| `ask.py` | `ask_user` tool handler. Opens a ping with a 45 s clock (frozen if the call is paused), moves the call to `waiting_on_you`, queues the push (`notify` lane) and two "still checking" lines at 15 s and 30 s. An Ask-me-first `field_requested` becomes a `field_approval` ping with a server-written question and Share / Don't share. A newer question (by Vapi timestamp, then tool call id) replaces the open one; an older one is stored `superseded` and never shown. |
+| `reply.py` | `POST /calls/{call_id}/pings/{ping_id}/reply` (`{"choice": n}` or `{"text": "..."}`, `Idempotency-Key` required). Wins only if the ping is open and `clock_timestamp() < expires_at` under the ping's row lock, else `409 ping_closed`. Free text is cleaned and capped at 200 characters, and is refused on a `field_approval` ping: only Share releases a field, and its value goes only into the agent's `add-message`, never into an event. |
+| `sweeper.py` | Worker: every 0.5 s expires open pings whose clock ran out and queues the "did not reply" message; every 5 s runs `dispatch_pending`. |
+| `outbox.py` | Worker: sends due `control` rows per call in id order via the voice port, outside any transaction. Fillers are dropped if their ping closed or the call is paused, and never retried. `VoiceNotSent` is retried once; `VoiceUncertain` becomes `uncertain` and is never resent. On start-up a pending row that may have been sent becomes `uncertain`. Assumes one backend instance. |
+| `messages.py` | Every sentence put into a call, in one place to tune from test calls. |
+| `store.py`, `pings.py` | Shared helpers: profile snapshot reads, guarded status changes, outbox writes, ping open/close. |
+
+Tests: `tests/test_calls_*.py` (`calls_helpers.py` seeds a call with a snapshot and a control URL). They need the local Supabase stack, like the other `db` tests. `test_calls_e2e.py` runs the real workers and checks the reply is handed to the voice adapter within 2 s.

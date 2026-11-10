@@ -1395,12 +1395,13 @@ def test_failed_scored_receipt_drops_scores(
 
 @pytest.mark.db
 def test_dispatch_pending_scored_receipt_drops_scores_and_scores_once(
-    supabase_env: SupabaseEnv, fresh_call: FreshCall
+    supabase_env: SupabaseEnv, fresh_call: FreshCall, tmp_path: Path
 ) -> None:
     async def scenario() -> None:
         body = fixture("tool-calls", fresh_call)
         ids = [entry["id"] for entry in body["message"]["toolCallList"]]
-        app = create_app(make_settings(supabase_env.db_url))
+        # No owner packages, so no tool has a handler until the test registers one.
+        app = create_app(make_settings(supabase_env.db_url), packages_root=tmp_path)
         async with serve(app) as client:
             await post(client, body)  # no handlers yet: both receipts pending, scores kept
             pending = await receipts(supabase_env.db_url, fresh_call)
