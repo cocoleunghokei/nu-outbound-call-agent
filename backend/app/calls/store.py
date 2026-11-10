@@ -19,6 +19,19 @@ from app.events import append_event
 CONTROL_REPLY = "reply"
 CONTROL_TIMEOUT = "timeout"
 CONTROL_FILLER = "filler"
+CONTROL_HOLD = "hold"  # the hold line when the user pauses
+CONTROL_MUTE = "mute"
+CONTROL_UNMUTE = "unmute"
+CONTROL_REASSURE = "reassure"  # every 15 s while paused
+CONTROL_GOODBYE = "goodbye"  # End or the pause cap: once queued, the call is ending
+CONTROL_HANGUP = "hangup"  # end-call, 6 s after the goodbye if the call is still up
+
+# Rows that may still go out once the call is ending.
+ENDING_KINDS = frozenset({CONTROL_GOODBYE, CONTROL_HANGUP})
+# Rows that only make sense while the call is paused.
+PAUSE_KINDS = frozenset({CONTROL_HOLD, CONTROL_MUTE, CONTROL_REASSURE})
+# Answers for the agent wait while the user has the call paused, and go out after Resume.
+HELD_WHILE_PAUSED = frozenset({CONTROL_REPLY, CONTROL_TIMEOUT})
 
 
 @dataclass(frozen=True)
@@ -104,6 +117,52 @@ async def queue_notify(conn: AsyncConnection[Any], call_id: UUID, ping_id: UUID)
         "insert into public.outbox (call_id, lane, kind, payload)"
         " values (%s, 'notify', 'ping', %s)",
         (call_id, Jsonb({"ping_id": str(ping_id)})),
+    )
+
+
+async def is_ending(conn: AsyncConnection[Any], call_id: UUID) -> bool:
+    """True once End (or the pause cap) has queued the goodbye: nothing new may start."""
+    row = await (
+        await conn.execute(
+            "select 1 from public.outbox where call_id = %s and lane = 'control'"
+            " and kind = %s and state <> 'cancelled' limit 1",
+            (call_id, CONTROL_GOODBYE),
+        )
+    ).fetchone()
+    return row is not None
+
+
+async def cancel_pending_controls(
+    conn: AsyncConnection[Any], call_id: UUID, kinds: frozenset[str] | None = None
+) -> None:
+    """Cancel the call's pending control rows, or only those of ``kinds``."""
+    if kinds is None:
+        await conn.execute(
+            "update public.outbox set state = 'cancelled'"
+            " where call_id = %s and lane = 'control' and state = 'pending'",
+            (call_id,),
+        )
+        return
+    await conn.execute(
+        "update public.outbox set state = 'cancelled'"
+        " where call_id = %s and lane = 'control' and state = 'pending' and kind = any(%s)",
+        (call_id, list(kinds)),
+    )
+
+
+async def requeue_held_answers(conn: AsyncConnection[Any], call_id: UUID) -> None:
+    """Move answers held during a pause behind the rows queued so far (e.g. the unmute).
+
+    Copies keep their kind and payload; the originals are cancelled.
+    """
+    await conn.execute(
+        "with held as ("
+        "  update public.outbox set state = 'cancelled'"
+        "  where call_id = %s and lane = 'control' and state = 'pending' and kind = any(%s)"
+        "  returning call_id, kind, payload, id"
+        ") insert into public.outbox (call_id, lane, kind, payload)"
+        " select call_id, 'control', kind, payload from held order by id",
+        (call_id, list(HELD_WHILE_PAUSED)),
     )
 
 
