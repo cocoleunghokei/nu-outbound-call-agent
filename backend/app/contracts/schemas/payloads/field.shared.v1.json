@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "payloads/field.shared.v1.json",
+  "title": "FieldSharedPayload",
+  "type": "object",
+  "required": [
+    "field_key",
+    "state"
+  ],
+  "properties": {
+    "field_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "title": "DisclosureState",
+      "type": "string",
+      "enum": [
+        "approved",
+        "sent_to_agent",
+        "spoken"
+      ],
+      "description": "Disclosure state of a shared_fields row; moves approved, sent_to_agent, spoken"
+    }
+  }
+}

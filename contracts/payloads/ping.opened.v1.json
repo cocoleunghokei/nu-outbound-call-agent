@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "payloads/ping.opened.v1.json",
+  "title": "PingOpenedPayload",
+  "$ref": "../ping.v1.json"
+}

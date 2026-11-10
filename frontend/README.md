@@ -38,3 +38,4 @@ Open http://localhost:5173.
 ## Notes
 
 - Only `VITE_`-prefixed variables reach the browser, and anything in them is public. Never put the service role key or database password here.
+- Realtime authorizes `postgres_changes` with the token the Supabase client hands it. A signed-in session does this for you. With a token from anywhere else, pass it as `createClient(url, anonKey, { accessToken: async () => token })` and `await client.realtime.setAuth()` before subscribing. Calling `client.realtime.setAuth(token)` on a client with no session doesn't stick: the client switches back to the anon key, and Realtime drops the subscription. Watch the channel's `system` messages: a `postgres_changes` message with status `error` means nothing will be delivered. `scripts/realtime-smoke.mjs` shows the pattern.
