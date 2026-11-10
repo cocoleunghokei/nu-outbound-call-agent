@@ -1,0 +1,587 @@
+/* Live-call page. Colours and shapes follow public/prototype/ (full-size live call page). */
+
+.live-call {
+  --lc-bg: #f5f7fb;
+  --lc-surface: #ffffff;
+  --lc-surface-2: #f1f4f9;
+  --lc-ink: #111827;
+  --lc-muted: #6b7280;
+  --lc-line: #e5e9f0;
+  --lc-brand: #1a6dff;
+  --lc-brand-soft: #e8f0ff;
+  --lc-warn: #c26a00;
+  --lc-shadow: 0 1px 2px rgba(17, 24, 39, 0.04), 0 12px 32px -18px rgba(26, 109, 255, 0.28);
+
+  box-sizing: border-box;
+  min-height: 100vh;
+  /* Full-width background, content capped at 980px. */
+  padding: 24px max(16px, calc((100% - 980px) / 2));
+  background: var(--lc-bg);
+  color: var(--lc-ink);
+  font-family: 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.live-call *,
+.live-call *::before,
+.live-call *::after {
+  box-sizing: inherit;
+}
+
+.live-call h1,
+.live-call h2,
+.live-call p {
+  margin: 0;
+}
+
+/* Header: avatar | name and goal | clock */
+.lc-head {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.lc-avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--lc-brand-soft);
+  color: var(--lc-brand);
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.lc-title h1 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.lc-meta {
+  color: var(--lc-muted);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.lc-clock {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.lc-clock b {
+  display: block;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.lc-clock small {
+  color: var(--lc-muted);
+  font-size: 12px;
+}
+
+/* Status pills (DC-14) */
+.lc-states {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 14px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.lc-states li {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--lc-surface-2);
+  color: var(--lc-muted);
+}
+
+.lc-states li.later {
+  opacity: 0.5;
+}
+
+.lc-states li.on {
+  background: var(--lc-brand);
+  color: #fff;
+  opacity: 1;
+}
+
+.lc-states li.on.wait {
+  background: var(--lc-warn);
+}
+
+/* Conversation | side panel */
+.lc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 18px;
+  align-items: start;
+  margin-top: 16px;
+}
+
+.lc-card {
+  border: 1px solid var(--lc-line);
+  border-radius: 24px;
+  padding: 18px 20px;
+  background: var(--lc-surface);
+  box-shadow: var(--lc-shadow);
+}
+
+.lc-card h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.lc-hint {
+  color: var(--lc-muted);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.lc-convo {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: clamp(320px, calc(100vh - 300px), 640px);
+  overflow-y: auto;
+  padding: 4px 6px 8px;
+}
+
+.lc-line {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: min(78%, 600px);
+}
+
+.lc-line.business {
+  align-self: flex-start;
+}
+
+.lc-line.agent {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.lc-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--lc-muted);
+  padding: 0 6px;
+}
+
+.lc-bubble {
+  padding: 11px 16px;
+  border-radius: 20px;
+  font-size: 16px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.lc-line.business .lc-bubble {
+  background: var(--lc-surface-2);
+  border-bottom-left-radius: 6px;
+}
+
+.lc-line.agent .lc-bubble {
+  background: var(--lc-brand);
+  color: #fff;
+  border-bottom-right-radius: 6px;
+}
+
+.lc-note {
+  align-self: center;
+  max-width: min(90%, 560px);
+  font-size: 13px;
+  color: var(--lc-muted);
+  text-align: center;
+  border: 1px dashed var(--lc-line);
+  border-radius: 14px;
+  padding: 6px 12px;
+  overflow-wrap: anywhere;
+}
+
+.lc-note b {
+  color: var(--lc-ink);
+}
+
+.lc-note-you {
+  border-style: solid;
+  background: #f7faff;
+  border-color: #d6e3fd;
+}
+
+.lc-side {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.lc-idle {
+  border: 1.5px dashed var(--lc-line);
+  border-radius: 24px;
+  padding: 22px 18px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--lc-muted);
+  font-size: 14px;
+}
+
+.lc-idle b {
+  color: var(--lc-ink);
+  font-size: 16px;
+}
+
+/* Phone width: stack the side panel under the conversation. */
+@media (max-width: 760px) {
+  .lc-head {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+
+  .lc-avatar {
+    width: 44px;
+    height: 44px;
+    font-size: 15px;
+  }
+
+  .lc-title h1 {
+    font-size: 20px;
+  }
+
+  .lc-clock {
+    grid-column: 1 / -1;
+    text-align: left;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .lc-clock b {
+    display: inline;
+    font-size: 22px;
+  }
+
+  .lc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .lc-side {
+    position: static;
+  }
+
+  .lc-card {
+    padding: 14px;
+  }
+
+  .lc-line {
+    max-width: 88%;
+  }
+}
+
+/* Ping card (DC-8). Follows the prototype's .ping card. */
+.lc-ping {
+  border: 2px solid var(--lc-brand);
+  border-radius: 24px;
+  padding: 18px;
+  background: var(--lc-surface);
+  box-shadow: 0 22px 48px -24px rgba(26, 109, 255, 0.6);
+}
+
+.lc-ping.closed {
+  border-color: var(--lc-line);
+  box-shadow: var(--lc-shadow);
+}
+
+.lc-ping-top {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lc-brand);
+}
+
+.lc-ping.closed .lc-ping-top {
+  color: var(--lc-muted);
+}
+
+.live-call .lc-ping-changed {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lc-warn);
+}
+
+.live-call .lc-ping-q {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.live-call .lc-ping-why {
+  color: var(--lc-muted);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.lc-ping-clock {
+  margin-top: 12px;
+}
+
+.lc-ping-sec {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lc-warn);
+  font-variant-numeric: tabular-nums;
+}
+
+.lc-ping-track {
+  height: 5px;
+  border-radius: 5px;
+  background: #e9eef6;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.lc-ping-bar {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--lc-brand);
+  transition: width 0.25s linear;
+}
+
+.lc-ping-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.lc-ping button,
+.lc-ping input {
+  font: inherit;
+  color: inherit;
+}
+
+.lc-ping-opts button {
+  border: 1.5px solid var(--lc-line);
+  background: var(--lc-surface);
+  border-radius: 16px;
+  padding: 12px 14px;
+  font-weight: 600;
+  font-size: 15.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lc-ping-opts button:first-child {
+  background: var(--lc-brand);
+  border-color: var(--lc-brand);
+  color: #fff;
+}
+
+.lc-ping-opts button:not(:first-child):hover:not(:disabled) {
+  border-color: var(--lc-brand);
+  background: var(--lc-brand-soft);
+}
+
+.lc-ping button:disabled,
+.lc-ping input:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.lc-ping button:focus-visible,
+.lc-ping input:focus-visible {
+  outline: 2px solid var(--lc-brand);
+  outline-offset: 2px;
+}
+
+.lc-ping-free {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lc-ping-free input {
+  flex: 1;
+  min-width: 0;
+  border: 1.5px solid var(--lc-line);
+  border-radius: 999px;
+  padding: 9px 14px;
+  background: var(--lc-surface-2);
+}
+
+.lc-ping-free button {
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-weight: 700;
+  background: var(--lc-brand);
+  color: #fff;
+  cursor: pointer;
+}
+
+.live-call .lc-ping-fb {
+  font-size: 13px;
+  color: var(--lc-muted);
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+
+.live-call .lc-ping-fb.warn {
+  color: var(--lc-warn);
+  font-weight: 600;
+}
+
+/* Feed notes: decisions (DC-4, DC-5) and questions asked */
+.lc-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 1px 8px;
+  border-radius: 999px;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+.lc-badge.acted {
+  background: #e2f6ee;
+  color: #0e7a55;
+}
+
+.lc-badge.asked {
+  background: #fff3df;
+  color: #a35800;
+}
+
+.lc-badge.flag {
+  background: #fff3df;
+  color: #a35800;
+}
+
+.lc-flag {
+  display: block;
+  margin-top: 4px;
+  color: var(--lc-ink);
+}
+
+/* Pause / Resume / End (DC-11) */
+.lc-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lc-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lc-btn {
+  flex: 1;
+  font: inherit;
+  font-weight: 700;
+  border: 1.5px solid var(--lc-line);
+  background: var(--lc-surface);
+  color: var(--lc-ink);
+  border-radius: 999px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.lc-btn:hover:not(:disabled) {
+  border-color: var(--lc-brand);
+}
+
+.lc-btn.primary {
+  background: var(--lc-brand);
+  border-color: var(--lc-brand);
+  color: #fff;
+}
+
+.lc-btn.danger {
+  color: #b91c1c;
+  border-color: #f5c2c2;
+}
+
+.lc-btn.danger:hover:not(:disabled) {
+  border-color: #b91c1c;
+  background: #fdecec;
+}
+
+.lc-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.lc-btn:focus-visible {
+  outline: 2px solid var(--lc-brand);
+  outline-offset: 2px;
+}
+
+.lc-confirm {
+  border: 1.5px solid #f5c2c2;
+  background: #fff8f8;
+  border-radius: 18px;
+  padding: 12px;
+}
+
+.live-call .lc-confirm p {
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.lc-paused {
+  border: 1.5px solid #f4d9a8;
+  background: #fff8ec;
+  border-radius: 18px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--lc-muted);
+}
+
+.lc-paused b {
+  color: #a35800;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-call .lc-controls-fb {
+  font-size: 13px;
+  color: var(--lc-muted);
+}
+
+.live-call .lc-controls-fb.warn {
+  color: var(--lc-warn);
+  font-weight: 600;
+}
+
+/* Connection problems (real backend only) */
+.live-call .lc-notice {
+  margin-top: 12px;
+  border: 1.5px solid #f4d9a8;
+  background: #fff8ec;
+  color: #a35800;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-size: 14px;
+  font-weight: 600;
+}
