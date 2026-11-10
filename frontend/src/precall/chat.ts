@@ -78,6 +78,13 @@ export type ChatAction =
   | { type: 'edit'; target: EditTarget }
   /** Start the call from the review card (PC-6). Ignored while anything is missing. */
   | { type: 'start' }
+  /**
+   * The brief was saved but calling isn't connected yet (Coco's `POST /calls`
+   * isn't deployed). Locks the review like Start, without claiming a call.
+   */
+  | { type: 'saved_not_connected' }
+  /** The agent says something without changing the flow, e.g. an API error after Start. */
+  | { type: 'note'; text: string }
 
 /**
  * What the review card can send back to the chat: the custom goal, the
@@ -109,6 +116,8 @@ export interface ChatState {
   /** Composer hint for what to type next. */
   placeholder: string
   stage: Stage
+  /** How the review ended once `stage` is `started`: a call placed, or only saved. */
+  startOutcome: 'calling' | 'saved' | null
   draft: Partial<CallDraft>
   /** Whether the chat has said which profile fields it won't ask for, for this draft. */
   knownAnnounced: boolean
@@ -270,6 +279,7 @@ function showHome(state: ChatState, ctx: ChatContext, text: string): ChatState {
     reviewAfterId: null,
     placeholder: DEFAULT_PLACEHOLDER,
     stage: 'home',
+    startOutcome: null,
     draft: {},
     knownAnnounced: false,
   }
@@ -287,6 +297,7 @@ export function initialChatState(ctx: ChatContext): ChatState {
     reviewAfterId: null,
     placeholder: DEFAULT_PLACEHOLDER,
     stage: 'home',
+    startOutcome: null,
     draft: {},
     knownAnnounced: false,
     nextId: 1,
@@ -525,7 +536,21 @@ export function chatReducer(ctx: ChatContext) {
           'agent',
           `Calling ${review.brief.business_name} now. I'll ask you here if I need anything.`,
         )
-        return { ...started, stage: 'started', chips: [NEW_CALL_CHIP] }
+        return { ...started, stage: 'started', startOutcome: 'calling', chips: [NEW_CALL_CHIP] }
+      }
+      case 'saved_not_connected': {
+        const review = reviewOf(state, ctx)
+        if (state.stage !== 'draft_ready' || !review || review.missing_fields.length > 0) return state
+        const saved = say(
+          say({ ...state, chips: [] }, 'user', 'Start call'),
+          'agent',
+          "Saved your brief. Calling isn't connected yet, so I haven't dialed.",
+        )
+        return { ...saved, stage: 'started', startOutcome: 'saved', chips: [NEW_CALL_CHIP] }
+      }
+      case 'note': {
+        const text = action.text.trim()
+        return text === '' ? state : say(state, 'agent', text)
       }
       case 'new_call':
         // PC-1: the user can start a new call at any time; an unfinished draft is dropped.

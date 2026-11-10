@@ -59,6 +59,20 @@
   font-weight: 700;
 }
 
+.precall-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+/* Demo mode note: present but quiet. */
+.precall-mode {
+  color: var(--pc-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .precall-pill {
   border: 1px solid var(--pc-line);
   background: var(--pc-surface);

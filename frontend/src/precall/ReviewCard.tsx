@@ -3,6 +3,7 @@ import { openingLine, profileWithAdditions, type BuiltBrief } from './brief'
 import { canEdit, type CallDraft, type EditTarget, type ListItem } from './chat'
 import { profileLabel } from './missing'
 import { formatUsPhone } from './phone'
+import { reviewView, type ServerCheck } from './start'
 import type { ProfileField } from './types'
 
 interface ReviewCardProps {
@@ -10,6 +11,12 @@ interface ReviewCardProps {
   draft: CallDraft
   profile: ProfileField[]
   started: boolean
+  /** How the review ended: a call placed, or the brief only saved (calling not connected yet). */
+  outcome?: 'calling' | 'saved' | null
+  /** The server's check of this brief, if any. It wins over the local preview while the brief is unchanged. */
+  server?: ServerCheck | null
+  /** A save or start request is in flight: Start and Edit are disabled. */
+  busy?: boolean
   onEdit: (target: EditTarget) => void
   onStart: () => void
 }
@@ -21,16 +28,33 @@ interface ReviewCardProps {
  * Built to be read in about 10 seconds. Layout follows the "Check before I
  * dial" card in Harper's prototype.
  */
-export function ReviewCard({ review, draft, profile, started, onEdit, onStart }: ReviewCardProps) {
-  const { brief, missing_fields } = review
-  const opening = openingLine(brief, profileWithAdditions(draft, profile))
+export function ReviewCard({
+  review,
+  draft,
+  profile,
+  started,
+  outcome = 'calling',
+  server = null,
+  busy = false,
+  onEdit,
+  onStart,
+}: ReviewCardProps) {
+  const { brief } = review
+  const local = { missing_fields: review.missing_fields, opening_line: openingLine(brief, profileWithAdditions(draft, profile)) }
+  const { missing_fields, opening_line: opening } = reviewView(brief, local, server)
   const details = Object.values(draft.answers).filter((v) => v.trim() !== '')
-  const canStart = !started && missing_fields.length === 0 && opening !== null
+  const canStart = !started && !busy && missing_fields.length === 0 && opening !== null
 
   function editButton(target: EditTarget, label: string) {
     if (started || !canEdit(draft, target)) return null
     return (
-      <button type="button" className="precall-edit" onClick={() => onEdit(target)} aria-label={`Edit ${label}`}>
+      <button
+        type="button"
+        className="precall-edit"
+        onClick={() => onEdit(target)}
+        disabled={busy}
+        aria-label={`Edit ${label}`}
+      >
         Edit
       </button>
     )
@@ -78,11 +102,11 @@ export function ReviewCard({ review, draft, profile, started, onEdit, onStart }:
       )}
 
       {started ? (
-        <p className="precall-done">✓ Call started</p>
+        <p className="precall-done">{outcome === 'saved' ? '✓ Brief saved' : '✓ Call started'}</p>
       ) : (
         <div className="precall-foot">
-          <button type="button" className="precall-btn primary" onClick={onStart} disabled={!canStart}>
-            Start call
+          <button type="button" className="precall-btn primary" onClick={onStart} disabled={!canStart} aria-busy={busy}>
+            {busy ? 'Saving…' : 'Start call'}
           </button>
         </div>
       )}
