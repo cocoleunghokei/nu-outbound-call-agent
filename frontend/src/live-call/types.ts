@@ -89,3 +89,44 @@ export interface LiveCallSummary {
   /** `calls.max_duration_s`, the hard cap shown next to the clock (DC-15). */
   maxDurationS: number
 }
+
+/** `decision`: the agent needs a call from you. `field_approval`: it wants an Ask-me-first field (DC-6). */
+export type PingKind = 'decision' | 'field_approval'
+
+/** Open enum: an unknown state is treated as closed. */
+export type PingState = 'open' | 'answered' | 'expired' | 'superseded' | 'cancelled' | (string & {})
+
+/** A question from the agent to the user (DC-7, DC-8). Payload of `ping.opened`. */
+export interface Ping {
+  ping_id: string
+  call_id: string
+  kind: PingKind
+  /** Only for field_approval. */
+  field_key?: string
+  question: string
+  reason: string
+  suggested_replies: string[]
+  /** Null while the call is paused (the clock is frozen). */
+  expires_at: string | null
+  /** Time left on the reply clock, in milliseconds. */
+  remaining_ms: number | null
+  state: PingState
+}
+
+/** Payload of `ping.resolved`. */
+export interface PingResolvedPayload {
+  ping_id: string
+  state: PingState
+  reply_text?: string
+}
+
+/** Body of `POST /calls/{call_id}/pings/{ping_id}/reply`: a suggested reply by index, or free text. */
+export type PingReplyCommand = PingReplyChoice | PingReplyText
+
+export interface PingReplyChoice {
+  choice: number
+}
+
+export interface PingReplyText {
+  text: string
+}

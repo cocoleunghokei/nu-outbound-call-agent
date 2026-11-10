@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { LiveCall } from './live-call/LiveCall'
-import { DR_LEE_SCRIPT, MOCK_CALL_ID, mockSummary, useMockCallEvents } from './live-call/mockCall'
+import { DR_LEE_SCRIPT, MOCK_CALL_ID, mockSummary, useMockCall } from './live-call/mockCall'
 
 /**
  * Temporary: shows the live-call page playing a fake call until the app
@@ -8,8 +8,8 @@ import { DR_LEE_SCRIPT, MOCK_CALL_ID, mockSummary, useMockCallEvents } from './l
  */
 function App() {
   const [startedAt] = useState(() => new Date().toISOString())
-  const events = useMockCallEvents(DR_LEE_SCRIPT, MOCK_CALL_ID, startedAt)
-  return <LiveCall summary={mockSummary(startedAt)} events={events} />
+  const { events, sendReply } = useMockCall(DR_LEE_SCRIPT, MOCK_CALL_ID, startedAt)
+  return <LiveCall summary={mockSummary(startedAt)} events={events} sendReply={sendReply} />
 }
 
 export default App

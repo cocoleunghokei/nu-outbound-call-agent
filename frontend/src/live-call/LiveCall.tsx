@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatClock, formatPhone, initials } from './format'
+import { PingCard } from './PingCard'
+import type { SendPingReply } from './ping'
 import { STATUS_STEPS, deriveLiveCall, statusStep, type TranscriptLine } from './state'
 import type { CallEvent, LiveCallSummary } from './types'
 import './LiveCall.css'
@@ -8,14 +10,25 @@ interface LiveCallProps {
   summary: LiveCallSummary
   /** The call's events ordered by `seq` (see `mergeEvents`). */
   events: readonly CallEvent[]
+  /** Sends the user's answer to a ping (mock now, backend API later). */
+  sendReply: SendPingReply
 }
 
 /**
- * The live-call page: header with the call clock, status pills (DC-14) and the
- * live transcript (DC-3). Pings, Pause/End and the decision feed come later.
+ * The live-call page: header with the call clock, status pills (DC-14), the
+ * live transcript (DC-3) and the ping card (DC-8). Pause/End and the decision
+ * feed come later.
  */
-export function LiveCall({ summary, events }: LiveCallProps) {
+export function LiveCall({ summary, events, sendReply }: LiveCallProps) {
   const view = useMemo(() => deriveLiveCall(events), [events])
+  const side = useRef<HTMLElement>(null)
+  const openPingId = view.ping?.state === 'open' ? view.ping.ping.ping_id : null
+
+  // On a phone the card sits below the transcript, so bring a new question into view.
+  useEffect(() => {
+    if (openPingId === null || !window.matchMedia('(max-width: 760px)').matches) return
+    side.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }, [openPingId])
 
   return (
     <main className="live-call">
@@ -53,8 +66,9 @@ export function LiveCall({ summary, events }: LiveCallProps) {
           />
         </section>
 
-        <aside className="lc-side">
-          {view.ended === null ? (
+        <aside className="lc-side" ref={side}>
+          {view.ping !== null && <PingCard view={view.ping} sendReply={sendReply} />}
+          {view.ping?.state === 'open' ? null : view.ended === null ? (
             <div className="lc-idle">
               <b>Your agent is handling it</b>
               <span>

@@ -5,8 +5,11 @@
  * `call_events` rows into a view on every update, so a refresh, a reconnect or
  * a late event always lands in the same place.
  */
+import { parsePing } from './ping'
 import type {
   CallEndedPayload,
+  Ping,
+  PingState,
   CallEvent,
   CallOutcome,
   CallStatus,
@@ -22,11 +25,24 @@ export interface TranscriptLine {
   text: string
 }
 
+/** The latest ping and where it stands. */
+export interface PingCardView {
+  ping: Ping
+  /** `open` until a `ping.resolved` (or the call ending) closes it. */
+  state: PingState
+  /** The reply the agent received, from `ping.resolved`. */
+  replyText?: string
+  /** True when this question replaced an open one (the offer changed, DC-7). */
+  replacesEarlier: boolean
+}
+
 /** Everything the screen renders, derived from the events. */
 export interface LiveCallView {
   /** Latest server status. `creating` until the first status event arrives. */
   status: CallStatus
   lines: TranscriptLine[]
+  /** The most recent ping, open or closed. Null until the agent asks something. */
+  ping: PingCardView | null
   /** Set once `call.ended` arrives. Final: later events cannot reopen the call. */
   ended: { outcome: CallOutcome; endedReason: string; endedAt: string } | null
 }
@@ -92,7 +108,7 @@ export function mergeEvents(
 
 /** Folds events (ordered by `seq`) into the view. Unknown or malformed events are skipped. */
 export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
-  const view: LiveCallView = { status: 'creating', lines: [], ended: null }
+  const view: LiveCallView = { status: 'creating', lines: [], ping: null, ended: null }
 
   for (const event of events) {
     switch (event.type) {
@@ -115,8 +131,44 @@ export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
         })
         break
       }
+      case 'ping.opened': {
+        if (view.ended !== null) break
+        const ping = parsePing(event.payload)
+        // A question stored as already closed (e.g. superseded on arrival) is never shown.
+        if (ping === null || ping.state !== 'open') break
+        const previous = view.ping
+        if (previous !== null && previous.ping.ping_id === ping.ping_id) {
+          // The same ping again (e.g. its clock was frozen or restored): refresh
+          // its data, but never reopen it once closed.
+          if (previous.state === 'open') view.ping = { ...previous, ping }
+          break
+        }
+        view.ping = {
+          ping,
+          state: 'open',
+          // The old ping's `superseded` event can arrive before or after this one.
+          replacesEarlier:
+            previous !== null && (previous.state === 'open' || previous.state === 'superseded'),
+        }
+        break
+      }
+      case 'ping.resolved': {
+        const { ping_id: pingId, state, reply_text: replyText } = event.payload
+        if (view.ping === null || view.ping.state !== 'open') break
+        if (pingId !== view.ping.ping.ping_id) break
+        if (typeof state !== 'string' || state === '' || state === 'open') break
+        view.ping = {
+          ...view.ping,
+          state,
+          ...(typeof replyText === 'string' ? { replyText } : {}),
+        }
+        break
+      }
       case 'call.ended': {
         if (view.ended !== null) break
+        if (view.ping !== null && view.ping.state === 'open') {
+          view.ping = { ...view.ping, state: 'cancelled' }
+        }
         const payload = event.payload as Partial<CallEndedPayload>
         view.ended = {
           outcome: typeof payload.outcome === 'string' ? payload.outcome : null,
@@ -127,7 +179,7 @@ export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
         break
       }
       default:
-        // Pings, decisions and commands are handled in later PRs. Unknown
+        // Decisions and commands are handled in a later PR. Unknown
         // types are expected (open enum) and are ignored on purpose.
         break
     }

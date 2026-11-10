@@ -223,6 +223,9 @@
 .lc-side {
   position: sticky;
   top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .lc-idle {
@@ -286,4 +289,160 @@
   .lc-line {
     max-width: 88%;
   }
+}
+
+/* Ping card (DC-8). Follows the prototype's .ping card. */
+.lc-ping {
+  border: 2px solid var(--lc-brand);
+  border-radius: 24px;
+  padding: 18px;
+  background: var(--lc-surface);
+  box-shadow: 0 22px 48px -24px rgba(26, 109, 255, 0.6);
+}
+
+.lc-ping.closed {
+  border-color: var(--lc-line);
+  box-shadow: var(--lc-shadow);
+}
+
+.lc-ping-top {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lc-brand);
+}
+
+.lc-ping.closed .lc-ping-top {
+  color: var(--lc-muted);
+}
+
+.live-call .lc-ping-changed {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lc-warn);
+}
+
+.live-call .lc-ping-q {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.live-call .lc-ping-why {
+  color: var(--lc-muted);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.lc-ping-clock {
+  margin-top: 12px;
+}
+
+.lc-ping-sec {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--lc-warn);
+  font-variant-numeric: tabular-nums;
+}
+
+.lc-ping-track {
+  height: 5px;
+  border-radius: 5px;
+  background: #e9eef6;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.lc-ping-bar {
+  height: 100%;
+  border-radius: 5px;
+  background: var(--lc-brand);
+  transition: width 0.25s linear;
+}
+
+.lc-ping-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.lc-ping button,
+.lc-ping input {
+  font: inherit;
+  color: inherit;
+}
+
+.lc-ping-opts button {
+  border: 1.5px solid var(--lc-line);
+  background: var(--lc-surface);
+  border-radius: 16px;
+  padding: 12px 14px;
+  font-weight: 600;
+  font-size: 15.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lc-ping-opts button:first-child {
+  background: var(--lc-brand);
+  border-color: var(--lc-brand);
+  color: #fff;
+}
+
+.lc-ping-opts button:not(:first-child):hover:not(:disabled) {
+  border-color: var(--lc-brand);
+  background: var(--lc-brand-soft);
+}
+
+.lc-ping button:disabled,
+.lc-ping input:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.lc-ping button:focus-visible,
+.lc-ping input:focus-visible {
+  outline: 2px solid var(--lc-brand);
+  outline-offset: 2px;
+}
+
+.lc-ping-free {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lc-ping-free input {
+  flex: 1;
+  min-width: 0;
+  border: 1.5px solid var(--lc-line);
+  border-radius: 999px;
+  padding: 9px 14px;
+  background: var(--lc-surface-2);
+}
+
+.lc-ping-free button {
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 16px;
+  font-weight: 700;
+  background: var(--lc-brand);
+  color: #fff;
+  cursor: pointer;
+}
+
+.live-call .lc-ping-fb {
+  font-size: 13px;
+  color: var(--lc-muted);
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+}
+
+.live-call .lc-ping-fb.warn {
+  color: var(--lc-warn);
+  font-weight: 600;
 }

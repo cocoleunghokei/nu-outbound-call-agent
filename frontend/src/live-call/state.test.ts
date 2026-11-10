@@ -46,7 +46,7 @@ describe('statusStep', () => {
 
 describe('deriveLiveCall', () => {
   it('starts as creating with no lines before any event', () => {
-    expect(deriveLiveCall([])).toEqual({ status: 'creating', lines: [], ended: null })
+    expect(deriveLiveCall([])).toEqual({ status: 'creating', lines: [], ping: null, ended: null })
   })
 
   it('tracks the latest status and the transcript in order', () => {
@@ -89,10 +89,10 @@ describe('deriveLiveCall', () => {
   it('ignores event types it does not handle yet', () => {
     const view = deriveLiveCall([
       status(1, 'talking'),
-      ev(2, 'ping.opened', { ping_id: 'p1' }),
+      ev(2, 'agent.decision', { situation: 'x', action: 'accept', reason: 'y' }),
       ev(3, 'some.future.event', { anything: true }),
     ])
-    expect(view).toEqual({ status: 'talking', lines: [], ended: null })
+    expect(view).toEqual({ status: 'talking', lines: [], ping: null, ended: null })
   })
 
   it('marks the call ended with its outcome on call.ended', () => {
@@ -137,6 +137,96 @@ describe('deriveLiveCall', () => {
       line(2, 'agent', 'Goodbye.'),
     ])
     expect(view.lines).toHaveLength(1)
+  })
+})
+
+/** A `ping.opened` event with fake data. */
+const opened = (seq: number, pingId: string, overrides: Record<string, unknown> = {}) =>
+  ev(seq, 'ping.opened', {
+    ping_id: pingId,
+    call_id: CALL_ID,
+    kind: 'decision',
+    question: `Question ${pingId}`,
+    reason: 'You said before 3pm.',
+    suggested_replies: ['Yes', 'No'],
+    expires_at: '2026-11-10T15:00:45.000Z',
+    remaining_ms: 45_000,
+    state: 'open',
+    ...overrides,
+  })
+const resolved = (seq: number, pingId: string, state: string, replyText?: string) =>
+  ev(seq, 'ping.resolved', { ping_id: pingId, state, ...(replyText ? { reply_text: replyText } : {}) })
+
+describe('deriveLiveCall pings', () => {
+  it('shows an opened ping as open', () => {
+    const view = deriveLiveCall([opened(1, 'p1')])
+    expect(view.ping).toMatchObject({ state: 'open', replacesEarlier: false })
+    expect(view.ping?.ping.question).toBe('Question p1')
+  })
+
+  it('closes the ping with its final state and reply', () => {
+    const view = deriveLiveCall([opened(1, 'p1'), resolved(2, 'p1', 'answered', 'Yes')])
+    expect(view.ping).toMatchObject({ state: 'answered', replyText: 'Yes' })
+  })
+
+  it('ignores a resolution for another ping', () => {
+    const view = deriveLiveCall([opened(1, 'p1'), resolved(2, 'p0', 'expired')])
+    expect(view.ping?.state).toBe('open')
+  })
+
+  it('never reopens a closed ping, and keeps the first resolution', () => {
+    const view = deriveLiveCall([
+      opened(1, 'p1'),
+      resolved(2, 'p1', 'expired'),
+      resolved(3, 'p1', 'answered', 'late'),
+      opened(4, 'p1'),
+    ])
+    expect(view.ping?.state).toBe('expired')
+    expect(view.ping?.replyText).toBeUndefined()
+  })
+
+  it('shows only the newest question when the offer changes (DC-7)', () => {
+    const view = deriveLiveCall([opened(1, 'p1'), opened(2, 'p2'), resolved(3, 'p1', 'superseded')])
+    expect(view.ping?.ping.ping_id).toBe('p2')
+    expect(view.ping).toMatchObject({ state: 'open', replacesEarlier: true })
+  })
+
+  it('flags the replacement when the superseded event arrives first', () => {
+    const view = deriveLiveCall([opened(1, 'p1'), resolved(2, 'p1', 'superseded'), opened(3, 'p2')])
+    expect(view.ping).toMatchObject({ state: 'open', replacesEarlier: true })
+  })
+
+  it('does not flag a replacement after an answered ping', () => {
+    const view = deriveLiveCall([opened(1, 'p1'), resolved(2, 'p1', 'answered'), opened(3, 'p2')])
+    expect(view.ping?.replacesEarlier).toBe(false)
+  })
+
+  it('refreshes the same open ping, e.g. when its clock freezes', () => {
+    const view = deriveLiveCall([
+      opened(1, 'p1'),
+      opened(2, 'p1', { expires_at: null, remaining_ms: 20_000 }),
+    ])
+    expect(view.ping?.ping.expires_at).toBeNull()
+    expect(view.ping?.ping.remaining_ms).toBe(20_000)
+    expect(view.ping?.replacesEarlier).toBe(false)
+  })
+
+  it('never shows a ping stored as already closed', () => {
+    expect(deriveLiveCall([opened(1, 'p1', { state: 'superseded' })]).ping).toBeNull()
+  })
+
+  it('drops a malformed ping', () => {
+    expect(deriveLiveCall([opened(1, 'p1', { question: 7 })]).ping).toBeNull()
+  })
+
+  it('cancels an open ping when the call ends, and opens none after', () => {
+    const view = deriveLiveCall([
+      opened(1, 'p1'),
+      ev(2, 'call.ended', { outcome: 'needs_follow_up', ended_reason: 'user_ended' }),
+      opened(3, 'p2'),
+    ])
+    expect(view.ping?.ping.ping_id).toBe('p1')
+    expect(view.ping?.state).toBe('cancelled')
   })
 })
 

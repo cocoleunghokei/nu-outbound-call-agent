@@ -22,7 +22,7 @@ Open http://localhost:5173.
 - `src/App.tsx`: root component, start here
 - `src/lib/supabase.ts`: shared Supabase client (anon key only; every table it reads needs row-level security)
 - `src/index.css`: global styles
-- `src/live-call/`: live-call page (DC-3 transcript, DC-14 status). `state.ts` folds the call's `call_events` rows into what the page shows; `mockCall.ts` plays a scripted fake call until the backend is connected. `types.ts` copies the contract shapes from PR #19 and goes away once that merges.
+- `src/live-call/`: live-call page (DC-3 transcript, DC-14 status, DC-8 ping card). `state.ts` folds the call's `call_events` rows into what the page shows; `ping.ts` holds the ping rules (reply clock, free-text cleanup, no free text on Ask-me-first pings). `mockCall.ts` plays a scripted fake call and answers ping replies like the backend will, until the backend is connected. `types.ts` copies the contract shapes from PR #19 and goes away once that merges.
 - `public/prototype/`: static, clickable design prototype, served as is at `/prototype/`. It isn't part of the React app, so don't import from it.
 
 ## Checks
