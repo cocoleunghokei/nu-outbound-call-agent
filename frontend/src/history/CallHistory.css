@@ -1,0 +1,140 @@
+/* Call history (PO-6). Colours follow the design prototype in public/prototype/. */
+.ch {
+  --ch-ink: #111827;
+  --ch-muted: #6b7280;
+  --ch-line: #e5e9f0;
+  --ch-surface: #ffffff;
+  --ch-surface-2: #f1f4f9;
+  --ch-ok: #0e9f6e;
+  --ch-ok-soft: #e2f6ee;
+  --ch-warn: #c26a00;
+  --ch-warn-soft: #fff3df;
+  --ch-bad: #dc2626;
+  --ch-bad-soft: #fdecec;
+  --ch-focus: #1a6dff;
+
+  max-width: 560px;
+  color: var(--ch-ink);
+}
+
+.ch-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 4px 0 10px;
+}
+
+.ch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ch-empty {
+  text-align: center;
+  color: var(--ch-muted);
+  padding: 26px 10px;
+  font-size: 14px;
+}
+
+.ch-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px;
+  border-radius: 18px;
+  width: 100%;
+  text-align: left;
+}
+
+.ch-row-button {
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ch-row-button:hover {
+  background: var(--ch-surface-2);
+}
+
+.ch-row-button:focus-visible {
+  outline: 2px solid var(--ch-focus);
+  outline-offset: 2px;
+}
+
+.ch-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--ch-surface-2);
+  color: var(--ch-muted);
+  display: grid;
+  place-items: center;
+}
+
+.ch-text {
+  min-width: 0;
+}
+
+.ch-business {
+  display: block;
+  font-size: 14.5px;
+}
+
+.ch-goal {
+  display: block;
+  color: var(--ch-muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ch-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--ch-muted);
+  font-size: 12px;
+}
+
+.ch-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ch-badge::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ch-badge-ok {
+  background: var(--ch-ok-soft);
+  color: var(--ch-ok);
+}
+
+.ch-badge-warn {
+  background: var(--ch-warn-soft);
+  color: var(--ch-warn);
+}
+
+.ch-badge-bad {
+  background: var(--ch-bad-soft);
+  color: var(--ch-bad);
+}
+
+.ch-badge-neutral {
+  background: var(--ch-surface-2);
+  color: var(--ch-muted);
+}
