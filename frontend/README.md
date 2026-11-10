@@ -22,11 +22,12 @@ Open http://localhost:5173.
 - `src/App.tsx`: root component, start here
 - `src/lib/supabase.ts`: shared Supabase client (anon key only; every table it reads needs row-level security)
 - `src/index.css`: global styles
+- `src/precall/`: pre-call flow (PC-1 to PC-7). `types.ts` copies the `brief.v1` contract shapes from PR #19 (goes away once that merges) and drafts the template shape (to agree with Harper). `fakeBriefs.ts` holds a fake profile, the two P0 templates and example briefs shaped like the `briefs` table, until the backend is connected. `contractExample.ts` is a copy of `contracts/examples/brief.v1.valid.json` that the tests compare against.
 - `public/prototype/`: static, clickable design prototype, served as is at `/prototype/`. It isn't part of the React app, so don't import from it.
 
 ## Checks
 
-`make lint test build` from this folder (or `make check` from the repo root) runs the same checks as CI.
+`make lint test build` from this folder (or `make check` from the repo root) runs the same checks as CI. Tests use Vitest (`npm test`); put them next to the code as `*.test.ts`.
 
 ## Notes
 
