@@ -22,11 +22,16 @@ Open http://localhost:5173.
 - `src/App.tsx`: root component, start here
 - `src/lib/supabase.ts`: shared Supabase client (anon key only; every table it reads needs row-level security)
 - `src/index.css`: global styles
+- `src/live-call/`: live-call page (DC-3 transcript, DC-14 status). `state.ts` folds the call's `call_events` rows into what the page shows; `mockCall.ts` plays a scripted fake call until the backend is connected. `types.ts` copies the contract shapes from PR #19 and goes away once that merges.
 - `public/prototype/`: static, clickable design prototype, served as is at `/prototype/`. It isn't part of the React app, so don't import from it.
 
 ## Checks
 
-`make lint test build` from this folder (or `make check` from the repo root) runs the same checks as CI.
+`make lint test build` from this folder (or `make check` from the repo root) runs the same checks as CI. Tests use Vitest (`npm test`); put them next to the code as `*.test.ts`.
+
+## Patterns
+
+- Live call: never keep call state in components. Hold the call's events (merged and de-duplicated by `seq` with `mergeEvents`) and derive the view with `deriveLiveCall`. Unknown event types and statuses are expected (open enums): skip or show "Unknown", never throw.
 
 ## Notes
 
