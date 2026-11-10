@@ -282,3 +282,43 @@ def test_browser_preflight_allows_every_brief_route(method: str, path: str) -> N
     assert response.status_code == 200, (method, response.text)
     assert method in response.headers["access-control-allow-methods"]
     assert response.headers["access-control-allow-origin"] == origin
+
+
+# ---------------------------------------------------------------- readiness: template fields
+
+
+def test_saved_doctor_brief_needs_the_dob_in_the_profile() -> None:
+    """A DOB typed only in the chat isn't in the profile yet, so the saved brief isn't ready."""
+    doctor = example_brief(
+        template_key="doctor_booking",
+        task_line="I'd like to book an appointment with {provider_name}.",
+        task_vars={"provider_name": {"literal": "Dr. Lee"}},
+        share_freely_keys=["calling_name"],
+        ask_first_keys=["date_of_birth"],
+    )
+    no_dob = Snapshot.from_rows([("calling_name", "Alex", "share_freely")])
+    readiness = check_readiness(doctor, no_dob)
+    assert readiness.missing_fields == ["date_of_birth"]
+    assert not readiness.ready
+    assert check_readiness(doctor, PROFILE).ready
+
+
+def test_template_profile_fields_are_reported_with_the_calling_name() -> None:
+    readiness = check_readiness(example_brief(), Snapshot.from_rows([]))
+    assert readiness.missing_fields == ["calling_name", "phone"]
+
+
+def test_an_unknown_template_blocks_start() -> None:
+    readiness = check_readiness(example_brief(template_key="not_a_template"), PROFILE)
+    assert readiness.missing_fields == ["template_key"]
+
+
+def test_a_custom_brief_needs_only_the_calling_name() -> None:
+    custom = example_brief(
+        template_key=None,
+        task_line="I'm calling to {goal_summary}.",
+        task_vars={"goal_summary": {"literal": "ask if they can hold a cake"}},
+    )
+    assert check_readiness(
+        custom, Snapshot.from_rows([("calling_name", "Alex", "share_freely")])
+    ).ready

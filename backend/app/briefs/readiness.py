@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.briefs.catalog import get_template
 from app.voice.prompt_safety import (
     CALLING_NAME_KEY,
     AskFirstInPrompt,
@@ -46,6 +47,10 @@ def check_readiness(brief: Mapping[str, Any], snapshot: Snapshot) -> Readiness:
 
     Gaps reported, by field key:
     - ``calling_name`` when the profile has none (the opening line needs it, ON-3).
+    - A profile field the brief's template requires (e.g. ``date_of_birth`` for a doctor
+      call) that the profile doesn't have. Fields typed in the chat count only once they're
+      in the snapshot, so a saved brief stays blocked until the profile really has them.
+    - ``template_key`` when the brief names a template that doesn't exist.
     - A ``{placeholder}`` in ``task_line`` with no ``task_vars`` entry.
     - A ``field_ref`` to a profile field that is empty, or is Ask me first (never in a prompt).
     - An Ask-me-first value typed into the brief as text (caught by ``assert_prompt_safe``).
@@ -54,6 +59,16 @@ def check_readiness(brief: Mapping[str, Any], snapshot: Snapshot) -> Readiness:
     missing: list[str] = []
     if snapshot.get(CALLING_NAME_KEY) is None:
         _add(missing, CALLING_NAME_KEY)
+
+    template_key = brief.get("template_key")
+    if template_key is not None:
+        template = get_template(str(template_key))
+        if template is None:
+            _add(missing, "template_key")
+        else:
+            for key in template.profile_keys():
+                if snapshot.get(key) is None:
+                    _add(missing, key)
 
     task_vars: Mapping[str, Mapping[str, str]] = brief.get("task_vars", {})
     for name in _PLACEHOLDER.findall(str(brief.get("task_line", ""))):
