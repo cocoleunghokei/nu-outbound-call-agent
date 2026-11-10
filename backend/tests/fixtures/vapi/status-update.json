@@ -1,0 +1,16 @@
+{
+  "message": {
+    "type": "status-update",
+    "status": "in-progress",
+    "timestamp": 1794081600000,
+    "call": {
+      "id": "__VAPI_CALL_ID__",
+      "orgId": "org-fake-0001",
+      "type": "outboundPhoneCall",
+      "status": "in-progress",
+      "metadata": {"call_id": "__CALL_ID__"},
+      "customer": {"number": "+15555550123"},
+      "monitor": {"controlUrl": "__CONTROL_URL__", "listenUrl": "__LISTEN_URL__"}
+    }
+  }
+}
