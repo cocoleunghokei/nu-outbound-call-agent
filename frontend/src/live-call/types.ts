@@ -130,3 +130,30 @@ export interface PingReplyChoice {
 export interface PingReplyText {
   text: string
 }
+
+/** Commands the browser sends with `POST /calls/{call_id}/commands`. */
+export type CallCommandType = 'instruction' | 'pause' | 'resume' | 'end'
+
+/** Body of `POST /calls/{call_id}/commands`. `text` is only for `instruction`. */
+export interface CallCommand {
+  type: CallCommandType
+  text?: string
+}
+
+export type DecisionAction =
+  | 'accept'
+  | 'counter'
+  | 'decline'
+  | 'share_field'
+  | 'take_fallback'
+  | 'end_call'
+
+/** Payload of `agent.decision`. Deliberately has no confidence and no dimensions (DC-5). */
+export interface AgentDecisionPayload {
+  situation: string
+  action: DecisionAction
+  reason: string
+  field_key?: string
+  /** The preference the agent could not meet, flagged in the live feed (DC-4 Medium). */
+  missed_preference?: string
+}

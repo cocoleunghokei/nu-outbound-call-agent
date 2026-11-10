@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { CallControls } from './CallControls'
+import { commandText, decisionLabel, type SendCallCommand } from './controls'
 import { formatClock, formatPhone, initials } from './format'
 import { PingCard } from './PingCard'
 import type { SendPingReply } from './ping'
-import { STATUS_STEPS, deriveLiveCall, statusStep, type TranscriptLine } from './state'
+import { STATUS_STEPS, deriveLiveCall, statusStep, type FeedItem } from './state'
 import type { CallEvent, LiveCallSummary } from './types'
 import './LiveCall.css'
 
@@ -12,14 +14,16 @@ interface LiveCallProps {
   events: readonly CallEvent[]
   /** Sends the user's answer to a ping (mock now, backend API later). */
   sendReply: SendPingReply
+  /** Sends Pause / Resume / End (mock now, backend API later). */
+  sendCommand: SendCallCommand
 }
 
 /**
  * The live-call page: header with the call clock, status pills (DC-14), the
- * live transcript (DC-3) and the ping card (DC-8). Pause/End and the decision
- * feed come later.
+ * live feed of transcript and decisions (DC-3, DC-4, DC-5), the ping card
+ * (DC-8) and Pause / Resume / End (DC-11).
  */
-export function LiveCall({ summary, events, sendReply }: LiveCallProps) {
+export function LiveCall({ summary, events, sendReply, sendCommand }: LiveCallProps) {
   const view = useMemo(() => deriveLiveCall(events), [events])
   const side = useRef<HTMLElement>(null)
   const openPingId = view.ping?.state === 'open' ? view.ping.ping.ping_id : null
@@ -55,11 +59,11 @@ export function LiveCall({ summary, events, sendReply }: LiveCallProps) {
         <section className="lc-card lc-conversation" aria-labelledby="lc-conv-title">
           <h2 id="lc-conv-title">Live conversation</h2>
           <p className="lc-hint">
-            {summary.businessName} on the left, your agent on the right. Transcribed, audio not
-            kept.
+            {summary.businessName} on the left, your agent on the right, with what the agent
+            decided in between. Transcribed, audio not kept.
           </p>
-          <Transcript
-            lines={view.lines}
+          <Feed
+            items={view.feed}
             businessName={summary.businessName}
             dialing={statusStep(view.status) === 'dialing'}
             ended={view.ended !== null}
@@ -82,6 +86,13 @@ export function LiveCall({ summary, events, sendReply }: LiveCallProps) {
               <span>The summary will show up here once it's ready.</span>
             </div>
           )}
+          <CallControls
+            callId={summary.callId}
+            status={view.status}
+            ended={view.ended !== null}
+            pausedAt={view.pausedAt}
+            sendCommand={sendCommand}
+          />
         </aside>
       </div>
     </main>
@@ -118,40 +129,72 @@ function StatusPills({ status }: { status: string }) {
   )
 }
 
-interface TranscriptProps {
-  lines: readonly TranscriptLine[]
+interface FeedProps {
+  items: readonly FeedItem[]
   businessName: string
   dialing: boolean
   ended: boolean
 }
 
-/** Chat-style transcript that keeps the newest line in view. */
-function Transcript({ lines, businessName, dialing, ended }: TranscriptProps) {
+/** Chat-style feed: transcript bubbles, with decisions and your actions as notes. Keeps the newest in view. */
+function Feed({ items, businessName, dialing, ended }: FeedProps) {
   const scroller = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const el = scroller.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [lines.length, ended])
+  }, [items.length, ended])
 
   return (
     <div className="lc-convo" ref={scroller} aria-live="polite" aria-relevant="additions">
-      {lines.length === 0 && dialing && <div className="lc-note">Dialing…</div>}
-      {lines.map((line) =>
-        line.role === 'user' ? (
-          <div key={line.key} className="lc-note lc-note-you">
-            You: <b>{line.text}</b>
-          </div>
-        ) : (
-          <div key={line.key} className={`lc-line ${line.role}`}>
-            <span className="lc-name">{line.role === 'agent' ? 'Agent' : businessName}</span>
-            <div className="lc-bubble">{line.text}</div>
-          </div>
-        ),
-      )}
+      {items.length === 0 && dialing && <div className="lc-note">Dialing…</div>}
+      {items.map((item) => (
+        <FeedEntry key={item.key} item={item} businessName={businessName} />
+      ))}
       {ended && <div className="lc-note">Call ended</div>}
     </div>
   )
+}
+
+function FeedEntry({ item, businessName }: { item: FeedItem; businessName: string }) {
+  switch (item.kind) {
+    case 'line':
+      return item.role === 'user' ? (
+        <div className="lc-note lc-note-you">
+          You: <b>{item.text}</b>
+        </div>
+      ) : (
+        <div className={`lc-line ${item.role}`}>
+          <span className="lc-name">{item.role === 'agent' ? 'Agent' : businessName}</span>
+          <div className="lc-bubble">{item.text}</div>
+        </div>
+      )
+    case 'decision':
+      // The reason is the main content; the score is never shown (DC-5).
+      return (
+        <div className="lc-note lc-decision">
+          <span className="lc-badge acted">{decisionLabel(item.action)}</span>
+          {item.situation && <b>{item.situation}. </b>}
+          {item.reason}
+          {item.missedPreference && (
+            <span className="lc-flag">
+              <span className="lc-badge flag">Missed preference</span>
+              {item.missedPreference}
+            </span>
+          )}
+        </div>
+      )
+    case 'asked':
+      return (
+        <div className="lc-note">
+          <span className="lc-badge asked">Asked you</span>
+          <b>{item.question}. </b>
+          {item.reason}
+        </div>
+      )
+    case 'command':
+      return <div className="lc-note lc-note-you">{commandText(item.command)}</div>
+  }
 }
 
 interface CallClockProps {

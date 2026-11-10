@@ -46,7 +46,14 @@ describe('statusStep', () => {
 
 describe('deriveLiveCall', () => {
   it('starts as creating with no lines before any event', () => {
-    expect(deriveLiveCall([])).toEqual({ status: 'creating', lines: [], ping: null, ended: null })
+    expect(deriveLiveCall([])).toEqual({
+      status: 'creating',
+      lines: [],
+      feed: [],
+      pausedAt: null,
+      ping: null,
+      ended: null,
+    })
   })
 
   it('tracks the latest status and the transcript in order', () => {
@@ -89,10 +96,11 @@ describe('deriveLiveCall', () => {
   it('ignores event types it does not handle yet', () => {
     const view = deriveLiveCall([
       status(1, 'talking'),
-      ev(2, 'agent.decision', { situation: 'x', action: 'accept', reason: 'y' }),
+      ev(2, 'field.shared', { field_key: 'date_of_birth', state: 'spoken' }),
       ev(3, 'some.future.event', { anything: true }),
     ])
-    expect(view).toEqual({ status: 'talking', lines: [], ping: null, ended: null })
+    expect(view.status).toBe('talking')
+    expect(view.feed).toEqual([])
   })
 
   it('marks the call ended with its outcome on call.ended', () => {
@@ -227,6 +235,91 @@ describe('deriveLiveCall pings', () => {
     ])
     expect(view.ping?.ping.ping_id).toBe('p1')
     expect(view.ping?.state).toBe('cancelled')
+  })
+})
+
+describe('deriveLiveCall feed (DC-4, DC-5, DC-11)', () => {
+  const decision = (seq: number, payload: Record<string, unknown>) => ev(seq, 'agent.decision', payload)
+
+  it('puts transcript lines, decisions, questions and commands in call order', () => {
+    const view = deriveLiveCall([
+      line(1, 'business', 'Friday at 10am is open.'),
+      decision(2, { situation: 'They offered Fri 10am', action: 'take_fallback', reason: 'Matched your fallback.' }),
+      opened(3, 'p1'),
+      ev(4, 'command.applied', { command: 'pause' }),
+    ])
+    expect(view.feed.map((f) => f.kind)).toEqual(['line', 'decision', 'asked', 'command'])
+    expect(view.lines).toHaveLength(1)
+  })
+
+  it('keeps the missed preference of a Medium decision as a flag', () => {
+    const view = deriveLiveCall([
+      decision(1, {
+        situation: 'They offered 7pm on the patio',
+        action: 'accept',
+        reason: 'Meets your time and party size.',
+        missed_preference: '  No window seat, patio only  ',
+      }),
+    ])
+    expect(view.feed[0]).toMatchObject({ kind: 'decision', missedPreference: 'No window seat, patio only' })
+  })
+
+  it('never carries a score into the feed, even if one is sent', () => {
+    const view = deriveLiveCall([
+      decision(1, { situation: 's', action: 'accept', reason: 'r', confidence: 'high', dimensions: {} }),
+    ])
+    expect(view.feed[0]).not.toHaveProperty('confidence')
+    expect(view.feed[0]).not.toHaveProperty('dimensions')
+  })
+
+  it('caps a long missed preference at 200 characters and drops an empty one', () => {
+    const long = deriveLiveCall([
+      decision(1, { situation: 's', action: 'accept', reason: 'r', missed_preference: 'x'.repeat(300) }),
+    ])
+    expect(long.feed[0]).toMatchObject({ missedPreference: 'x'.repeat(200) })
+    const empty = deriveLiveCall([
+      decision(1, { situation: 's', action: 'accept', reason: 'r', missed_preference: '  ' }),
+    ])
+    expect(empty.feed[0]).not.toHaveProperty('missedPreference')
+  })
+
+  it('keeps a decision with an action it does not know, and drops one with no reason', () => {
+    const view = deriveLiveCall([
+      decision(1, { situation: 's', action: 'negotiate', reason: 'r' }),
+      decision(2, { situation: 's', action: 'accept', reason: '' }),
+      decision(3, { situation: 's', reason: 'r' }),
+    ])
+    expect(view.feed).toHaveLength(1)
+    expect(view.feed[0]).toMatchObject({ action: 'negotiate' })
+  })
+
+  it('shows pause, resume and end, but not instructions (DC-10 has its own owner)', () => {
+    const view = deriveLiveCall([
+      ev(1, 'command.applied', { command: 'pause' }),
+      ev(2, 'command.applied', { command: 'resume' }),
+      ev(3, 'command.applied', { command: 'instruction' }),
+      ev(4, 'command.applied', { command: 'end' }),
+      ev(5, 'command.applied', { command: 7 }),
+    ])
+    expect(view.feed.map((f) => (f.kind === 'command' ? f.command : f.kind))).toEqual([
+      'pause',
+      'resume',
+      'end',
+    ])
+  })
+
+  it('records when the pause started and clears it on resume', () => {
+    const paused = deriveLiveCall([status(1, 'talking'), status(2, 'on_hold'), status(3, 'on_hold')])
+    expect(paused.pausedAt).toBe('2026-11-10T15:00:02.000Z')
+    expect(deriveLiveCall([status(1, 'on_hold'), status(2, 'talking')]).pausedAt).toBeNull()
+  })
+
+  it('clears the pause when the call ends while paused', () => {
+    const view = deriveLiveCall([
+      status(1, 'on_hold'),
+      ev(2, 'call.ended', { outcome: 'needs_follow_up', ended_reason: 'pause_cap' }),
+    ])
+    expect(view.pausedAt).toBeNull()
   })
 })
 

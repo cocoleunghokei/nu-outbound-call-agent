@@ -7,6 +7,8 @@
  */
 import { parsePing } from './ping'
 import type {
+  AgentDecisionPayload,
+  CallCommandType,
   CallEndedPayload,
   Ping,
   PingState,
@@ -25,6 +27,27 @@ export interface TranscriptLine {
   text: string
 }
 
+/**
+ * Something the agent did on its own (DC-4, DC-5): the plain-language reason,
+ * never a score. `missedPreference` is set for a Medium decision: the
+ * constraints were met but a preference was not, so the feed flags it.
+ */
+export interface DecisionItem {
+  key: string
+  seq: number
+  action: AgentDecisionPayload['action'] | (string & {})
+  situation: string
+  reason: string
+  missedPreference?: string
+}
+
+/** One entry of the live feed, in call order. */
+export type FeedItem =
+  | ({ kind: 'line' } & TranscriptLine)
+  | ({ kind: 'decision' } & DecisionItem)
+  | { kind: 'asked'; key: string; seq: number; question: string; reason: string }
+  | { kind: 'command'; key: string; seq: number; command: CallCommandType | (string & {}) }
+
 /** The latest ping and where it stands. */
 export interface PingCardView {
   ping: Ping
@@ -40,7 +63,12 @@ export interface PingCardView {
 export interface LiveCallView {
   /** Latest server status. `creating` until the first status event arrives. */
   status: CallStatus
+  /** Transcript lines only. */
   lines: TranscriptLine[]
+  /** Transcript lines plus decisions, questions asked and your commands, in order. */
+  feed: FeedItem[]
+  /** When the current pause started (`occurred_at` of the move to `on_hold`), else null. */
+  pausedAt: string | null
   /** The most recent ping, open or closed. Null until the agent asks something. */
   ping: PingCardView | null
   /** Set once `call.ended` arrives. Final: later events cannot reopen the call. */
@@ -61,6 +89,8 @@ export type StatusStep = (typeof STATUS_STEPS)[number]['step'] | 'unknown'
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set(['ended', 'failed'])
 const TRANSCRIPT_ROLES: ReadonlySet<string> = new Set(['agent', 'business', 'user'])
+const COMMANDS: ReadonlySet<string> = new Set(['pause', 'resume', 'end'])
+const MAX_MISSED_PREFERENCE = 200
 
 /**
  * Maps a server status to the pill that lights up.
@@ -108,7 +138,14 @@ export function mergeEvents(
 
 /** Folds events (ordered by `seq`) into the view. Unknown or malformed events are skipped. */
 export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
-  const view: LiveCallView = { status: 'creating', lines: [], ping: null, ended: null }
+  const view: LiveCallView = {
+    status: 'creating',
+    lines: [],
+    feed: [],
+    pausedAt: null,
+    ping: null,
+    ended: null,
+  }
 
   for (const event of events) {
     switch (event.type) {
@@ -116,6 +153,8 @@ export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
         const status = event.payload.status
         if (typeof status !== 'string' || status === '') break
         if (view.ended !== null || TERMINAL_STATUSES.has(view.status)) break
+        if (status === 'on_hold' && view.status !== 'on_hold') view.pausedAt = event.occurred_at
+        if (status !== 'on_hold') view.pausedAt = null
         view.status = status
         break
       }
@@ -123,12 +162,40 @@ export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
         const { role, text } = event.payload
         if (typeof role !== 'string' || !TRANSCRIPT_ROLES.has(role)) break
         if (typeof text !== 'string' || text.trim() === '') break
-        view.lines.push({
+        const line: TranscriptLine = {
           key: event.event_id,
           seq: event.seq,
           role: role as TranscriptRole,
           text,
+        }
+        view.lines.push(line)
+        view.feed.push({ kind: 'line', ...line })
+        break
+      }
+      case 'agent.decision': {
+        const { situation, action, reason, missed_preference: missed } = event.payload
+        if (typeof action !== 'string' || action === '') break
+        if (typeof reason !== 'string' || reason.trim() === '') break
+        const missedPreference =
+          typeof missed === 'string' && missed.trim() !== ''
+            ? missed.trim().slice(0, MAX_MISSED_PREFERENCE)
+            : undefined
+        view.feed.push({
+          kind: 'decision',
+          key: event.event_id,
+          seq: event.seq,
+          action,
+          situation: typeof situation === 'string' ? situation : '',
+          reason,
+          ...(missedPreference !== undefined ? { missedPreference } : {}),
         })
+        break
+      }
+      case 'command.applied': {
+        const command = event.payload.command
+        // `instruction` is DC-10 (pre-call owner); it gets its own feed entry there.
+        if (typeof command !== 'string' || !COMMANDS.has(command)) break
+        view.feed.push({ kind: 'command', key: event.event_id, seq: event.seq, command })
         break
       }
       case 'ping.opened': {
@@ -150,6 +217,13 @@ export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
           replacesEarlier:
             previous !== null && (previous.state === 'open' || previous.state === 'superseded'),
         }
+        view.feed.push({
+          kind: 'asked',
+          key: event.event_id,
+          seq: event.seq,
+          question: ping.question,
+          reason: ping.reason,
+        })
         break
       }
       case 'ping.resolved': {
@@ -176,10 +250,11 @@ export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
           endedAt: event.occurred_at,
         }
         if (!TERMINAL_STATUSES.has(view.status)) view.status = 'ended'
+        view.pausedAt = null
         break
       }
       default:
-        // Decisions and commands are handled in a later PR. Unknown
+        // `field.shared` belongs to the post-call "what was shared" log. Unknown
         // types are expected (open enum) and are ignored on purpose.
         break
     }

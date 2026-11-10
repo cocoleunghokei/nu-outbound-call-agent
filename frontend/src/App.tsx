@@ -8,8 +8,15 @@ import { DR_LEE_SCRIPT, MOCK_CALL_ID, mockSummary, useMockCall } from './live-ca
  */
 function App() {
   const [startedAt] = useState(() => new Date().toISOString())
-  const { events, sendReply } = useMockCall(DR_LEE_SCRIPT, MOCK_CALL_ID, startedAt)
-  return <LiveCall summary={mockSummary(startedAt)} events={events} sendReply={sendReply} />
+  const { events, sendReply, sendCommand } = useMockCall(DR_LEE_SCRIPT, MOCK_CALL_ID, startedAt)
+  return (
+    <LiveCall
+      summary={mockSummary(startedAt)}
+      events={events}
+      sendReply={sendReply}
+      sendCommand={sendCommand}
+    />
+  )
 }
 
 export default App

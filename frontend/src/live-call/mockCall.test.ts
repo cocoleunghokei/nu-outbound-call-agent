@@ -4,6 +4,8 @@ import { deriveLiveCall } from './state'
 import type { CallEvent } from './types'
 
 const WINDOW_MS = 45_000
+const REASSURE_MS = 15_000
+const PAUSE_CAP_MS = 120_000
 
 /** Runs the Dr. Lee script on fake timers and collects every event. */
 function startCall() {
@@ -13,7 +15,12 @@ function startCall() {
     setTimeout: (fn, ms) => setTimeout(fn, ms),
     clearTimeout: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
   }
-  const engine = new MockCallEngine(MOCK_CALL_ID, (e) => events.push(e), clock, WINDOW_MS)
+  const engine = new MockCallEngine(MOCK_CALL_ID, (e) => events.push(e), {
+    clock,
+    pingWindowMs: WINDOW_MS,
+    reassureMs: REASSURE_MS,
+    pauseCapMs: PAUSE_CAP_MS,
+  })
   engine.start(DR_LEE_SCRIPT)
   const view = () => deriveLiveCall(events)
   /** Advances time until a ping is open, and returns its id. */
@@ -138,5 +145,134 @@ describe('MockCallEngine', () => {
     expect((await call.engine.reply(MOCK_CALL_ID, 'other', { choice: 0 })).kind).toBe('closed')
     call.engine.stop()
     expect((await call.engine.reply(MOCK_CALL_ID, pingId, { choice: 0 })).kind).toBe('closed')
+  })
+
+  it('reports a Medium decision with the missed preference on the fallback path', async () => {
+    const call = startCall()
+    await call.engine.reply(MOCK_CALL_ID, await call.nextPing(), { choice: 1 })
+    await call.engine.reply(MOCK_CALL_ID, await call.nextPing(), { choice: 0 })
+    await call.runToEnd()
+    const decision = call.view().feed.find((f) => f.kind === 'decision' && f.action === 'take_fallback')
+    expect(decision).toMatchObject({
+      reason: 'Matched your fallback: Fri morning.',
+      missedPreference: 'Video visit, not in person',
+    })
+  })
+})
+
+describe('MockCallEngine commands (DC-11)', () => {
+  it('refuses to pause before the business picks up', async () => {
+    const call = startCall()
+    expect((await call.engine.command(MOCK_CALL_ID, 'pause')).kind).toBe('error')
+  })
+
+  it('pausing during a ping freezes its clock; resuming restarts it where it left off', async () => {
+    const call = startCall()
+    await call.nextPing()
+    await vi.advanceTimersByTimeAsync(10_000)
+    await call.engine.command(MOCK_CALL_ID, 'pause')
+    let view = call.view()
+    expect(view.status).toBe('on_hold')
+    expect(view.pausedAt).not.toBeNull()
+    expect(view.ping?.ping.expires_at).toBeNull()
+    const frozen = view.ping?.ping.remaining_ms ?? 0
+    expect(frozen).toBeGreaterThan(30_000)
+    expect(frozen).toBeLessThanOrEqual(35_000)
+
+    // Far past the original deadline, the ping is still open while paused.
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(call.view().ping?.state).toBe('open')
+
+    await call.engine.command(MOCK_CALL_ID, 'resume')
+    view = call.view()
+    expect(view.status).toBe('waiting_on_you')
+    expect(view.pausedAt).toBeNull()
+    expect(Date.parse(view.ping?.ping.expires_at ?? '') - Date.now()).toBe(frozen)
+
+    await vi.advanceTimersByTimeAsync(frozen)
+    expect(call.view().ping?.state).toBe('expired')
+  })
+
+  it('says a hold line, then reassures the business every 15 s while paused', async () => {
+    const call = startCall()
+    await call.nextPing()
+    await call.engine.command(MOCK_CALL_ID, 'pause')
+    const agentLines = () => call.view().lines.filter((l) => l.role === 'agent').map((l) => l.text)
+    expect(agentLines().slice(-1)[0]).toBe('One moment please.')
+    await vi.advanceTimersByTimeAsync(REASSURE_MS * 2)
+    expect(agentLines().filter((t) => t.startsWith('Thanks for holding, just a moment')).length).toBe(2)
+  })
+
+  it('ends as needs follow-up after the pause cap', async () => {
+    const call = startCall()
+    const pingId = await call.nextPing()
+    await call.engine.command(MOCK_CALL_ID, 'pause')
+    await vi.advanceTimersByTimeAsync(PAUSE_CAP_MS)
+    const view = call.view()
+    expect(view.ended).toMatchObject({ outcome: 'needs_follow_up', endedReason: 'pause_cap' })
+    expect(view.ping?.state).toBe('cancelled')
+    expect((await call.engine.reply(MOCK_CALL_ID, pingId, { choice: 0 })).kind).toBe('closed')
+  })
+
+  it('holds the script while paused and carries on after resume', async () => {
+    const call = startCall()
+    await call.engine.reply(MOCK_CALL_ID, await call.nextPing(), { choice: 1 })
+    await vi.advanceTimersByTimeAsync(100)
+    await call.engine.command(MOCK_CALL_ID, 'pause')
+    const count = call.view().lines.length
+    await vi.advanceTimersByTimeAsync(10_000)
+    // Only the hold line plus no script lines: nothing moved on (reassurance comes at 15 s).
+    expect(call.view().lines.length).toBe(count)
+    await call.engine.command(MOCK_CALL_ID, 'resume')
+    expect(call.view().status).toBe('talking')
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(call.view().lines.length).toBeGreaterThan(count)
+  })
+
+  it('accepts a reply while paused but keeps the call on hold until resume', async () => {
+    const call = startCall()
+    const pingId = await call.nextPing()
+    await call.engine.command(MOCK_CALL_ID, 'pause')
+    await call.engine.reply(MOCK_CALL_ID, pingId, { choice: 0 })
+    expect(call.view().ping?.state).toBe('answered')
+    expect(call.view().status).toBe('on_hold')
+    await call.engine.command(MOCK_CALL_ID, 'resume')
+    expect(call.view().status).toBe('talking')
+  })
+
+  it('pausing or resuming twice is harmless', async () => {
+    const call = startCall()
+    await call.nextPing()
+    await call.engine.command(MOCK_CALL_ID, 'pause')
+    const count = call.events.length
+    expect((await call.engine.command(MOCK_CALL_ID, 'pause')).kind).toBe('accepted')
+    expect(call.events.length).toBe(count)
+    await call.engine.command(MOCK_CALL_ID, 'resume')
+    const after = call.events.length
+    expect((await call.engine.command(MOCK_CALL_ID, 'resume')).kind).toBe('accepted')
+    expect(call.events.length).toBe(after)
+  })
+
+  it('ending says goodbye, cancels the open ping and ends as needs follow-up', async () => {
+    const call = startCall()
+    await call.nextPing()
+    expect((await call.engine.command(MOCK_CALL_ID, 'end')).kind).toBe('accepted')
+    const view = call.view()
+    expect(view.status).toBe('ended')
+    expect(view.ended).toMatchObject({ outcome: 'needs_follow_up', endedReason: 'user_ended' })
+    expect(view.ping?.state).toBe('cancelled')
+    expect(view.lines.slice(-1)[0]?.text).toMatch(/Goodbye\.$/)
+    expect(view.feed.some((f) => f.kind === 'command' && f.command === 'end')).toBe(true)
+  })
+
+  it('emits nothing after the call ends, and refuses pause afterwards', async () => {
+    const call = startCall()
+    await call.engine.command(MOCK_CALL_ID, 'end')
+    const count = call.events.length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(call.events.length).toBe(count)
+    expect((await call.engine.command(MOCK_CALL_ID, 'pause')).kind).toBe('error')
+    expect((await call.engine.command(MOCK_CALL_ID, 'end')).kind).toBe('accepted')
+    expect(call.events.length).toBe(count)
   })
 })
