@@ -1,9 +1,8 @@
 lint:
 	npm run lint
 
-# No tests yet. Add a test runner (e.g. Vitest) with the first feature.
 test:
-	@echo "frontend: no tests yet"
+	npm test
 
 build:
 	npm run build

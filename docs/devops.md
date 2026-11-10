@@ -15,7 +15,7 @@ How a change gets from a branch to the shared database and, later, to production
 
 | CI job | Local command | What it catches | Runs on |
 | --- | --- | --- | --- |
-| Hygiene and secret scan | `make hygiene secrets` | Leaked keys in the full history, private keys, broken YAML/TOML/JSON, invalid workflows, merge markers, files over 1 MB, whitespace | Every PR and push to `main` |
+| Hygiene and secret scan | `make hygiene secrets` | Leaked keys in the history of HEAD (main plus the PR), private keys, broken YAML/TOML/JSON, invalid workflows, merge markers, files over 1 MB, whitespace | Every PR and push to `main` |
 | Lint, test, build | `make lint test build` | Each subproject's own checks, through its Makefile | Every PR and push to `main` |
 | Database migrations | `make db-check` | Migrations that don't apply from scratch, schema lint errors, public tables without row-level security | PRs that touch `supabase/` |
 | PR title | none | PR titles not in Conventional Commits format | Every PR |
