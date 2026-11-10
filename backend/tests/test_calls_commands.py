@@ -322,7 +322,7 @@ def test_pause_cap_offers_a_call_back_and_ends(supabase_env: SupabaseEnv) -> Non
         assert "will call you back" in say["content"] and say["endCallAfterSpoken"] is True
         assert [p["state"] for p in await ping_rows(db, call)] == ["cancelled"]
         outcome = await rows(db, "select outcome from public.calls where id = %s", (call.call_id,))
-        assert outcome[0][0] == "needs_follow_up"
+        assert outcome[0][0] is None  # left to post-call until Harper decides
         decisions = [p for t, p in await event_rows(db, call) if t == "agent.decision"]
         assert decisions == [
             {

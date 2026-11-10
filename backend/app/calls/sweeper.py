@@ -84,7 +84,7 @@ async def _expire_one(pool: AsyncConnectionPool[Any], call_id: UUID, ping_id: UU
 
 
 async def end_overdue_pauses(pool: AsyncConnectionPool[Any], limit: int = 50) -> int:
-    """End calls paused longer than the cap with a call-back offer, as Needs follow-up (DC-11).
+    """End calls paused longer than the cap with a call-back offer (DC-11).
 
     ``calls.paused_at`` survives a restart, so the cap holds even if the app was down.
     Never raises. Returns how many calls it started ending.
@@ -141,11 +141,8 @@ async def _end_paused(pool: AsyncConnectionPool[Any], call_id: UUID) -> bool:
             occurred_at=datetime.now(UTC),
             dedup_key="pause_cap",
         )
-        # Post-call (Harper) may refine it; until then the call needs a follow-up.
-        await conn.execute(
-            "update public.calls set outcome = 'needs_follow_up' where id = %s and outcome is null",
-            (call_id,),
-        )
+        # The outcome (Needs follow-up, DC-11) is left to post-call (Harper) until she decides
+        # who writes calls.outcome for a pause-cap ending.
         await begin_ending(conn, call, messages.pause_cap_goodbye_line(name))
         return True
 

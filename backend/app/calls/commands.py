@@ -9,7 +9,7 @@ handler lands.
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
@@ -53,7 +53,7 @@ router = APIRouter()
 # The pause cap (DC-11, to be tuned from test calls). The sweeper enforces it.
 PAUSE_CAP_S = 120
 REASSURE_EVERY_S = 15
-# Pause: if the hold line hasn't finished by then, mute anyway (architecture §4.1).
+# Pause: mute at the latest this long after the hold line is queued (architecture §4.1).
 MUTE_AFTER_S = 4
 # End: hang up if the goodbye didn't end the call within this long.
 HANGUP_AFTER_S = 6
@@ -104,8 +104,14 @@ async def pause_call(conn: AsyncConnection[Any], call: CallRow) -> None:
     await queue_control(
         conn, call.id, CONTROL_HOLD, {"message": messages.say(messages.hold_line())}
     )
+    # Muted by the quiet rule (speech.py) once the hold line is done, at the latest after 4 s.
+    deadline = datetime.now(UTC) + timedelta(seconds=MUTE_AFTER_S)
     await queue_control(
-        conn, call.id, CONTROL_MUTE, {"message": messages.mute_assistant()}, delay_s=MUTE_AFTER_S
+        conn,
+        call.id,
+        CONTROL_MUTE,
+        {"message": messages.mute_assistant(), "deadline": deadline.isoformat()},
+        delay_s=MUTE_AFTER_S,
     )
     for delay_s in range(REASSURE_EVERY_S, PAUSE_CAP_S, REASSURE_EVERY_S):
         await queue_control(

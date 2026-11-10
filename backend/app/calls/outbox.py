@@ -32,6 +32,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from app.calls.store import (
     CONTROL_FILLER,
+    CONTROL_HOLD,
     CONTROL_REASSURE,
     ENDING_KINDS,
     HELD_WHILE_PAUSED,
@@ -158,7 +159,13 @@ async def _record_result(
     """Store how the send went. Returns True if the row is done (sent, failed or uncertain)."""
     async with pool.connection() as conn, conn.transaction():
         if error is None:
-            await _set_state(conn, claimed.id, "sent")
+            # The quiet rule (speech.py) needs to know when the hold line went out.
+            await conn.execute(
+                "update public.outbox set state = 'sent', payload = case when kind = %s"
+                " then payload || jsonb_build_object('sent_at', now()) else payload end"
+                " where id = %s",
+                (CONTROL_HOLD, claimed.id),
+            )
             return True
         if (
             isinstance(error, VoiceNotSent)
