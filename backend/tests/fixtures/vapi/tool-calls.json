@@ -1,0 +1,30 @@
+{
+  "message": {
+    "type": "tool-calls",
+    "timestamp": 1794081610000,
+    "toolCallList": [
+      {
+        "id": "__TOOL_CALL_1__",
+        "type": "function",
+        "function": {
+          "name": "ask_user",
+          "arguments": "{\"question\": \"They offered 4pm Thursday. Take it?\", \"reason\": \"They offered 4pm. You said before 3pm.\", \"suggested_replies\": [\"Accept 4pm\", \"Ask for Friday\"], \"confidence\": \"low\", \"dimensions\": {\"needs_ask_first_field\": false, \"involves_money\": false, \"meets_constraints\": false, \"matches_fallback\": false, \"answerable_from_brief\": false, \"understood\": true}}"
+        }
+      },
+      {
+        "id": "__TOOL_CALL_2__",
+        "type": "function",
+        "function": {
+          "name": "report_decision",
+          "arguments": "{\"situation\": \"Offered a table at 7pm\", \"action\": \"accept\", \"confidence\": \"high\", \"reason\": \"Within the allowed window\", \"dimensions\": {\"needs_ask_first_field\": false, \"involves_money\": false, \"meets_constraints\": true, \"matches_fallback\": false, \"answerable_from_brief\": true, \"understood\": true}}"
+        }
+      }
+    ],
+    "toolWithToolCallList": [],
+    "call": {
+      "id": "__VAPI_CALL_ID__",
+      "metadata": {"call_id": "__CALL_ID__"},
+      "monitor": {"controlUrl": "__CONTROL_URL__", "listenUrl": "__LISTEN_URL__"}
+    }
+  }
+}

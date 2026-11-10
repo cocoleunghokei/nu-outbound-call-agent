@@ -1,0 +1,23 @@
+{
+  "event_id": "6f1f1b2e-6a53-4b8e-9d52-0d5a3a1c0001",
+  "call_id": "6f1f1b2e-6a53-4b8e-9d52-0d5a3a1c0002",
+  "seq": 1,
+  "type": "ping.opened",
+  "occurred_at": "2026-11-09T18:00:00.000Z",
+  "source": "backend",
+  "schema_version": 1,
+  "payload": {
+    "ping_id": "6f1f1b2e-6a53-4b8e-9d52-0d5a3a1c0003",
+    "call_id": "6f1f1b2e-6a53-4b8e-9d52-0d5a3a1c0002",
+    "kind": "decision",
+    "question": "They offered 4pm. Take it?",
+    "reason": "You said before 3pm.",
+    "suggested_replies": [
+      "Yes",
+      "No, ask for Friday"
+    ],
+    "expires_at": "2026-11-09T18:00:45.000Z",
+    "remaining_ms": 45000,
+    "state": "open"
+  }
+}
