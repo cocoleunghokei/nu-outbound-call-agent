@@ -39,6 +39,20 @@ This doc assumes the blueprint as written: one backend service, Postgres as the 
 | 7 | Backend language, framework and host? The blueprint leaves these to the tech doc. | Needed before the first backend PR | All | **Host: Railway** (Coco sets it up). Language and framework still to confirm with Steve. Suggested: Python + FastAPI, so the probe kit's Vapi code can be reused. The frontend stays on Vercel. |
 | 8 | The PRD says Pause takes effect within 2 s. But if you tap Pause while the agent is mid-sentence, it finishes the sentence first so it doesn't cut off mid-word, which can take up to 4 s. Is that OK for the demo? | It may miss the PRD target | DC-11 | **Coco's call: OK for the demo.** |
 
+## Build decisions (backend, app/calls)
+
+Decisions made while building the backend for Pause / Resume / End (DC-11) and the agent prompt (DC-4). Decided by Coco on 2026-11-10 unless noted.
+
+| # | Question | Decision | Status |
+|---|---|---|---|
+| 1 | The user answers a ping while the call is paused. Send the answer to the agent at once, or wait? | **Wait until Resume.** Pause means the agent stays quiet. Resume unmutes first, then sends the held answer. This differs from architecture §4.1 ("a reply while paused queues unmute first, then the reply"). | Decided |
+| 2 | Can Vapi speak a `say` while the assistant is muted? The pause reassurance unmutes, says the line, then mutes again. | Keep unmute, say, mute until the Vapi session shows whether `say` works while muted. | **Pending: Vapi probe 6** |
+| 3 | When does the mute go out after the hold line? | **Steve's quiet rule** (architecture §4.1): after the hold line is sent, mute once the assistant has been silent for 0.7 s after an assistant `stopped` event. An assistant `started` waits for the next stop. 4 s is the latest. | Decided |
+| 4 | The pause cap ends the call as Needs follow-up. Who writes `calls.outcome`? | The backend does not write the outcome for now. The call still ends with a call-back offer, and the feed shows why. | **Pending: Harper (post-call)** |
+| 5 | `instruction` commands (DC-10) arrive at the same `/commands` endpoint. | The endpoint answers `422 unsupported_command` until Lotto's handler lands. | **Pending: Lotto (DC-10)** |
+| 6 | The agent's prompt needs guardrail rules (DC-13: never claim to be human, no payments without a ping, refused-AI handling), which are Lotto's. | Use the probe kit's reviewed rules as a placeholder (`GUARDRAIL_RULES` in `app/calls/prompt.py`), to be replaced wholesale by Lotto's. | **Pending: Lotto (DC-13)** |
+| 7 | Which model does the agent use? | **DeepSeek-V3** (`provider: deep-seek`, `model: deepseek-chat`), not a reasoning model, to keep replies fast on a live call. The API key goes in the Vapi dashboard (Integrations), never in the repo; Coco gets it from Lotto. Vapi does not document tool calling for DeepSeek, so the Vapi session must confirm `ask_user` and `report_decision` fire reliably. Voice and transcriber stay as in the probe kit (Vapi "Clara", Deepgram nova-3). | Decided (Coco, 2026-11-10); tool calling **to verify in the Vapi session** |
+
 ## Risks and next steps
 
 The biggest risk is unchanged: no one has checked whether a real receptionist will hold for 45 s.
