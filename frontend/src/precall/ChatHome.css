@@ -225,3 +225,174 @@
     padding-right: 16px;
   }
 }
+
+/* ---------- review card (PC-6), after the prototype's "Check before I dial" ---------- */
+
+.precall-review {
+  align-self: flex-start;
+  width: min(100%, 560px);
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-line);
+  border-radius: 24px;
+  padding: 18px;
+  box-shadow: var(--pc-shadow);
+  animation: precall-in 0.22s ease-out;
+}
+
+.precall-review h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.precall-review dl {
+  margin: 10px 0 0;
+}
+
+.precall-rv {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) auto;
+  gap: 4px 14px;
+  padding: 11px 0;
+  border-top: 1px solid var(--pc-line);
+  font-size: 14px;
+}
+
+.precall-rv:first-child {
+  border-top: 0;
+}
+
+.precall-rv dt {
+  color: var(--pc-muted);
+  font-weight: 600;
+  font-size: 13px;
+  padding-top: 1px;
+}
+
+.precall-rv dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.precall-edit {
+  border: 0;
+  background: none;
+  color: var(--pc-brand);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 0 2px;
+}
+
+.precall-edit:hover {
+  text-decoration: underline;
+}
+
+.precall-say {
+  background: var(--pc-brand-soft);
+  border-radius: 16px 16px 16px 4px;
+  padding: 10px 13px;
+  color: #123a8c;
+}
+
+.precall-small {
+  font-size: 13px;
+  color: var(--pc-muted);
+  margin-top: 4px;
+}
+
+.precall-muted {
+  color: var(--pc-muted);
+}
+
+.precall-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.precall-tg {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--pc-surface-2);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.precall-tg.free {
+  background: #e2f6ee;
+  color: #065f46;
+}
+
+.precall-tg.ask {
+  background: #fff3df;
+  color: #7a4300;
+}
+
+.precall-tg b {
+  font-weight: 800;
+}
+
+.precall-warn {
+  margin: 12px 0 0;
+  padding: 10px 13px;
+  border-radius: 14px;
+  background: #fdecec;
+  color: #991b1b;
+  font-size: 13.5px;
+}
+
+.precall-foot {
+  display: flex;
+  margin-top: 16px;
+}
+
+.precall-btn {
+  flex: 1;
+  border: 1.5px solid var(--pc-line);
+  background: var(--pc-surface);
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-weight: 700;
+}
+
+.precall-btn.primary {
+  background: var(--pc-brand);
+  border-color: var(--pc-brand);
+  color: #fff;
+}
+
+.precall-btn.primary:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+.precall-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.precall-done {
+  margin: 14px 0 0;
+  color: #0e9f6e;
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .precall-review {
+    animation: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .precall-rv {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .precall-rv dd {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

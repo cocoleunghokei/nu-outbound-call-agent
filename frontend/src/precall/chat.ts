@@ -5,9 +5,11 @@
  * and never-agree items. Pure functions only, so the whole flow is
  * unit-tested without React. `ChatHome.tsx` just renders this state.
  *
- * The flow stops at `stage: 'draft_ready'`. Step 6 shows the review card
- * from there.
+ * At `stage: 'draft_ready'` the review card shows (PC-6). Each part can be
+ * edited (the chat re-asks just that part, then shows the card again), and
+ * Start moves to `stage: 'started'` once nothing is missing.
  */
+import { buildBrief, type BuiltBrief } from './brief'
 import {
   describeProfileKeys,
   knownProfileFields,
@@ -15,7 +17,7 @@ import {
   withProfileField,
   type CallAnswers,
 } from './missing'
-import { checkPhone, formatUsPhone } from './phone'
+import { checkPhone } from './phone'
 import type { BriefConstraint, CallTemplate, ProfileField, TemplateField } from './types'
 
 export type Speaker = 'agent' | 'user'
@@ -72,6 +74,16 @@ export type ChatAction =
   | { type: 'new_call' }
   /** Finish the current PC-5 list. `label` is what the user tapped, shown as their reply. */
   | { type: 'list_done'; label: string }
+  /** Change one part of the call from the review card (PC-6). */
+  | { type: 'edit'; target: EditTarget }
+  /** Start the call from the review card (PC-6). Ignored while anything is missing. */
+  | { type: 'start' }
+
+/**
+ * What the review card can send back to the chat: the custom goal, the
+ * template details, the business and number, or one PC-5 list.
+ */
+export type EditTarget = 'goal' | 'details' | 'calling' | ListKey
 
 /** A one-tap reply shown above the composer. */
 export interface Chip {
@@ -80,7 +92,7 @@ export interface Chip {
   quiet?: boolean
 }
 
-export type Stage = 'home' | 'collecting' | 'draft_ready'
+export type Stage = 'home' | 'collecting' | 'draft_ready' | 'started'
 
 export interface ChatState {
   messages: ChatMessage[]
@@ -92,6 +104,8 @@ export interface ChatState {
   listKey: ListKey | null
   /** Whether the chat has already nudged the user to add a backup (PC-5 asks for at least one). */
   fallbackNudged: boolean
+  /** The message the review card shows under, once the draft is ready (PC-6). */
+  reviewAfterId: number | null
   /** Composer hint for what to type next. */
   placeholder: string
   stage: Stage
@@ -253,6 +267,7 @@ function showHome(state: ChatState, ctx: ChatContext, text: string): ChatState {
     fieldKey: null,
     listKey: null,
     fallbackNudged: false,
+    reviewAfterId: null,
     placeholder: DEFAULT_PLACEHOLDER,
     stage: 'home',
     draft: {},
@@ -269,6 +284,7 @@ export function initialChatState(ctx: ChatContext): ChatState {
     fieldKey: null,
     listKey: null,
     fallbackNudged: false,
+    reviewAfterId: null,
     placeholder: DEFAULT_PLACEHOLDER,
     stage: 'home',
     draft: {},
@@ -330,13 +346,10 @@ function askNext(state: ChatState, ctx: ChatContext): ChatState {
     return waitForListItem(state, nextList, text)
   }
 
-  const done = say(
-    state,
-    'agent',
-    `Got it. I'll call ${d.business_name} at ${formatUsPhone(d.phone_e164)} to: ${d.goal}`,
-  )
+  const done = say(state, 'agent', "Here's the plan. Give it a quick look, then start the call.")
   return {
     ...done,
+    reviewAfterId: done.nextId - 1,
     stage: 'draft_ready',
     awaiting: null,
     fieldKey: null,
@@ -401,6 +414,42 @@ function addListItem(state: ChatState, ctx: ChatContext, key: ListKey, text: str
   return waitForListItem(withItem, key, LIST_PROMPTS[key].again(updated.length))
 }
 
+/** What the user says in the chat when they tap Edit on a review row. */
+const EDIT_LABELS: Record<EditTarget, string> = {
+  goal: 'Change the goal',
+  details: 'Change the details',
+  calling: 'Change who to call',
+  constraints: 'Change my limits',
+  preferences: 'Change my preferences',
+  fallbacks: 'Change my backups',
+  never_agree: 'Change what not to agree to',
+}
+
+/**
+ * Clear one part of the draft so `askNext` asks for it again. When it's
+ * answered, every other part is still done, so the review card comes back.
+ * Lists are cleared and asked again from the start (at most 5 items each).
+ */
+function editDraft(draft: Partial<CallDraft>, target: EditTarget): Partial<CallDraft> {
+  switch (target) {
+    case 'goal':
+      return { ...draft, goal: undefined }
+    case 'details':
+      return { ...draft, answers: {} }
+    case 'calling':
+      return { ...draft, business_name: undefined, phone_e164: undefined }
+    default:
+      return { ...draft, [target]: [], done_lists: (draft.done_lists ?? []).filter((k) => k !== target) }
+  }
+}
+
+/** Whether a review row can be edited for this draft: a template's goal is the template itself. */
+export function canEdit(draft: Partial<CallDraft>, target: EditTarget): boolean {
+  if (target === 'goal') return draft.template_key === null
+  if (target === 'details') return draft.template_key !== null && draft.template_key !== undefined
+  return true
+}
+
 /** Handle what the user typed for the field the chat is waiting on. */
 function answer(state: ChatState, ctx: ChatContext, text: string): ChatState {
   const withUser = say(state, 'user', text)
@@ -463,6 +512,21 @@ export function chatReducer(ctx: ChatContext) {
         }
         return finishList(withUser, ctx, key)
       }
+      case 'edit': {
+        if (state.stage !== 'draft_ready' || !canEdit(state.draft, action.target)) return state
+        const withUser = say({ ...state, chips: [] }, 'user', EDIT_LABELS[action.target])
+        return askNext({ ...withUser, stage: 'collecting', draft: editDraft(state.draft, action.target) }, ctx)
+      }
+      case 'start': {
+        const review = reviewOf(state, ctx)
+        if (state.stage !== 'draft_ready' || !review || review.missing_fields.length > 0) return state
+        const started = say(
+          say({ ...state, chips: [] }, 'user', 'Start call'),
+          'agent',
+          `Calling ${review.brief.business_name} now. I'll ask you here if I need anything.`,
+        )
+        return { ...started, stage: 'started', chips: [NEW_CALL_CHIP] }
+      }
       case 'new_call':
         // PC-1: the user can start a new call at any time; an unfinished draft is dropped.
         return showHome({ ...say(state, 'user', 'Start a new call'), chips: [] }, ctx, 'Sure. Who should I call?')
@@ -483,7 +547,8 @@ export function chatReducer(ctx: ChatContext) {
 /** The finished draft, once all the questions so far are answered. */
 export function completedDraft(state: ChatState): CallDraft | null {
   const d = state.draft
-  if (state.stage !== 'draft_ready' || !d.goal || !d.business_name || !d.phone_e164) return null
+  if (state.stage !== 'draft_ready' && state.stage !== 'started') return null
+  if (!d.goal || !d.business_name || !d.phone_e164) return null
   return {
     template_key: d.template_key ?? null,
     goal: d.goal,
@@ -497,4 +562,14 @@ export function completedDraft(state: ChatState): CallDraft | null {
     never_agree: d.never_agree ?? [],
     done_lists: d.done_lists ?? [],
   }
+}
+
+/**
+ * The brief behind the review card (PC-6), built from the finished draft.
+ * Null until the chat reaches the review. `missing_fields` must be empty to Start.
+ */
+export function reviewOf(state: ChatState, ctx: ChatContext): BuiltBrief | null {
+  const draft = completedDraft(state)
+  if (!draft) return null
+  return buildBrief(draft, templateOf(ctx, draft.template_key), ctx.profile)
 }

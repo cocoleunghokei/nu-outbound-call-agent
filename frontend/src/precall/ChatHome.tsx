@@ -1,9 +1,13 @@
-import { useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
 import './ChatHome.css'
-import { chatReducer, completedDraft, initialChatState, type ChatContext } from './chat'
+import type { Brief } from './types'
+import { ReviewCard } from './ReviewCard'
+import { chatReducer, completedDraft, initialChatState, reviewOf, type ChatContext } from './chat'
 
 interface ChatHomeProps {
   context: ChatContext
+  /** Called once with the reviewed brief when the user taps Start (PC-6). */
+  onStart: (brief: Brief) => void
 }
 
 /**
@@ -12,7 +16,7 @@ interface ChatHomeProps {
  * the state and sends user actions. Visual design follows Harper's prototype
  * (`public/prototype/`).
  */
-export function ChatHome({ context }: ChatHomeProps) {
+export function ChatHome({ context, onStart }: ChatHomeProps) {
   const [reducer] = useState(() => chatReducer(context))
   const [state, dispatch] = useReducer(reducer, context, initialChatState)
   const [text, setText] = useState('')
@@ -21,7 +25,7 @@ export function ChatHome({ context }: ChatHomeProps) {
 
   useEffect(() => {
     feedEnd.current?.scrollIntoView?.({ block: 'end' })
-  }, [state.messages.length])
+  }, [state.messages.length, state.stage])
 
   useEffect(() => {
     if (state.awaiting) input.current?.focus()
@@ -35,6 +39,13 @@ export function ChatHome({ context }: ChatHomeProps) {
   }
 
   const draft = completedDraft(state)
+  const review = reviewOf(state, context)
+
+  function start() {
+    if (!review || review.missing_fields.length > 0 || state.stage !== 'draft_ready') return
+    onStart(review.brief)
+    dispatch({ type: 'start' })
+  }
 
   return (
     <section className="precall-chat" aria-label="Chat">
@@ -48,15 +59,21 @@ export function ChatHome({ context }: ChatHomeProps) {
       <div className="precall-feed" role="log" aria-live="polite" aria-label="Conversation">
         <div className="precall-feed-in">
           {state.messages.map((m) => (
-            <p key={m.id} className={`precall-msg ${m.from}`}>
-              {m.text}
-            </p>
+            <Fragment key={m.id}>
+              <p className={`precall-msg ${m.from}`}>{m.text}</p>
+              {/* The review card sits under "Here's the plan", and stays there after Start. */}
+              {m.id === state.reviewAfterId && draft && review && (
+                <ReviewCard
+                  review={review}
+                  draft={draft}
+                  profile={context.profile}
+                  started={state.stage === 'started'}
+                  onEdit={(target) => dispatch({ type: 'edit', target })}
+                  onStart={start}
+                />
+              )}
+            </Fragment>
           ))}
-          {draft && (
-            <p className="precall-msg sub">
-              Next: a quick review of everything before I dial.
-            </p>
-          )}
           <div ref={feedEnd} />
         </div>
       </div>

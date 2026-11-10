@@ -64,6 +64,12 @@ export function knownProfileFields(template: CallTemplate, profile: ProfileField
     .map((field) => field.key)
 }
 
+/** A profile key as a short label for the review card: "Name", "Date of birth". */
+export function profileLabel(key: string): string {
+  const label = PROFILE_LABELS[key] ?? key.replace(/_/g, ' ')
+  return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
 /** "your name, phone number and date of birth" for a list of profile keys (duplicates merged). */
 export function describeProfileKeys(keys: string[]): string {
   const labels = [...new Set(keys.map((k) => PROFILE_LABELS[k] ?? k.replace(/_/g, ' ')))]
