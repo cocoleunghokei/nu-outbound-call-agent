@@ -1,22 +1,28 @@
-import { useState } from 'react'
-import { LiveCall } from './live-call/LiveCall'
-import { DR_LEE_SCRIPT, MOCK_CALL_ID, mockSummary, useMockCall } from './live-call/mockCall'
+import { PrecallDemo } from './PrecallDemo'
+import { LiveCallDemo } from './LiveCallDemo'
+import { HistoryDemo } from './HistoryDemo'
 
-/**
- * Temporary: shows the live-call page playing a fake call until the app
- * layout and routing exist.
- */
+// Temporary screen switcher until the app layout and routing exist. Each section's demo
+// screen lives in its own *Demo.tsx file; pick one with ?screen=<key>.
+const screens = {
+  precall: PrecallDemo,
+  live: LiveCallDemo,
+  history: HistoryDemo,
+} as const
+
+type ScreenKey = keyof typeof screens
+
+function pickScreen(search: string): ScreenKey {
+  const params = new URLSearchParams(search)
+  const s = params.get('screen')
+  if (s && s in screens) return s as ScreenKey
+  if (!s && 'live' in screens && params.get('call')) return 'live'
+  return 'precall'
+}
+
 function App() {
-  const [startedAt] = useState(() => new Date().toISOString())
-  const { events, sendReply, sendCommand } = useMockCall(DR_LEE_SCRIPT, MOCK_CALL_ID, startedAt)
-  return (
-    <LiveCall
-      summary={mockSummary(startedAt)}
-      events={events}
-      sendReply={sendReply}
-      sendCommand={sendCommand}
-    />
-  )
+  const Screen = screens[pickScreen(window.location.search)]
+  return <Screen />
 }
 
 export default App

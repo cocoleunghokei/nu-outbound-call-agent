@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "payloads/transcript.final.v1.json",
+  "title": "TranscriptFinalPayload",
+  "type": "object",
+  "required": [
+    "role",
+    "text",
+    "source_start_ts"
+  ],
+  "properties": {
+    "role": {
+      "title": "TranscriptRole",
+      "type": "string",
+      "enum": [
+        "agent",
+        "business",
+        "user"
+      ]
+    },
+    "text": {
+      "type": "string"
+    },
+    "source_start_ts": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time"
+    }
+  }
+}
