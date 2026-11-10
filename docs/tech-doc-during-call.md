@@ -41,7 +41,7 @@ This doc assumes the blueprint as written: one backend service, Postgres as the 
 
 ## Build decisions (backend, app/calls)
 
-Decisions made while building the backend for Pause / Resume / End (DC-11). Decided by Coco on 2026-11-10 unless noted.
+Decisions made while building the backend for Pause / Resume / End (DC-11) and the agent prompt (DC-4). Decided by Coco on 2026-11-10 unless noted.
 
 | # | Question | Decision | Status |
 |---|---|---|---|
@@ -50,6 +50,8 @@ Decisions made while building the backend for Pause / Resume / End (DC-11). Deci
 | 3 | When does the mute go out after the hold line? | **Steve's quiet rule** (architecture §4.1): after the hold line is sent, mute once the assistant has been silent for 0.7 s after an assistant `stopped` event. An assistant `started` waits for the next stop. 4 s is the latest. | Decided |
 | 4 | The pause cap ends the call as Needs follow-up. Who writes `calls.outcome`? | The backend does not write the outcome for now. The call still ends with a call-back offer, and the feed shows why. | **Pending: Harper (post-call)** |
 | 5 | `instruction` commands (DC-10) arrive at the same `/commands` endpoint. | The endpoint answers `422 unsupported_command` until Lotto's handler lands. | **Pending: Lotto (DC-10)** |
+| 6 | The agent's prompt needs guardrail rules (DC-13: never claim to be human, no payments without a ping, refused-AI handling), which are Lotto's. | Use the probe kit's reviewed rules as a placeholder (`GUARDRAIL_RULES` in `app/calls/prompt.py`), to be replaced wholesale by Lotto's. | **Pending: Lotto (DC-13)** |
+| 7 | Which model, voice and transcriber does the agent use? | The probe kit's: `gpt-5.4-mini`, Vapi "Clara", Deepgram nova-3. | **Pending: Vapi session** |
 
 ## Risks and next steps
 
