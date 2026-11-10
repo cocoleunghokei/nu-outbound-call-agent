@@ -1,5 +1,4 @@
-# Weekly PRs that bump pinned GitHub Actions and frontend npm packages.
-# Add a pip/npm entry for backend/ once it has a dependency manifest.
+# Weekly PRs that bump pinned GitHub Actions and frontend npm and backend uv packages.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -31,6 +30,17 @@ updates:
     ignore:
       - dependency-name: typescript
         update-types: ['version-update:semver-major']
+    commit-message:
+      prefix: build
+      include: scope
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      uv-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
     commit-message:
       prefix: build
       include: scope

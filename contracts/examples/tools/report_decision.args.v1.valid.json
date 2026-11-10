@@ -1,0 +1,14 @@
+{
+  "situation": "They offered Thu 2pm",
+  "action": "accept",
+  "confidence": "high",
+  "reason": "Meets the before-3pm constraint",
+  "dimensions": {
+    "needs_ask_first_field": true,
+    "involves_money": true,
+    "meets_constraints": true,
+    "matches_fallback": true,
+    "answerable_from_brief": true,
+    "understood": true
+  }
+}

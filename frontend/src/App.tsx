@@ -1,10 +1,25 @@
-import { ChatHome } from './precall/ChatHome'
-import { fakeProfile, fakeTemplates } from './precall/fakeBriefs'
+import { PrecallDemo } from './PrecallDemo'
+import { HistoryDemo } from './HistoryDemo'
 
-// Temporary: shows the pre-call chat home with fake data until the app layout
-// and routing exist.
+// Temporary screen switcher until the app layout and routing exist. Each section's demo
+// screen lives in its own *Demo.tsx file; pick one with ?screen=<key>.
+const screens = {
+  precall: PrecallDemo,
+  history: HistoryDemo,
+} as const
+
+type ScreenKey = keyof typeof screens
+
+function pickScreen(search: string): ScreenKey {
+  const params = new URLSearchParams(search)
+  const s = params.get('screen')
+  if (s && s in screens) return s as ScreenKey
+  return 'precall'
+}
+
 function App() {
-  return <ChatHome context={{ profile: fakeProfile, templates: fakeTemplates }} />
+  const Screen = screens[pickScreen(window.location.search)]
+  return <Screen />
 }
 
 export default App

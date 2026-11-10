@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "ping_closed",
+    "message": "The ping already closed.",
+    "retryable": false
+  }
+}
