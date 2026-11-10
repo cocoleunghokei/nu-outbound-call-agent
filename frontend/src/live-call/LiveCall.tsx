@@ -16,6 +16,8 @@ interface LiveCallProps {
   sendReply: SendPingReply
   /** Sends Pause / Resume / End (mock now, backend API later). */
   sendCommand: SendCallCommand
+  /** A connection problem to show above the call (real backend only). */
+  notice?: string | null
 }
 
 /**
@@ -23,7 +25,7 @@ interface LiveCallProps {
  * live feed of transcript and decisions (DC-3, DC-4, DC-5), the ping card
  * (DC-8) and Pause / Resume / End (DC-11).
  */
-export function LiveCall({ summary, events, sendReply, sendCommand }: LiveCallProps) {
+export function LiveCall({ summary, events, sendReply, sendCommand, notice }: LiveCallProps) {
   const view = useMemo(() => deriveLiveCall(events), [events])
   const side = useRef<HTMLElement>(null)
   const openPingId = view.ping?.state === 'open' ? view.ping.ping.ping_id : null
@@ -54,6 +56,12 @@ export function LiveCall({ summary, events, sendReply, sendCommand }: LiveCallPr
       </header>
 
       <StatusPills status={view.status} />
+
+      {notice && (
+        <p className="lc-notice" role="status">
+          {notice}
+        </p>
+      )}
 
       <div className="lc-grid">
         <section className="lc-card lc-conversation" aria-labelledby="lc-conv-title">
