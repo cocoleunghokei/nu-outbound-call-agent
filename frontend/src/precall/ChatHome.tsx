@@ -13,6 +13,11 @@ interface ChatHomeProps {
   starter: Starter
   /** Small top-bar note, e.g. "Demo mode (fake data)". Hidden when null. */
   modeNote?: { text: string; title: string } | null
+  /**
+   * Called once Start has placed the call, with `POST /calls`' `call_id` (null in demo
+   * mode). The app opens the live screen from it.
+   */
+  onCallStarted?: (callId: string | null) => void
 }
 
 /**
@@ -21,7 +26,7 @@ interface ChatHomeProps {
  * the state and sends user actions. Visual design follows Harper's prototype
  * (`public/prototype/`).
  */
-export function ChatHome({ context, starter, modeNote = null }: ChatHomeProps) {
+export function ChatHome({ context, starter, modeNote = null, onCallStarted }: ChatHomeProps) {
   const [reducer] = useState(() => chatReducer(context))
   const [state, dispatch] = useReducer(reducer, context, initialChatState)
   const [text, setText] = useState('')
@@ -81,6 +86,7 @@ export function ChatHome({ context, starter, modeNote = null }: ChatHomeProps) {
     switch (result.kind) {
       case 'started':
         dispatch({ type: 'start' })
+        onCallStarted?.(result.callId)
         break
       case 'saved_not_connected':
         dispatch({ type: 'saved_not_connected' })
