@@ -157,6 +157,16 @@ def make_settings(db_url: str = "", **overrides: Any) -> Settings:
     return Settings(database_url=db_url, vapi_webhook_secret=SecretStr(SECRET), **overrides)
 
 
+# An empty package root: no owner package (calls, briefs, postcall) is discovered.
+_NO_PACKAGES = Path(__file__).parent / "fixtures" / "no_packages"
+
+
+def foundation_app(db_url: str) -> FastAPI:
+    """The app with the foundation only. Tests that need a tool with no handler use it,
+    because app/postcall registers one for ``report_outcome``."""
+    return create_app(make_settings(db_url), packages_root=_NO_PACKAGES)
+
+
 @asynccontextmanager
 async def serve(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
     """Run the app's lifespan (startup included) and yield an in-process client."""
@@ -541,7 +551,7 @@ def test_two_tool_calls_in_one_message_both_dispatched(
 def test_unregistered_tool_left_pending(supabase_env: SupabaseEnv, fresh_call: FreshCall) -> None:
     async def scenario() -> None:
         tc = f"tc-{uuid.uuid4()}"
-        app = create_app(make_settings(supabase_env.db_url))
+        app = foundation_app(supabase_env.db_url)
         async with serve(app) as client:
             response = await post(
                 client, tool_body(fresh_call, [(tc, "report_outcome", OUTCOME_ARGS)])
@@ -561,7 +571,7 @@ def test_pending_then_registered_dispatches_exactly_once(
     async def scenario() -> None:
         tc = f"tc-{uuid.uuid4()}"
         body = tool_body(fresh_call, [(tc, "report_outcome", OUTCOME_ARGS)])
-        app = create_app(make_settings(supabase_env.db_url))
+        app = foundation_app(supabase_env.db_url)
         async with serve(app) as client:
             assert (await post(client, body)).json()["results"][0]["result"] == "received"
             recorder = Recorder("Outcome recorded.")
@@ -795,7 +805,7 @@ def test_dispatch_pending_failing_row_then_ok_row(
             fresh_call,
             [(first, "report_outcome", OUTCOME_ARGS), (second, "report_outcome", OUTCOME_ARGS)],
         )
-        intake = create_app(make_settings(supabase_env.db_url))
+        intake = foundation_app(supabase_env.db_url)
         async with serve(intake) as client:
             await post(client, body)
 
@@ -1065,7 +1075,7 @@ def test_handler_sql_failure_writes_failed_receipt_and_dead_letter(
 
     async def scenario() -> None:
         tc = f"tc-{uuid.uuid4()}"
-        app = create_app(make_settings(supabase_env.db_url))
+        app = foundation_app(supabase_env.db_url)
 
         async def bad_sql(conn: AsyncConnection[Any], ctx: ToolCallContext) -> str:
             if ctx.call_id == fresh_call.call_id:
@@ -1157,7 +1167,7 @@ def test_concurrent_dispatchers_and_webhook_no_deadlock(supabase_env: SupabaseEn
         calls = [create_fresh_call(db) for _ in range(3)]
         pending_ids = {c.call_id: [f"p{i}-{uuid.uuid4()}" for i in range(4)] for c in calls}
         live_ids = {c.call_id: [f"l{i}-{uuid.uuid4()}" for i in range(2)] for c in calls}
-        app = create_app(make_settings(db))
+        app = foundation_app(db)
         handled: list[str] = []
 
         async def slow(conn: AsyncConnection[Any], ctx: ToolCallContext) -> str:
@@ -1493,7 +1503,7 @@ def test_transient_db_error_in_dispatch_pending_keeps_row_pending(
 ) -> None:
     async def scenario() -> None:
         tc = f"tc-{uuid.uuid4()}"
-        app = create_app(make_settings(supabase_env.db_url))
+        app = foundation_app(supabase_env.db_url)
         async with serve(app) as client:
             await post(client, tool_body(fresh_call, [(tc, "report_outcome", OUTCOME_ARGS)]))
             registries(app).tools.register_tool_handler("report_outcome", _lock_not_available)
