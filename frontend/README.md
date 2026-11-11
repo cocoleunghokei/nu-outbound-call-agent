@@ -40,7 +40,7 @@ Open http://localhost:5173.
 
 The live-call page plays the fake call unless all three are set: `VITE_LIVE_CALL_SOURCE=real`, `VITE_API_URL` (the backend, e.g. `http://localhost:8000`), and `?call=<call id>` in the address. You also need to be signed in to Supabase in the browser. To try it locally: `supabase start`, run the backend with `make -C backend seed-dev` and `uv run uvicorn app.main:app`, open `http://localhost:5173/?call=<CALL_ID>`, then `make -C backend replay CALL_ID=<CALL_ID>`.
 
-The history screen (`?screen=history`) shows fake calls unless `VITE_HISTORY_SOURCE=real` and `VITE_API_URL` are set; then it lists the signed-in user's calls from `GET /calls` and opens each with `GET /calls/{call_id}/result` (code in `src/postcall/`). `?open=<call id>` opens one call's result directly, which is where the call-ended notification links.
+The history screen (`?screen=history`) shows fake calls unless `VITE_HISTORY_SOURCE=real` and `VITE_API_URL` are set; then it lists the signed-in user's calls from `GET /calls` and opens each with `GET /calls/{call_id}/result` (code in `src/postcall/`). `?open=<call id>` opens one call's result directly, which is where the call-ended notification links. Opening a call adds a browser history entry, so Back returns to the list (`src/postcall/openCallUrl.ts`; temporary until the app has routing, then `/calls/:id`).
 
 ## Patterns
 

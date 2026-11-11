@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { CallHistory } from './history/CallHistory'
 import { fakeHistory } from './history/fakeHistory'
 import { historySource } from './postcall/api'
+import { useOpenCall } from './postcall/openCallUrl'
 import { useRealHistory } from './postcall/useRealHistory'
 import { CallResultView } from './result/CallResultView'
 import { fakeResults } from './result/fakeResults'
@@ -46,15 +47,14 @@ function RealHistory({ apiBase, openCallId, setOpenCallId }: ScreenProps & { api
 /**
  * Temporary: the call history and result page until the app layout exists.
  * Real data with VITE_HISTORY_SOURCE=real and VITE_API_URL, else fake data.
- * ?open=<call id> opens that call's result page (the PO-5 notification links here).
+ * ?open=<call id> opens that call's result page (the PO-5 notification links here),
+ * and the browser's Back button closes it (#49).
  */
 export function HistoryDemo() {
   const [source] = useState(() =>
     historySource(import.meta.env.VITE_HISTORY_SOURCE, import.meta.env.VITE_API_URL),
   )
-  const [openCallId, setOpenCallId] = useState<string | null>(() =>
-    new URLSearchParams(window.location.search).get('open'),
-  )
+  const [openCallId, setOpenCallId] = useOpenCall()
 
   return (
     <main style={{ padding: 16 }}>
