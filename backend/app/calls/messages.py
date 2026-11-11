@@ -134,6 +134,11 @@ def pause_cap_goodbye_line(calling_name: str) -> str:
     )
 
 
+def late_adoption_apology_line() -> str:
+    """What the business hears when a call we could not confirm turns up too late to use."""
+    return "I'm sorry, this call was placed by mistake. Please disregard it. Goodbye."
+
+
 def say_and_hang_up(content: str) -> dict[str, Any]:
     """Speak a sentence, then let Vapi end the call once it has been spoken."""
     return {"type": "say", "content": content, "endCallAfterSpoken": True}
