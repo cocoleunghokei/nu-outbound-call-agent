@@ -26,6 +26,8 @@ export interface BriefResponse {
 /** `POST /calls` response. Coco's shape isn't fixed yet, so only `call_id` is read, if present. */
 export interface StartCallResponse {
   call_id?: string
+  /** `dialing`, `creation_uncertain` (still checking) or `failed` (the call was not placed). */
+  status?: string
   [key: string]: unknown
 }
 

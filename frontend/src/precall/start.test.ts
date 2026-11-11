@@ -5,6 +5,7 @@ import { contractExampleBrief } from './contractExample'
 import { fakeProfile, fakeTemplates } from './fakeBriefs'
 import {
   apiStarter,
+  CALL_NOT_PLACED,
   demoStarter,
   describeError,
   emptySession,
@@ -120,6 +121,31 @@ describe('apiStarter (Start in API mode)', () => {
     expect(second.result.kind).toBe('started')
     expect(client.createBrief).toHaveBeenCalledTimes(1)
     expect(startCall.mock.calls.map((c) => c[1])).toEqual(['key-2', 'key-2'])
+  })
+
+  it('a 201 with status "failed" is an error, not a started call, and the retry uses a new key', async () => {
+    const startCall = vi
+      .fn<ApiClient['startCall']>()
+      .mockResolvedValueOnce({ call_id: 'call-1', status: 'failed' })
+      .mockResolvedValue({ call_id: 'call-2', status: 'dialing' })
+    const client = fakeClient({ startCall })
+    const start = apiStarter(client, keys())
+    const first = await start(contractExampleBrief, emptySession)
+    expect(first.result).toMatchObject({
+      kind: 'error',
+      message: "The call didn't go through, so nobody was called. Tap Start to try again.",
+      error: { code: CALL_NOT_PLACED, retryable: true },
+    })
+    const second = await start(contractExampleBrief, first.session)
+    expect(second.result).toMatchObject({ kind: 'started', callId: 'call-2' })
+    expect(client.createBrief).toHaveBeenCalledTimes(1)
+    expect(startCall.mock.calls.map((c) => c[1])).toEqual(['key-2', 'key-3'])
+  })
+
+  it('a call still being checked (creation_uncertain) opens like a started call', async () => {
+    const client = fakeClient({ startCall: vi.fn(async () => ({ call_id: 'call-1', status: 'creation_uncertain' })) })
+    const { result } = await apiStarter(client, keys())(contractExampleBrief, emptySession)
+    expect(result).toMatchObject({ kind: 'started', callId: 'call-1' })
   })
 
   it('an edit after an earlier save is a PATCH to the same brief, with a new key', async () => {

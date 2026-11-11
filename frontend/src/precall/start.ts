@@ -55,6 +55,10 @@ export type StartResult =
 /** Runs Start for one brief. Returns the result and the updated session; never throws. */
 export type Starter = (brief: Brief, session: SaveSession) => Promise<{ result: StartResult; session: SaveSession }>
 
+/** `POST /calls` answered 201 with `status: "failed"`: the call provably never rang. */
+export const CALL_NOT_PLACED = 'call_not_placed'
+const CALL_NOT_PLACED_MESSAGE = "The call didn't go through, so nobody was called. Tap Start to try again."
+
 /** Demo mode: no network. Logs the brief, as the app did before Step 11. */
 export const demoStarter: Starter = async (brief, session) => {
   console.info('start call with brief (demo mode, nothing sent)', brief)
@@ -138,10 +142,19 @@ export function apiStarter(client: ApiClient, newKey: () => string = () => crypt
     }
 
     // 3. Hand the brief to Coco's call controller.
-    const [key, withKey] = keyFor(session, `POST /calls ${saved.brief_id}`, newKey)
+    const signature = `POST /calls ${saved.brief_id}`
+    const [key, withKey] = keyFor(session, signature, newKey)
     session = withKey
     try {
       const call = await client.startCall(saved.brief_id, key)
+      if (call.status === 'failed') {
+        // 201, but the phone service refused the call. Forget the key: a replay of it would
+        // return this same failed call, and the next tap on Start should try a new one.
+        const keys = { ...session.keys }
+        delete keys[signature]
+        const error = new ApiError(CALL_NOT_PLACED, CALL_NOT_PLACED_MESSAGE, 201, true)
+        return { result: { kind: 'error', server, message: CALL_NOT_PLACED_MESSAGE, error }, session: { ...session, keys } }
+      }
       return { result: { kind: 'started', server, callId: typeof call.call_id === 'string' ? call.call_id : null }, session }
     } catch (err) {
       const error = asApiError(err)
