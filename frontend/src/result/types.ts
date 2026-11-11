@@ -1,4 +1,5 @@
 import type { CallHistoryItem } from '../history/types'
+import type { TranscriptLine } from './transcript'
 
 /**
  * Data shapes for the end-of-call result page (PO-1 outcome, PO-2 summary, PO-3 what was shared).
@@ -60,4 +61,6 @@ export interface CallResult {
   openItems: string[]
   decisions: AgentDecision[]
   sharedFields: SharedField[]
+  /** Final transcript lines (PO-4), from the call's `transcript.final` events */
+  transcript: TranscriptLine[]
 }

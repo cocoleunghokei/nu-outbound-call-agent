@@ -6,6 +6,7 @@ import { PingCard } from './PingCard'
 import type { SendPingReply } from './ping'
 import { STATUS_STEPS, deriveLiveCall, statusStep, type FeedItem } from './state'
 import type { CallEvent, LiveCallSummary } from './types'
+import { useCallEndedNotification } from '../postcall/useCallEndedNotification'
 import './LiveCall.css'
 
 interface LiveCallProps {
@@ -29,6 +30,9 @@ export function LiveCall({ summary, events, sendReply, sendCommand, notice }: Li
   const view = useMemo(() => deriveLiveCall(events), [events])
   const side = useRef<HTMLElement>(null)
   const openPingId = view.ping?.state === 'open' ? view.ping.ping.ping_id : null
+
+  // Post-call notification (PO-5, Harper): once, when this tab sees the call end.
+  useCallEndedNotification(summary.callId, summary.businessName, view.ended)
 
   // On a phone the card sits below the transcript, so bring a new question into view.
   useEffect(() => {
