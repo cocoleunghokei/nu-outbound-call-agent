@@ -19,17 +19,30 @@ Brief builder (plan Step 9), both read-only, so no ``Idempotency-Key``:
   user typed because the profile lacked them) count for this build only, with ON-5 default
   sharing, and are never written to ``profile_fields`` (Steve's ON-7) or into the brief.
   422 ``invalid_request`` (body shape), ``unknown_template``, ``invalid_phone``.
+  ``goal_summary`` (optional, custom calls only) is the summary ``/briefs/interpret`` gave, so
+  rebuilding never calls the LLM again.
 
-No LLM here yet (plan Step 10).
+LLM step for custom goals (plan Step 10, PC-3), read-only, so no ``Idempotency-Key``:
+
+- ``POST /briefs/interpret``: same body as ``/briefs/build`` with ``template_key: null``.
+  Asks the LLM for a goal summary and suggestions, then builds exactly like ``/briefs/build``:
+  ``{brief, missing_fields, opening_line, interpretation}`` (``interpret.Interpretation``).
+  Its own route, so ``/briefs/build`` stays free and repeatable and only this call spends
+  the 10-per-hour limit. Without a key, or when the answer fails validation, it answers 200
+  with the user's own words and ``interpretation.llm_used: false`` plus a ``reason``.
+  422 ``not_a_custom_call``; 429 ``rate_limited`` (retryable); 503 ``llm_unavailable``
+  (timeout or provider down, retryable) or ``llm_misconfigured`` (not retryable). After any
+  of those the chat can continue with ``/briefs/build``, which never uses the LLM.
 """
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
 from app.auth import current_user
 from app.briefs.builder import (
@@ -41,7 +54,10 @@ from app.briefs.builder import (
     snapshot_of,
 )
 from app.briefs.catalog import KEY_PATTERN, get_template, templates_json
+from app.briefs.interpret import interpret_custom_goal
+from app.briefs.llm import GoalInterpreter, LlmError, check_goal_summary, interpreter_from_settings
 from app.briefs.phone import check_phone
+from app.briefs.ratelimit import reserve_llm_build
 from app.briefs.readiness import Readiness, check_readiness
 from app.briefs.store import (
     StoredBrief,
@@ -151,12 +167,17 @@ class BuildRequest(BaseModel):
     preferences: ListItems = []
     fallbacks: ListItems = []
     never_agree: ListItems = []
+    goal_summary: Annotated[str, AfterValidator(check_goal_summary)] | None = None
 
 
 def _draft(body: BuildRequest) -> Draft:
     """Check the template and number, then turn the body into a builder ``Draft``."""
     if body.template_key is not None and get_template(body.template_key) is None:
         raise ApiError("unknown_template", 422, "template_key: no such template", False)
+    if body.template_key is not None and body.goal_summary is not None:
+        raise ApiError(
+            "invalid_request", 422, "goal_summary: only for custom calls (template_key null)"
+        )
     phone = check_phone(body.phone_e164)
     if not phone.ok or phone.e164 is None:
         raise ApiError("invalid_phone", 422, phone.message, False)
@@ -171,6 +192,7 @@ def _draft(body: BuildRequest) -> Draft:
         preferences=[i.text for i in body.preferences],
         fallbacks=[i.text for i in body.fallbacks],
         never_agree=[i.text for i in body.never_agree],
+        goal_summary=body.goal_summary,
     )
 
 
@@ -207,6 +229,42 @@ async def build(request: Request, user_id: UserId, body: BuildRequest) -> dict[s
     async with pool.connection() as conn:
         profile = profile_from_snapshot(await load_snapshot(conn, user_id))
     return build_response(draft, profile)
+
+
+def get_goal_interpreter(request: Request) -> GoalInterpreter | None:
+    """FastAPI dependency: the LLM client from settings, or None when no key is set."""
+    settings = request.app.state.settings
+    return interpreter_from_settings(settings)
+
+
+Interpreter = Annotated[GoalInterpreter | None, Depends(get_goal_interpreter)]
+
+
+@router.post("/interpret")
+async def interpret(
+    request: Request, user_id: UserId, body: BuildRequest, interpreter: Interpreter
+) -> dict[str, Any]:
+    """PC-3: build a custom brief with the LLM's goal summary and suggestions. Saves no brief.
+
+    Only a call that will reach the LLM counts against the hourly limit. The database
+    connection is released before the LLM call (up to 20 s).
+    """
+    if body.template_key is not None:
+        raise ApiError(
+            "not_a_custom_call", 422, "template_key: the AI step is only for custom calls"
+        )
+    draft = _draft(body)
+    pool = get_pool(request)
+    async with pool.connection() as conn, conn.transaction():
+        if interpreter is not None:
+            await reserve_llm_build(conn, user_id)
+        profile = profile_from_snapshot(await load_snapshot(conn, user_id))
+    try:
+        interpretation = await interpret_custom_goal(draft, profile, interpreter)
+    except LlmError as exc:
+        raise exc.api_error() from None
+    built = build_response(replace(draft, goal_summary=interpretation.goal_summary), profile)
+    return {**built, "interpretation": interpretation.to_json()}
 
 
 @router.get("/{brief_id}")
