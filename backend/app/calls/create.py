@@ -24,6 +24,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -51,6 +52,7 @@ from app.voice.port import (
     VoicePlatform,
     VoiceRejected,
     VoiceUncertain,
+    prepare_assistant,
 )
 from app.voice.prompt_safety import AskFirstInPrompt, MissingVar, Snapshot
 from app.voice.vapi import get_voice
@@ -91,14 +93,32 @@ class PreparedCall:
 
 
 def _server_url(settings: Settings) -> tuple[str, str]:
-    """The webhook URL and secret Vapi calls back with. 503 when a real call can't be wired."""
+    """The webhook URL and secret Vapi calls back with. 503 when a real call can't be wired.
+
+    A real call needs the Vapi API key, the phone number id, the webhook secret and an https
+    ``PUBLIC_BASE_URL``: the webhook secret travels in that URL's requests, so never over http.
+    """
     secret = settings.vapi_webhook_secret.get_secret_value()
     if settings.voice_platform == "fake":
         return f"{FAKE_SERVER_URL}{WEBHOOK_PATH}", secret
-    base = settings.public_base_url.rstrip("/")
-    if not base or not secret or not settings.vapi_phone_number_id:
+    base = settings.public_base_url.strip().rstrip("/")
+    configured = (
+        settings.vapi_api_key.get_secret_value()
+        and settings.vapi_phone_number_id
+        and secret
+        and _is_https_origin(base)
+    )
+    if not configured:
         raise ApiError("calls_not_configured", 503, "Calling isn't set up on the server yet", False)
     return f"{base}{WEBHOOK_PATH}", secret
+
+
+def _is_https_origin(url: str) -> bool:
+    """True for an absolute ``https://host`` URL (a path is allowed, a query or fragment not)."""
+    parts = urlsplit(url)
+    return (
+        parts.scheme == "https" and bool(parts.hostname) and not parts.query and not parts.fragment
+    )
 
 
 def _not_ready(missing: list[str]) -> ApiError:
@@ -172,8 +192,13 @@ async def prepare_call(
             webhook_secret=webhook_secret,
             max_duration_s=MAX_DURATION_S,
         )
+        # The same check create_call runs before sending, run now so a refusal is a 422
+        # before any call row exists, not a failed call on every Start.
+        prepare_assistant(assistant, snapshot)
     except (MissingVar, AskFirstInPrompt) as exc:
         raise _not_ready([exc.key]) from None
+    except UnsafeAssistantConfig as exc:
+        raise ApiError("unsafe_assistant_config", 422, exc.message, False) from None
 
     row = await (
         await conn.execute(
@@ -207,12 +232,14 @@ async def record_placed(
 ) -> str:
     """Step 3 on success: store Vapi's id and the control URL, ``creating -> dialing``."""
     call = await lock_call(conn, call_id)
-    if call.ended_at is not None or call.status in TERMINAL_STATUSES:
-        return call.status  # a webhook already ended it
+    # Stored even if a webhook already ended the call (a fast no-answer): the row must keep
+    # its link to the billed Vapi call.
     await conn.execute(
         "update public.calls set vapi_call_id = %s where id = %s and vapi_call_id is null",
         (created.vapi_call_id, call_id),
     )
+    if call.ended_at is not None or call.status in TERMINAL_STATUSES:
+        return call.status  # a webhook already ended it
     if created.control_url:
         await write_call_secrets(conn, call_id, created.control_url, created.listen_url or "")
     await set_status(conn, call_id, "dialing", only_from=NOT_YET_PLACED)
@@ -250,9 +277,20 @@ async def record_not_placed(
 
 
 async def place_call(
-    pool: AsyncConnectionPool, voice: VoicePlatform, prepared: PreparedCall
+    pool: AsyncConnectionPool,
+    voice: VoicePlatform,
+    prepared: PreparedCall,
+    *,
+    user_id: uuid.UUID,
+    key: uuid.UUID,
 ) -> str:
-    """Steps 2 and 3: send the one create request, then record the result. Returns the status."""
+    """Steps 2 and 3: send the one create request, then record the result. Returns the status.
+
+    The final ``{call_id, status}`` is saved for the ``Idempotency-Key`` in step 3's own
+    transaction, so a replay never says ``creating`` after the call has moved on. If step 3
+    can't be written, the call stays ``creating`` and the reconciler (``reconcile.py``) picks
+    it up: it becomes ``creation_uncertain`` and is looked up at Vapi by our ``call_id``.
+    """
     call_id = prepared.call_id
     created: CreatedCall | None = None
     uncertain = False
@@ -280,10 +318,25 @@ async def place_call(
         uncertain = True
         logger.exception("call %s: unexpected error while placing the call", call_id)
 
-    async with pool.connection() as conn, conn.transaction():
-        if created is not None:
-            return await record_placed(conn, call_id, created)
-        return await record_not_placed(conn, call_id, uncertain=uncertain)
+    try:
+        async with pool.connection() as conn, conn.transaction():
+            if created is not None:
+                status = await record_placed(conn, call_id, created)
+            else:
+                status = await record_not_placed(conn, call_id, uncertain=uncertain)
+            await store_idempotent_response(
+                conn, user_id, key, 201, {"call_id": str(call_id), "status": status}
+            )
+            return status
+    except Exception:
+        # Vapi's id is not a secret, and it is the only trace of a placed call until the
+        # reconciler finds it again.
+        logger.exception(
+            "call %s: could not record the result (vapi call %s)",
+            call_id,
+            created.vapi_call_id if created else None,
+        )
+        raise
 
 
 @router.post("/calls", status_code=201)
@@ -299,8 +352,8 @@ async def create_call(
 
     ``status`` is ``dialing`` when Vapi accepted the call, ``failed`` when it provably wasn't
     placed, and ``creation_uncertain`` when we can't tell yet. Errors before a call exists:
-    404 ``brief_not_found``, 422 ``invalid_brief`` / ``invalid_phone`` / ``brief_not_ready``,
-    409 ``call_in_progress``, 503 ``calls_not_configured``.
+    404 ``brief_not_found``, 422 ``invalid_brief`` / ``invalid_phone`` / ``brief_not_ready`` /
+    ``unsafe_assistant_config``, 409 ``call_in_progress``, 503 ``calls_not_configured``.
     """
     settings: Settings = request.app.state.settings
     async with pool.connection() as conn, conn.transaction():
@@ -312,8 +365,5 @@ async def create_call(
         first = {"call_id": str(prepared.call_id), "status": "creating"}
         await store_idempotent_response(conn, user_id, key, 201, first)
 
-    status = await place_call(pool, voice, prepared)
-    final = {"call_id": str(prepared.call_id), "status": status}
-    async with pool.connection() as conn, conn.transaction():
-        await store_idempotent_response(conn, user_id, key, 201, final)
-    return JSONResponse(final, status_code=201)
+    status = await place_call(pool, voice, prepared, user_id=user_id, key=key)
+    return JSONResponse({"call_id": str(prepared.call_id), "status": status}, status_code=201)

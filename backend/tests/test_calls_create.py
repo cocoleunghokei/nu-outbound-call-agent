@@ -5,6 +5,7 @@ the profile frozen into the call's snapshot, and explicit ``failed`` and
 ``creation_uncertain`` states instead of a retry. All data is fake.
 """
 
+import asyncio
 import uuid
 from collections.abc import Iterator
 from typing import Any
@@ -12,8 +13,11 @@ from typing import Any
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
+from psycopg_pool import AsyncConnectionPool
 
-from app.calls.create import get_call_voice
+from app.calls import create as create_module
+from app.calls.create import MAX_DURATION_S, get_call_voice, record_placed
+from app.calls.reconcile import GIVE_UP_AFTER_S, mark_stale_creating, resolve_uncertain
 from app.config import Settings
 from app.main import create_app
 from app.voice.fake import FakeVoicePlatform
@@ -333,3 +337,153 @@ def test_real_calls_need_the_public_webhook_url(
     assert response.json()["error"]["code"] == "calls_not_configured"
     assert calls_for_brief(supabase_env, brief_id) == 0
     assert voice.calls == []
+
+
+def idempotency_rows(env: SupabaseEnv, user: SignedUpUser) -> int:
+    with psycopg.connect(env.db_url) as conn:
+        row = conn.execute(
+            "select count(*) from public.idempotency_keys where user_id = %s", (user.user_id,)
+        ).fetchone()
+    assert row is not None
+    return int(row[0])
+
+
+REAL_CALL_SETTINGS: dict[str, Any] = {
+    "voice_platform": "vapi",
+    "vapi_api_key": "test-api-key",
+    "vapi_webhook_secret": "test-webhook-secret",
+    "vapi_phone_number_id": "pn_test",
+    "public_base_url": "https://backend.example.test",
+}
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"vapi_api_key": ""},
+        {"public_base_url": "http://backend.example.test"},
+        {"public_base_url": "backend.example.test"},
+    ],
+    ids=["no_api_key", "http_base_url", "no_scheme"],
+)
+def test_real_calls_refuse_a_missing_key_or_an_insecure_url_and_write_nothing(
+    supabase_env: SupabaseEnv, signed_up_user: SignedUpUser, override: dict[str, str]
+) -> None:
+    app = create_app(settings_for(supabase_env, **{**REAL_CALL_SETTINGS, **override}))
+    registries(app).workers.clear()
+    voice = UniqueFakeVoice()
+    app.dependency_overrides[get_call_voice] = lambda: voice
+    with TestClient(app) as client:
+        brief_id = ready_brief(client, supabase_env, signed_up_user)
+        keys_before = idempotency_rows(supabase_env, signed_up_user)
+        response = start(client, signed_up_user, brief_id)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "calls_not_configured"
+    assert calls_for_brief(supabase_env, brief_id) == 0
+    assert idempotency_rows(supabase_env, signed_up_user) == keys_before  # rolled back
+    assert voice.calls == []
+
+
+def test_fully_configured_real_calls_are_placed(
+    supabase_env: SupabaseEnv, signed_up_user: SignedUpUser
+) -> None:
+    app = create_app(settings_for(supabase_env, **REAL_CALL_SETTINGS))
+    registries(app).workers.clear()
+    voice = UniqueFakeVoice()
+    app.dependency_overrides[get_call_voice] = lambda: voice
+    with TestClient(app) as client:
+        brief_id = ready_brief(client, supabase_env, signed_up_user)
+        response = start(client, signed_up_user, brief_id)
+
+    assert response.status_code == 201, response.text
+    assert voice.calls[0]["assistant"]["server"]["url"] == (
+        "https://backend.example.test/webhooks/vapi"
+    )
+
+
+def test_a_stuck_call_no_longer_blocks_a_new_start(
+    client: TestClient,
+    supabase_env: SupabaseEnv,
+    signed_up_user: SignedUpUser,
+    voice: FakeVoicePlatform,
+) -> None:
+    """A crash between the attempt and its result leaves `creating`; the reconciler frees it."""
+    brief_id = ready_brief(client, supabase_env, signed_up_user)
+    voice.fail_next(VoiceUncertain("timeout"))
+    stuck_id = start(client, signed_up_user, brief_id).json()["call_id"]
+    # As a crash would leave it, long enough ago that no call from it can still be ringing.
+    with psycopg.connect(supabase_env.db_url, autocommit=True) as conn:
+        conn.execute(
+            "update public.calls set status = 'creating',"
+            " create_attempted_at = now() - make_interval(secs => %s) where id = %s",
+            (MAX_DURATION_S + GIVE_UP_AFTER_S + 5, stuck_id),
+        )
+    assert start(client, signed_up_user, brief_id).status_code == 409  # blocked while unknown
+
+    async def reconcile() -> None:
+        async with AsyncConnectionPool(supabase_env.db_url, min_size=1, open=False) as pool:
+            await mark_stale_creating(pool)
+            await resolve_uncertain(pool, voice)
+
+    asyncio.run(reconcile())
+
+    assert call_row(supabase_env, stuck_id)["status"] == "failed"
+    again = start(client, signed_up_user, brief_id)
+    assert again.status_code == 201, again.text
+    assert again.json()["status"] == "dialing"
+    assert len(voice.calls) == 1  # only the new Start dialed; the stuck one was never resent
+
+
+def test_an_unsafe_assistant_config_is_a_422_before_any_call_exists(
+    client: TestClient,
+    supabase_env: SupabaseEnv,
+    signed_up_user: SignedUpUser,
+    voice: FakeVoicePlatform,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    brief_id = ready_brief(client, supabase_env, signed_up_user)
+    real_build = create_module.build_assistant_config
+
+    def recording_on(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        config = real_build(*args, **kwargs)
+        config["artifactPlan"]["recordingEnabled"] = True
+        return config
+
+    monkeypatch.setattr(create_module, "build_assistant_config", recording_on)
+
+    response = start(client, signed_up_user, brief_id)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "unsafe_assistant_config"
+    assert calls_for_brief(supabase_env, brief_id) == 0
+    assert voice.calls == []
+
+
+def test_vapi_id_is_kept_when_a_webhook_ended_the_call_first(
+    client: TestClient,
+    supabase_env: SupabaseEnv,
+    signed_up_user: SignedUpUser,
+    voice: FakeVoicePlatform,
+) -> None:
+    brief_id = ready_brief(client, supabase_env, signed_up_user)
+    voice.fail_next(VoiceUncertain("timeout"))
+    call_id = start(client, signed_up_user, brief_id).json()["call_id"]
+    with psycopg.connect(supabase_env.db_url, autocommit=True) as conn:
+        conn.execute(
+            "update public.calls set status = 'ended', ended_at = now() where id = %s",
+            (call_id,),
+        )
+    created = CreatedCall(f"fake-{uuid.uuid4()}", "https://fake.invalid/control/x", None)
+
+    async def record() -> str:
+        async with (
+            AsyncConnectionPool(supabase_env.db_url, min_size=1, open=False) as pool,
+            pool.connection() as conn,
+            conn.transaction(),
+        ):
+            return await record_placed(conn, uuid.UUID(call_id), created)
+
+    assert asyncio.run(record()) == "ended"
+    row = call_row(supabase_env, call_id)
+    assert (row["status"], row["vapi_call_id"]) == ("ended", created.vapi_call_id)
