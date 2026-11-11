@@ -7,6 +7,8 @@ interface ImportMetaEnv {
   readonly VITE_API_URL?: string
   /** "real" to follow a real call on the live-call page; anything else plays the fake call. */
   readonly VITE_LIVE_CALL_SOURCE?: string
+  /** "real" to show the signed-in user's calls on the history screen; anything else shows fake calls. */
+  readonly VITE_HISTORY_SOURCE?: string
 }
 
 interface ImportMeta {
