@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     vapi_phone_number_id: str = ""
     vapi_base_url: str = "https://api.vapi.ai"
     vapi_ip_allowlist: bool = False
+    # This backend's public https origin (e.g. the Railway URL). Vapi sends webhooks to
+    # {public_base_url}/webhooks/vapi; POST /calls refuses to dial a real call without it.
+    public_base_url: str = ""
 
     voice_platform: Literal["vapi", "fake"] = "fake"
 
