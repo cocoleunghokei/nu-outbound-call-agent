@@ -63,6 +63,9 @@ WEBHOOK_PATH = "/webhooks/vapi"
 FAKE_SERVER_URL = "http://localhost:8000"
 # calls.max_duration_s (DC-15). Kept equal to the column default in the migration.
 MAX_DURATION_S = 900
+# Statuses a call can be placed (or failed) from: the reconciler may have moved a slow
+# ``creating`` call to ``creation_uncertain`` before its result was recorded.
+NOT_YET_PLACED = frozenset({"creating", "creation_uncertain"})
 
 
 def get_call_voice(request: Request) -> VoicePlatform:
@@ -212,16 +215,20 @@ async def record_placed(
     )
     if created.control_url:
         await write_call_secrets(conn, call_id, created.control_url, created.listen_url or "")
-    await set_status(conn, call_id, "dialing", only_from=frozenset({"creating"}))
+    await set_status(conn, call_id, "dialing", only_from=NOT_YET_PLACED)
     return (await lock_call(conn, call_id)).status
 
 
 async def record_not_placed(
     conn: AsyncConnection[Any], call_id: uuid.UUID, *, uncertain: bool
 ) -> str:
-    """Step 3 on failure: ``creation_uncertain`` if Vapi may have placed it, else ``failed``."""
+    """Step 3 on failure: ``creation_uncertain`` if Vapi may have placed it, else ``failed``.
+
+    Also used by the reconciler (``app/calls/reconcile.py``) to fail an uncertain call that
+    was never found.
+    """
     call = await lock_call(conn, call_id)
-    if call.status != "creating":
+    if call.status not in NOT_YET_PLACED or call.vapi_call_id is not None:
         return call.status  # a webhook got here first: Vapi did place it
     if uncertain:
         await set_status(conn, call_id, "creation_uncertain", only_from=frozenset({"creating"}))
