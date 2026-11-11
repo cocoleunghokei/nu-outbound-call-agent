@@ -13,7 +13,7 @@ const starter: Starter = async (brief, session) => (await dataMode).starter(brie
 
 // Temporary: shows the pre-call chat home until the app layout and routing exist.
 // The profile and templates are still fake in both modes (no profile or templates API yet).
-export function PrecallDemo() {
+export function PrecallDemo({ onCallStarted }: { onCallStarted: (callId: string | null) => void }) {
   const [mode, setMode] = useState<DataMode | null>(null)
 
   useEffect(() => {
@@ -28,6 +28,7 @@ export function PrecallDemo() {
     <ChatHome
       context={{ profile: fakeProfile, templates: fakeTemplates }}
       starter={starter}
+      onCallStarted={onCallStarted}
       modeNote={modeNote(mode)}
     />
   )

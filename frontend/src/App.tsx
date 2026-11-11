@@ -1,28 +1,20 @@
 import { PrecallDemo } from './PrecallDemo'
 import { LiveCallDemo } from './LiveCallDemo'
 import { HistoryDemo } from './HistoryDemo'
+import { livePath, navigate, useRoute } from './router'
 
-// Temporary screen switcher until the app layout and routing exist. Each section's demo
-// screen lives in its own *Demo.tsx file; pick one with ?screen=<key>.
-const screens = {
-  precall: PrecallDemo,
-  live: LiveCallDemo,
-  history: HistoryDemo,
-} as const
-
-type ScreenKey = keyof typeof screens
-
-function pickScreen(search: string): ScreenKey {
-  const params = new URLSearchParams(search)
-  const s = params.get('screen')
-  if (s && s in screens) return s as ScreenKey
-  if (!s && 'live' in screens && params.get('call')) return 'live'
-  return 'precall'
-}
-
+/** Picks the screen for the current address (see `router.ts` for the routes). */
 function App() {
-  const Screen = screens[pickScreen(window.location.search)]
-  return <Screen />
+  const route = useRoute()
+  switch (route.name) {
+    case 'live':
+      // Keyed by call, so opening another call starts a fresh live screen.
+      return <LiveCallDemo key={route.callId ?? 'demo'} callId={route.callId} />
+    case 'history':
+      return <HistoryDemo />
+    case 'home':
+      return <PrecallDemo onCallStarted={(callId) => navigate(livePath(callId))} />
+  }
 }
 
 export default App
