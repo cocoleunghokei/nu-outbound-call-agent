@@ -42,15 +42,16 @@ function RealLiveCall({ callId, apiBase }: { callId: string; apiBase: string }) 
 }
 
 /**
- * Temporary: shows the live-call page until the app layout and routing exist.
- * See liveCallMode() for when it uses the real backend.
+ * The live-call page for `/live?call=<call_id>` (see `router.ts`).
+ * See liveCallMode() for when it uses the real backend; without a call id it plays the
+ * scripted demo call.
  */
-export function LiveCallDemo() {
+export function LiveCallDemo({ callId }: { callId: string | null }) {
   const [mode] = useState(() =>
     liveCallMode(
       import.meta.env.VITE_LIVE_CALL_SOURCE,
       import.meta.env.VITE_API_URL,
-      window.location.search,
+      callId ? `?call=${encodeURIComponent(callId)}` : '',
     ),
   )
   return mode.kind === 'real' ? (
