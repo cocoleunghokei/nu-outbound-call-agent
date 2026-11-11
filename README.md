@@ -11,15 +11,20 @@ System design: start with the [system overview](docs/system-overview.md) (diagra
 
 ## Status
 
-Research, design and spec phase (Oct 21–31). Requirements, tech doc and stack choice come Nov 2–6. The frontend has an empty React + Vite app in `frontend/`, deployed on Vercel.
+Build week (Nov 9–13). Each screen works with fake data on the [live site](https://nu-outbound-call-agent-frontend.vercel.app) (`?screen=precall|live|history`), and most of the during-call backend is built. The app doesn't place real calls yet. See [docs/status.md](docs/status.md) for what's built, what's missing, and why the live site is still a demo.
 
 ## Repo layout
 
 ```
-backend/    Server side: call orchestration, telephony, STT/LLM/TTS loop, API
-frontend/   Web app: onboarding, profile, create call, live call, call history
-docs/       One-pager, research notes, specs, tech doc
+backend/              FastAPI app: briefs, calls (pause and ping), Vapi adapter, webhooks
+frontend/             React + Vite web app: pre-call chat, live call, history, result
+contracts/            JSON Schemas; generated Python and TypeScript types
+supabase/migrations/  Database schema (the only place it changes)
+spikes/vapi/          Vapi probe kit
+docs/                 Requirements, system overview, architecture, status
 ```
+
+Module by module: [docs/status.md#project-structure](docs/status.md#project-structure).
 
 ## How we work
 
