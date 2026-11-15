@@ -14,17 +14,21 @@ export function actionLabel(action: DecisionAction): string {
   return ACTION_LABELS[action] ?? 'Acted'
 }
 
+/**
+ * Profile and template field keys, as listed in docs/template-format.md (#35).
+ * The profile key list and the insurance key names are still to be confirmed by Steve.
+ */
 const FIELD_LABELS: Record<string, string> = {
-  name: 'Full name',
+  full_name: 'Full name',
   calling_name: 'Calling name',
   phone: 'Phone',
   email: 'Email',
-  dob: 'Date of birth',
+  date_of_birth: 'Date of birth',
   address: 'Home address',
-  insurance: 'Insurance',
-  provider: 'Doctor',
+  insurance_carrier: 'Insurance carrier',
+  insurance_member_id: 'Insurance member ID',
+  provider_name: 'Doctor',
   party_size: 'Party size',
-  dietary: 'Dietary needs',
 }
 
 /** Readable name for a profile field key. Unknown keys are shown as written, with underscores as spaces. */

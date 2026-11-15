@@ -6,7 +6,7 @@ In one paragraph: the user (Alex) fills in a brief, the backend places a phone c
 
 Colours: **grey** = foundation, **blue** = Steve (onboarding), **green** = Lotto (pre-call), **orange** = Coco (during call), **purple** = Harper (post-call). Only three diagrams use colour: the big picture (section 1), the class diagram (section 2) and the webhook ingress flowchart (section 7). Wherever colour marks ownership, the owner's name is also in the node text.
 
-**Status:** grey is built and tested. Blue, green, orange and purple are planned: those packages do not exist yet, and the diagrams show the intended design.
+**Status (2026-11-11):** grey is built and tested. Green (`app/briefs/`) and orange (`app/calls/`) are mostly built. Blue has only auth and `GET /me`. Purple's backend (`app/postcall/`) is in review. `POST /calls` doesn't exist yet, so the app can't place a call. Current detail: [status.md](status.md).
 
 Contents: [1. Big picture](#1-the-big-picture) · [2. Inside the backend](#2-inside-the-backend) · [3. The data](#3-the-data) · [4. One call](#4-one-call-start-to-finish) · [5. Pause and ping](#5-pause-and-ping-the-critical-path) · [6. States](#6-states) · [7. Webhook ingress](#7-webhook-ingress) · [8. Glossary](#8-glossary-and-further-reading) · [Try it locally](#try-it-locally)
 
