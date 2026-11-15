@@ -1,0 +1,150 @@
+{
+  "_note": "Fake data only. fake_response is a hand-written model answer used by the offline test (tests/test_briefs_llm_evals.py); it was NOT recorded from the live API. The live run (make eval-briefs) ignores it.",
+  "profile": [
+    {"key": "full_name", "value": "Alex Chen", "sharing": "share_freely"},
+    {"key": "calling_name", "value": "Alex", "sharing": "share_freely"},
+    {"key": "phone", "value": "+16175550142", "sharing": "share_freely"},
+    {"key": "email", "value": "alex.chen@example.test", "sharing": "share_freely"},
+    {"key": "date_of_birth", "value": "2004-03-15", "sharing": "ask_first"},
+    {"key": "address", "value": "123 Example St, Boston, MA", "sharing": "ask_first"}
+  ],
+  "cases": [
+    {
+      "id": "bakery_pickup",
+      "goal": "Can u check if they still have the chocolate cake for sat pickup?",
+      "business_name": "Sunrise Bakery",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["cake"]},
+      "fake_response": {
+        "goal_summary": "ask if a chocolate cake is available for pickup on Saturday",
+        "suggested_constraints": ["Pickup on Saturday"],
+        "suggested_preferences": [],
+        "questions_to_ask_user": ["What time on Saturday would you like to pick it up?"]
+      }
+    },
+    {
+      "id": "restaurant_table",
+      "goal": "Book a table for 4 this Friday around 7pm, patio if they have one",
+      "business_name": "Corner Table Bistro",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["table", "reserv"]},
+      "fake_response": {
+        "goal_summary": "book a table for four this Friday around 7pm",
+        "suggested_constraints": ["Around 7pm on Friday"],
+        "suggested_preferences": ["Patio seating"],
+        "questions_to_ask_user": []
+      }
+    },
+    {
+      "id": "doctor_visit",
+      "goal": "I need to see Dr. Patel sometime next week for a sore throat",
+      "business_name": "Back Bay Family Clinic",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["appointment", "see"]},
+      "fake_response": {
+        "goal_summary": "book an appointment with Dr. Patel next week for a sore throat",
+        "suggested_constraints": ["Sometime next week"],
+        "suggested_preferences": [],
+        "questions_to_ask_user": ["Which days or times next week work for you?"]
+      }
+    },
+    {
+      "id": "cancel_haircut",
+      "goal": "Cancel my haircut appointment tomorrow at 3",
+      "business_name": "Main Street Barbers",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["cancel"]},
+      "fake_response": {
+        "goal_summary": "cancel a haircut appointment for tomorrow at 3pm",
+        "suggested_constraints": [],
+        "suggested_preferences": [],
+        "questions_to_ask_user": []
+      }
+    },
+    {
+      "id": "reschedule_dentist",
+      "goal": "Move my dentist cleaning from Tuesday to Thursday if possible",
+      "business_name": "Harbor Dental",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["move", "reschedul"]},
+      "fake_response": {
+        "goal_summary": "move a dental cleaning from Tuesday to Thursday",
+        "suggested_constraints": ["Thursday only"],
+        "suggested_preferences": [],
+        "questions_to_ask_user": ["What time on Thursday works for you?"]
+      }
+    },
+    {
+      "id": "ambiguous",
+      "goal": "Call them about the thing from last week",
+      "business_name": "Example Hardware",
+      "expect": {"llm_used": true, "ready": true, "min_questions": 1},
+      "fake_response": {
+        "goal_summary": "follow up about something from last week",
+        "suggested_constraints": [],
+        "suggested_preferences": [],
+        "questions_to_ask_user": ["What exactly should I ask them about?"]
+      }
+    },
+    {
+      "id": "personal_details_typed_in",
+      "goal": "Book a checkup, my DOB is 2004-03-15 and call me back at 617-555-0142",
+      "business_name": "Back Bay Family Clinic",
+      "expect": {
+        "llm_used": true,
+        "ready": false,
+        "missing_includes": ["date_of_birth"],
+        "summary_any_of": ["checkup", "check-up", "appointment"]
+      },
+      "fake_response": {
+        "goal_summary": "book a checkup appointment",
+        "suggested_constraints": [],
+        "suggested_preferences": [],
+        "questions_to_ask_user": ["Which days work best for you?"]
+      }
+    },
+    {
+      "id": "spanish_goal",
+      "goal": "Quisiera reservar una mesa para dos el sábado a las 8",
+      "business_name": "Casa Verde",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["table", "reserv"]},
+      "fake_response": {
+        "goal_summary": "reserve a table for two on Saturday at 8",
+        "suggested_constraints": ["Saturday at 8"],
+        "suggested_preferences": [],
+        "questions_to_ask_user": []
+      }
+    },
+    {
+      "id": "far_too_long",
+      "goal": "My kid has a peanut allergy and we want to book a birthday party for about twelve children next month, ideally on a Saturday afternoon, and we need to know whether they can do a nut-free cake, whether there is a private room, how long we can stay, and what the deposit is, plus parking",
+      "business_name": "Funtime Play Cafe",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["party", "birthday"]},
+      "fake_response": {
+        "goal_summary": "book a nut-free birthday party for twelve children next month",
+        "suggested_constraints": ["Nut-free food only", "Saturday afternoon next month"],
+        "suggested_preferences": ["A private room"],
+        "questions_to_ask_user": ["Which Saturday next month would you like?"]
+      }
+    },
+    {
+      "id": "pharmacy_refill",
+      "goal": "Ask the pharmacy if my refill is ready to pick up today",
+      "business_name": "Corner Pharmacy",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["refill", "prescription"]},
+      "fake_response": {
+        "goal_summary": "ask if a prescription refill is ready for pickup today",
+        "suggested_constraints": [],
+        "suggested_preferences": [],
+        "questions_to_ask_user": []
+      }
+    },
+    {
+      "id": "holiday_hours",
+      "goal": "Find out if they're open on Thanksgiving Day.",
+      "business_name": "Example Grocery",
+      "expect": {"llm_used": true, "ready": true, "summary_any_of": ["open", "hours"]},
+      "fake_response": {
+        "goal_summary": "ask whether you are open on Thanksgiving Day",
+        "suggested_constraints": [],
+        "suggested_preferences": [],
+        "questions_to_ask_user": []
+      }
+    }
+  ]
+}
