@@ -40,7 +40,14 @@ def test_list_shows_only_the_callers_calls_newest_first(supabase_env: SupabaseEn
     older, newer, someone_else = seed_call(db), seed_call(db), seed_call(db)
 
     async def scenario() -> None:
-        # Give the user two calls: move `newer` to the same user as `older`, one hour later.
+        # Give the user two calls: move `newer` (and its brief, which must belong to the
+        # same user to be shown) to the same user as `older`, one hour later.
+        await rows(
+            db,
+            "update public.briefs set user_id = %s"
+            " where id = (select brief_id from public.calls where id = %s) returning id",
+            (older.user_id, newer.call_id),
+        )
         await rows(
             db,
             "update public.calls set user_id = %s, created_at = now() + interval '1 hour'"
