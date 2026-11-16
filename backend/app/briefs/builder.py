@@ -30,6 +30,18 @@ ASK_FIRST_BY_DEFAULT = frozenset(
 # Opening task line for a custom call (tech doc DC-1). The goal fills {goal_summary}.
 CUSTOM_TASK_LINE = "I'm calling to {goal_summary}."
 GOAL_SUMMARY_KEY = "goal_summary"
+# Tech doc DC-1: the custom task line is at most 15 words, and the resolved line must fit
+# brief.v1's 120 characters. A longer {goal_summary} is reported missing, so the chat asks
+# the user to say it shorter instead of the agent opening with a paragraph.
+GOAL_SUMMARY_MAX_WORDS = 15
+GOAL_SUMMARY_MAX_CHARS = 120 - len(CUSTOM_TASK_LINE.replace("{goal_summary}", ""))
+
+
+def goal_summary_fits(summary: str) -> bool:
+    """True when ``summary`` makes a custom opening line within DC-1's limits."""
+    text = summary.strip()
+    return 0 < len(text) <= GOAL_SUMMARY_MAX_CHARS and len(text.split()) <= GOAL_SUMMARY_MAX_WORDS
+
 
 # Every brief may share these: the calling name opens the call (DC-1), phone is the callback.
 BASE_SHARED_KEYS: tuple[str, ...] = (CALLING_NAME_KEY, "phone")
@@ -56,6 +68,8 @@ class Draft:
     ``profile_additions``: profile fields the user typed in the chat because the profile
     lacked them, as ``(key, value)``. Used for this build only, with ON-5 default sharing.
     List items are plain strings (the brief.v1 ``{text}`` objects are made here).
+    ``goal_summary``: custom calls only, the ``{goal_summary}`` the LLM wrote (Step 10). When
+    None the goal itself is used (``goal_summary(goal)``). Template calls ignore it.
     """
 
     template_key: str | None
@@ -68,6 +82,7 @@ class Draft:
     preferences: Sequence[str] = ()
     fallbacks: Sequence[str] = ()
     never_agree: Sequence[str] = ()
+    goal_summary: str | None = None
 
 
 @dataclass(frozen=True)
@@ -169,7 +184,7 @@ def build_brief(
     """Build the ``brief.v1`` brief and ``missing_fields`` for a finished draft.
 
     - Template calls use the template's ``task_line``; custom calls use ``CUSTOM_TASK_LINE``
-      with the goal as ``{goal_summary}``.
+      with ``draft.goal_summary`` (the LLM's, Step 10) or else the goal as ``{goal_summary}``.
     - Each placeholder becomes a ``literal`` from the answers, else a ``field_ref`` to a
       Share-freely profile field, else it is missing (Ask-me-first is never referenced).
     - ``share_freely_keys`` / ``ask_first_keys``: calling_name, phone and the template's
@@ -182,9 +197,11 @@ def build_brief(
     missing: list[str] = []
 
     task_line = template.task_line if template else CUSTOM_TASK_LINE
-    answers: Mapping[str, str] = (
-        draft.answers if template else {GOAL_SUMMARY_KEY: goal_summary(draft.goal)}
-    )
+    summary = draft.goal_summary or goal_summary(draft.goal)
+    answers: Mapping[str, str] = draft.answers if template else {GOAL_SUMMARY_KEY: summary}
+    if template is None and summary.strip() and not goal_summary_fits(summary):
+        # Too long to say as the first sentence: block Start and ask for a shorter goal.
+        missing.append(GOAL_SUMMARY_KEY)
 
     task_vars: dict[str, dict[str, str]] = {}
     for name in _placeholders(task_line):

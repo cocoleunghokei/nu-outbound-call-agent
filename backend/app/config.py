@@ -32,6 +32,12 @@ class Settings(BaseSettings):
 
     voice_platform: Literal["vapi", "fake"] = "fake"
 
+    # LLM for custom-goal briefs (PC-3, app/briefs/llm.py). An empty key turns the LLM off:
+    # custom briefs then use the user's own words, and the app still starts.
+    deepseek_api_key: SecretStr = SecretStr("")
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-chat"
+
     @model_validator(mode="after")
     def _derive_jwt_urls(self) -> "Settings":
         base = self.supabase_url.rstrip("/")
