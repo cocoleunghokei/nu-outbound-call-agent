@@ -78,3 +78,23 @@ describe('notifyCallEnded', () => {
     expect(env.show).not.toHaveBeenCalled()
   })
 })
+
+describe('notifyCallEnded on a browser whose Notification constructor throws (Android Chrome)', () => {
+  it('returns false instead of throwing', () => {
+    const env: NotifyEnv = {
+      permission: 'granted',
+      show: () => {
+        throw new TypeError('Illegal constructor')
+      },
+      openResult: vi.fn(),
+    }
+    const notice = { callId: 'c1', title: 'Juniper Ramen', body: 'Booked. Tap to see the summary.' }
+    expect(notifyCallEnded(notice, env)).toBe(false)
+  })
+})
+
+describe('callEndedNotice with an outcome named like an Object.prototype key', () => {
+  it('says Unknown, not "undefined"', () => {
+    expect(callEndedNotice('c1', 'Tatte', 'constructor').body).toBe('Unknown. Tap to see the summary.')
+  })
+})

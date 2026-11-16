@@ -33,7 +33,10 @@ export function outcomeDisplay(item: Pick<CallHistoryItem, 'outcome' | 'endedAt'
       ? { label: 'In progress', tone: 'neutral' }
       : { label: 'Processing', tone: 'neutral' }
   }
-  return OUTCOMES[outcome] ?? { label: 'Unknown', tone: 'neutral' }
+  // Own keys only: an outcome like "constructor" must not hit Object.prototype.
+  return Object.prototype.hasOwnProperty.call(OUTCOMES, outcome)
+    ? OUTCOMES[outcome]
+    : { label: 'Unknown', tone: 'neutral' }
 }
 
 /** Milliseconds since 1970 for sorting; an unreadable date counts as oldest. */

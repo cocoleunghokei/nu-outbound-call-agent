@@ -7,10 +7,7 @@ import { fakeResults } from './result/fakeResults'
 export function HistoryDemo() {
   // Temporary: shows the call history and result page with fake data until the
   // app layout and the backend history endpoints exist.
-  // ?open=<call id> opens that call's result page (the PO-5 notification links here).
-  const [openCallId, setOpenCallId] = useState<string | null>(() =>
-    new URLSearchParams(window.location.search).get('open'),
-  )
+  const [openCallId, setOpenCallId] = useState<string | null>(null)
   const result = openCallId ? fakeResults[openCallId] : undefined
 
   return (

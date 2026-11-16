@@ -18,6 +18,9 @@ export interface CallEndedNotice {
   body: string
 }
 
+/** The live-call page's business name while the call's details are still loading. */
+export const LOADING_CALL_NAME = 'Loading call…'
+
 /** Builds the notification text from the business name and the call's outcome. */
 export function callEndedNotice(callId: string, businessName: string, outcome: CallOutcome): CallEndedNotice {
   const title = businessName.trim() || 'Your call'
@@ -50,15 +53,22 @@ export interface NotifyEnv {
  */
 export function notifyCallEnded(notice: CallEndedNotice, env: NotifyEnv): boolean {
   if (env.permission !== 'granted') return false
-  env.show(
-    notice.title,
-    {
-      body: notice.body,
-      // One notification per call, even if this runs twice.
-      tag: `call-ended-${notice.callId}`,
-    },
-    () => env.openResult(resultPageUrl(notice.callId)),
-  )
+  try {
+    env.show(
+      notice.title,
+      {
+        body: notice.body,
+        // One notification per call, even if this runs twice.
+        tag: `call-ended-${notice.callId}`,
+      },
+      () => env.openResult(resultPageUrl(notice.callId)),
+    )
+  } catch {
+    // Android Chrome reports Notification and a granted permission, but its
+    // constructor throws "Illegal constructor". A missing notification must
+    // never break the live-call page.
+    return false
+  }
   return true
 }
 
