@@ -135,6 +135,16 @@ async def _retry_later(pool: AsyncConnectionPool[Any], row_id: int, call_id: UUI
                     await _store_outcome(conn, call_id, "needs_follow_up", GAVE_UP)
             except Exception:
                 logger.exception("postcall: could not store the fallback outcome for %s", call_id)
+                # The same fault (for example in append_event) can break call.ended too:
+                # still give the call an outcome, so the history never shows it unfinished.
+                try:
+                    async with conn.transaction():
+                        await conn.execute(
+                            "update public.calls set outcome = coalesce(outcome, %s) where id = %s",
+                            ("needs_follow_up", call_id),
+                        )
+                except Exception:
+                    logger.exception("postcall: could not set the outcome for %s", call_id)
 
 
 async def run_outcome_job(

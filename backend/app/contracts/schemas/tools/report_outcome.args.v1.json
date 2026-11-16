@@ -27,13 +27,20 @@
       "type": "object",
       "properties": {
         "date": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "The agreed date as YYYY-MM-DD, e.g. 2026-10-24"
         },
         "time": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+          "description": "The agreed time, 24-hour HH:MM, e.g. 19:30"
         },
         "confirmation_number": {
-          "type": "string"
+          "type": "string",
+          "minLength": 4,
+          "pattern": "[0-9]",
+          "description": "Exactly as the business said it; at least 4 characters with a digit"
         },
         "staff_name": {
           "type": "string"

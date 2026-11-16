@@ -3,12 +3,16 @@
 No database and no network here, so every rule is unit-tested on its own. The jobs in
 ``jobs.py`` read the inputs, call these functions and write the results.
 
-Rules (docs/architecture.md, post-call processing):
+Outcome rules (docs/architecture.md, post-call processing). When in doubt: Needs follow-up.
+
 - Booked, Cancelled or Rescheduled count only when the agent's ``report_outcome`` says the
-  business confirmed it **and** the business's own words back it up: the agreed time
-  together with a specific date (month and day), or the confirmation number. Lines where
-  the business refuses ("full", "sorry", "no availability", ...) are not evidence.
-  Otherwise: Needs follow-up.
+  business confirmed it **and** one clause of the business's own words backs it up: the
+  confirmation number, or the agreed time and the agreed date (month and day) together.
+- The agent's details must be well-formed to count: an ISO date (YYYY-MM-DD), a time that
+  parses, a confirmation number of at least 4 characters with a digit.
+- A clause that is a question ("October 24 at 7:30?") is never evidence, and a line where
+  any clause refuses ("full", "sorry", "unfortunately", "can't find", ...) is never evidence.
+  So a counteroffer in the same line as a refusal is Needs follow-up: the user checks.
 - With no ``report_outcome``, the outcome comes from Vapi's end reason. Only a clear
   "nobody answered" becomes No answer; anything else is Needs follow-up, never a guessed
   Failed.
@@ -29,22 +33,39 @@ NO_ANSWER_REASONS = frozenset({"customer-did-not-answer", "customer-busy", "voic
 
 PAUSE_CAP = "pause_cap"
 
-# A business line containing any of these is a refusal or a problem, never a confirmation.
+# A clause containing any of these (as whole words) is a refusal or a problem.
 REFUSAL_WORDS = (
     "full",
+    "fully",
     "sorry",
+    "unfortunately",
+    "nothing",
+    "closed",
+    "taken",
+    "waitlist",
+    "wait list",
+    "booked solid",
+    "booked up",
     "no availability",
     "not available",
     "unavailable",
-    "can't",
-    "cannot",
-    "can not",
-    "don't have",
-    "do not have",
+    "not open",
+    "not possible",
     "no openings",
     "no tables",
-    "booked up",
-    "not possible",
+    "no reservation",
+    "can't",
+    "cant",
+    "cannot",
+    "can not",
+    "can't find",
+    "won't",
+    "wont",
+    "doesn't work",
+    "isn't",
+    "don't have",
+    "dont have",
+    "do not have",
 )
 
 # Profile fields that identify the user. Only these are checked for "spoken" (PO-3), so a
@@ -62,6 +83,46 @@ SPOKEN_FIELD_KEYS = frozenset(
     }
 )
 
+# Single-word names that are also ordinary words ("May I...", "al dente"). The agent saying
+# one counts only right after a name cue such as "on behalf of" or "the name is".
+AMBIGUOUS_NAMES = frozenset(
+    {
+        "al",
+        "april",
+        "art",
+        "august",
+        "bill",
+        "dawn",
+        "eve",
+        "faith",
+        "grace",
+        "hope",
+        "joy",
+        "june",
+        "mark",
+        "may",
+        "pat",
+        "ray",
+        "rose",
+        "sue",
+        "summer",
+        "will",
+    }
+)
+NAME_CUES = r"(?:behalf of|name is|name's|this is|under|for|it's)"
+
+_STREET_WORDS = {
+    "st": "street",
+    "ave": "avenue",
+    "rd": "road",
+    "blvd": "boulevard",
+    "dr": "drive",
+    "ln": "lane",
+    "ct": "court",
+    "pl": "place",
+    "apt": "apartment",
+}
+
 _MONTHS = (
     "january",
     "february",
@@ -76,6 +137,8 @@ _MONTHS = (
     "november",
     "december",
 )
+
+_MIN_CONFIRMATION_LENGTH = 4
 
 
 @dataclass(frozen=True)
@@ -115,45 +178,79 @@ def decide_outcome(
     return OutcomeDecision(reported, "reported, confirmed and found in the transcript")
 
 
-def is_refusal(line: str) -> bool:
-    """True if the business line refuses or reports a problem ("Sorry, 7:30 is full")."""
-    folded = line.casefold().replace("’", "'")
-    return any(_contains_token(folded, word) for word in REFUSAL_WORDS)
-
-
 def clauses(line: str) -> list[str]:
-    """Split a line into the parts a refusal applies to: at sentence ends and at "but".
-
-    "7:30 is full, but 8pm on October 24 works." gives a refusal and a confirmation, so the
-    confirmation still counts. A period inside "p.m." or "Oct." is not followed by a space
-    and a new sentence, so it stays (the joined text keeps the words in order).
-    """
-    parts = re.split(r"(?<=[.!?;])\s+|,?\s+\bbut\b\s+", line)
+    """Split a line at sentence ends: ".", "!", "?" or ";" followed by a space and a capital
+    letter. "Oct. 24" and "8 p.m. on" stay whole, because no capital follows."""
+    parts = re.split(r"(?<=[.!?;])\s+(?=[A-Z])", line.strip())
     return [part for part in parts if part.strip()]
 
 
+def _fold(text: str) -> str:
+    return text.casefold().replace("’", "'")
+
+
+def is_refusal(clause: str) -> bool:
+    """True if the clause refuses or reports a problem ("Sorry, 7:30 is full")."""
+    folded = _fold(clause)
+    return any(_contains_token(folded, word) for word in REFUSAL_WORDS)
+
+
+def is_question(clause: str) -> bool:
+    """True if the clause asks something ("October 24 at 7:30?"): never evidence."""
+    return clause.rstrip().endswith("?")
+
+
+def valid_iso_date(value: str | None) -> date | None:
+    """The date if ``value`` is exactly YYYY-MM-DD and a real date, else None."""
+    if not value or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value.strip()):
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def valid_confirmation_number(value: str | None) -> str | None:
+    """The number if it has at least 4 characters and a digit, else None ("24" or "a" would
+    match almost any line)."""
+    if value is None:
+        return None
+    value = value.strip()
+    if len(value) < _MIN_CONFIRMATION_LENGTH or not re.search(r"\d", value):
+        return None
+    return value
+
+
 def has_confirmation_evidence(details: OutcomeDetails | None, business_lines: list[str]) -> bool:
-    """True if the business, in a part of a line that isn't a refusal, said the confirmation
-    number, or said both the agreed time and the agreed date (month and day)."""
+    """True if one clause of the business's words says the confirmation number, or says both
+    the agreed time and the agreed date. Questions and lines with a refusal don't count."""
     if details is None:
         return False
-    kept = [
-        part.casefold() for line in business_lines for part in clauses(line) if not is_refusal(part)
-    ]
-    if not kept:
+    number = valid_confirmation_number(details.confirmation_number)
+    agreed_day = valid_iso_date(details.date)
+    agreed_time = parse_time(details.time) if details.time else None
+    if number is None and (agreed_day is None or agreed_time is None):
         return False
-    text = " ".join(kept)
-    if details.confirmation_number and _contains_token(text, details.confirmation_number):
-        return True
-    if not details.time or not details.date:
-        return False
-    said_time = mentions_time(text, details.time)
-    said_date = mentions_date(text, details.date)
-    return said_time and said_date
+    for line in business_lines:
+        parts = clauses(line)
+        if any(is_refusal(part) for part in parts):
+            continue  # when in doubt, needs_follow_up
+        for part in parts:
+            if is_question(part):
+                continue
+            text = _fold(part)
+            if number is not None and _contains_token(text, number):
+                return True
+            if agreed_day is not None and agreed_time is not None:
+                if mentions_time(text, agreed_time) and mentions_date(text, agreed_day):
+                    return True
+    return False
 
 
-def parse_time(value: str) -> tuple[int, int] | None:
+def parse_time(value: str | None) -> tuple[int, int] | None:
     """Read "19:30", "7:30 PM", "7:30pm", "7pm" or "7 p.m." as (hour 0-23, minute)."""
+    if value is None:
+        return None
     match = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*", value.casefold())
     if not match:
         return None
@@ -170,39 +267,37 @@ def parse_time(value: str) -> tuple[int, int] | None:
     return hour, minute
 
 
-def mentions_time(text: str, value: str) -> bool:
-    """True if ``text`` (lowercased) says the time in ``value``: "7:30", "7:30pm",
-    "19:30", and for whole hours also "7pm", "7 p.m." or "7 o'clock". "7:30" never
-    matches inside "17:30"."""
-    parsed = parse_time(value)
-    if parsed is None:
-        return _contains_token(text, value)
-    hour, minute = parsed
+_MERIDIEM = r"\s*(a\.?m\.?|p\.?m\.?)?"
+
+
+def mentions_time(text: str, agreed: tuple[int, int]) -> bool:
+    """True if ``text`` (lowercased) says the agreed (hour, minute): "7:30", "7:30pm",
+    "19:30", and for whole hours also "7pm" or "7 o'clock". An am/pm that contradicts the
+    agreed time ("7:30 am" for 19:30) doesn't count, and "7:30" never matches inside
+    "17:30"."""
+    hour, minute = agreed
     h12 = hour % 12 or 12
-    numbers = {f"{h12}:{minute:02d}", f"{hour}:{minute:02d}"}
-    for number in numbers:
-        if re.search(rf"(?<![\d:]){re.escape(number)}(?!\d)", text):
-            return True
+    wanted = "p" if hour >= 12 else "a"
+    for number, is_24h in ((f"{h12}:{minute:02d}", False), (f"{hour}:{minute:02d}", True)):
+        for match in re.finditer(rf"(?<![\d:]){re.escape(number)}(?!\d){_MERIDIEM}", text):
+            meridiem = match.group(1)
+            if meridiem is None or (not is_24h and meridiem[0] == wanted):
+                return True
     if minute == 0:
-        meridiem = "p" if hour >= 12 else "a"
-        if re.search(rf"(?<![\d:]){h12}\s?{meridiem}\.?m\b", text):
+        if re.search(rf"(?<![\d:]){h12}\s?{wanted}\.?m\b", text):
             return True
-        if re.search(rf"(?<![\d:]){h12} o'clock", text.replace("’", "'")):
+        if re.search(rf"(?<![\d:]){h12} o'clock", text):
             return True
     return False
 
 
-def mentions_date(text: str, value: str) -> bool:
-    """True if ``text`` (lowercased) names the specific date in ``value`` ("2026-10-24"):
-    "october 24", "oct 24th", "24th of october" or "the 24th of october". A bare weekday
-    or ordinal is not enough, because "Saturday" or "the 24th" can refer to another date."""
-    try:
-        day = date.fromisoformat(value.strip())
-    except ValueError:
-        return _contains_token(text, value)
-    month = _MONTHS[day.month - 1]
+def mentions_date(text: str, agreed: date) -> bool:
+    """True if ``text`` (lowercased) names the agreed date: "october 24", "oct 24th",
+    "oct. 24", "24th of october" or "the 24th of october". A bare weekday or ordinal is not
+    enough, because "Saturday" or "the 24th" can refer to another date."""
+    month = _MONTHS[agreed.month - 1]
     months = rf"(?:{month}|{month[:3]}\.?)"
-    number = rf"{day.day}(?:st|nd|rd|th)?"
+    number = rf"{agreed.day}(?:st|nd|rd|th)?"
     patterns = (
         rf"\b{months}\s+(?:the\s+)?{number}(?!\d)",  # october 24, oct 24th
         rf"(?<!\d){number}\s+(?:of\s+)?{months}\b",  # 24th of october, 24 october
@@ -214,27 +309,75 @@ def spoken_fields(snapshot: dict[str, str], agent_lines: list[str]) -> list[str]
     """Identifying profile fields whose value the agent said out loud (PO-3), sorted.
 
     ``snapshot`` maps field key to value (private: never log it). Only keys in
-    ``SPOKEN_FIELD_KEYS`` are checked. A phone-like value matches one number the agent said
-    (compared by its last 10 digits, so "+16175550142" matches "617-555-0142"); other
-    values match as whole words, ignoring case. Values shorter than two characters are
-    skipped.
+    ``SPOKEN_FIELD_KEYS`` are checked, each in the way it is said:
+
+    - a date of birth as written, or as "April 12, 1990", "12 April 1990" or "04/12/1990"
+    - an address by its street part, with "St" and "Street" (and similar) treated alike
+    - a phone or member number by its digits, one spoken number at a time
+    - a name as whole words; a name that is also an ordinary word ("May") only after a cue
+      such as "on behalf of"
+    - anything else as whole words, ignoring case
+
+    Values shorter than two characters are skipped.
     """
     text = " ".join(agent_lines)
-    folded = text.casefold()
-    said_numbers = [re.sub(r"\D", "", span) for span in re.findall(r"\+?\d[\d\s().-]*\d", text)]
     spoken = []
     for key, value in snapshot.items():
         value = value.strip()
         if key not in SPOKEN_FIELD_KEYS or len(value) < 2:
             continue
-        value_digits = re.sub(r"\D", "", value)
-        if len(value_digits) >= 7 and len(value_digits) >= len(value) // 2:
-            national = value_digits[-10:]
-            if any(national in said for said in said_numbers):
-                spoken.append(key)
-        elif _contains_token(folded, value.casefold()):
+        if _value_spoken(key, value, text):
             spoken.append(key)
     return sorted(spoken)
+
+
+def _value_spoken(key: str, value: str, text: str) -> bool:
+    folded = _fold(text)
+    if key == "date_of_birth":
+        return _date_spoken(value, text)
+    if key == "address":
+        return _address_spoken(value, folded)
+    if key in ("calling_name", "full_name"):
+        return _name_spoken(value, folded)
+    value_digits = re.sub(r"\D", "", value)
+    if key in ("phone", "insurance_member_id") and len(value_digits) >= 7:
+        said_numbers = [re.sub(r"\D", "", s) for s in re.findall(r"\+?\d[\d\s().-]*\d", text)]
+        national = value_digits[-10:]
+        return any(national in said for said in said_numbers)
+    return _contains_token(folded, _fold(value))
+
+
+def _date_spoken(value: str, text: str) -> bool:
+    day = valid_iso_date(value)
+    if day is None:
+        return _contains_token(_fold(text), _fold(value))
+    folded = _fold(text)
+    if value in text or (mentions_date(folded, day) and re.search(rf"\b{day.year}\b", folded)):
+        return True
+    numeric = rf"(?<!\d)0?{day.month}[/.-]0?{day.day}[/.-](?:{day.year}|{day.year % 100:02d})(?!\d)"
+    return re.search(numeric, text) is not None
+
+
+def _street_tokens(text: str) -> list[str]:
+    words = re.findall(r"[a-z0-9]+", _fold(text))
+    return [_STREET_WORDS.get(word, word) for word in words]
+
+
+def _address_spoken(value: str, folded: str) -> bool:
+    street = value.split(",")[0]
+    wanted = _street_tokens(street)
+    if len(wanted) < 2:
+        return False
+    said = _street_tokens(folded)
+    width = len(wanted)
+    return any(said[i : i + width] == wanted for i in range(len(said) - width + 1))
+
+
+def _name_spoken(value: str, folded: str) -> bool:
+    name = _fold(value)
+    if " " not in name and name in AMBIGUOUS_NAMES:
+        return re.search(rf"\b{NAME_CUES}\s+{re.escape(name)}\b", folded) is not None
+    return _contains_token(folded, name)
 
 
 def _contains_token(text: str, phrase: str) -> bool:

@@ -278,8 +278,17 @@ export interface ReportOutcomeArgs {
   open_items?: string[];
 }
 export interface OutcomeDetails {
+  /**
+   * The agreed date as YYYY-MM-DD, e.g. 2026-10-24
+   */
   date?: string;
+  /**
+   * The agreed time, 24-hour HH:MM, e.g. 19:30
+   */
   time?: string;
+  /**
+   * Exactly as the business said it; at least 4 characters with a digit
+   */
   confirmation_number?: string;
   staff_name?: string;
 }

@@ -387,9 +387,28 @@ class ReportedOutcome(StrEnum):
 
 
 class OutcomeDetails(BaseModel):
-    date: str | None = None
-    time: str | None = None
-    confirmation_number: str | None = None
+    date: Annotated[
+        str | None,
+        Field(
+            description="The agreed date as YYYY-MM-DD, e.g. 2026-10-24",
+            pattern="^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+        ),
+    ] = None
+    time: Annotated[
+        str | None,
+        Field(
+            description="The agreed time, 24-hour HH:MM, e.g. 19:30",
+            pattern="^([01][0-9]|2[0-3]):[0-5][0-9]$",
+        ),
+    ] = None
+    confirmation_number: Annotated[
+        str | None,
+        Field(
+            description="Exactly as the business said it; at least 4 characters with a digit",
+            min_length=4,
+            pattern="[0-9]",
+        ),
+    ] = None
     staff_name: str | None = None
 
 
