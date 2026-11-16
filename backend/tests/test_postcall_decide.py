@@ -45,6 +45,23 @@ def test_refusal_lines_are_ignored_but_a_later_confirmation_counts() -> None:
     assert decide_outcome(BOOKED, "", lines).outcome == "booked"
 
 
+def test_a_refusal_and_a_counteroffer_in_one_line() -> None:
+    # Found by the post-call eval: the refusal must not hide the confirmation after "but".
+    later = report(outcome="booked", details={"date": "2026-10-24", "time": "20:00"})
+    assert decide_outcome(later, "", ["7:30 is full, but 8pm on October 24 works."]).outcome == (
+        "booked"
+    )
+    # ...while a refusal of the agreed slot itself still wins.
+    lines = ["Sorry, 8pm on October 24 is full, but we have 9pm."]
+    assert decide_outcome(later, "", lines).outcome == "needs_follow_up"
+
+
+def test_periods_inside_times_and_dates_do_not_split_them() -> None:
+    later = report(outcome="booked", details={"date": "2026-10-24", "time": "20:00"})
+    lines = ["Booked for 8 p.m. on Oct. 24, thanks."]
+    assert decide_outcome(later, "", lines).outcome == "booked"
+
+
 def test_a_bare_weekday_or_ordinal_is_not_a_date() -> None:
     for line in ("Got it, party of 2 at 7:30 Saturday.", "See you at 7:30 on the 24th."):
         assert decide_outcome(BOOKED, "", [line]).outcome == "needs_follow_up", line

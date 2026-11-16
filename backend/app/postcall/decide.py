@@ -121,15 +121,28 @@ def is_refusal(line: str) -> bool:
     return any(_contains_token(folded, word) for word in REFUSAL_WORDS)
 
 
+def clauses(line: str) -> list[str]:
+    """Split a line into the parts a refusal applies to: at sentence ends and at "but".
+
+    "7:30 is full, but 8pm on October 24 works." gives a refusal and a confirmation, so the
+    confirmation still counts. A period inside "p.m." or "Oct." is not followed by a space
+    and a new sentence, so it stays (the joined text keeps the words in order).
+    """
+    parts = re.split(r"(?<=[.!?;])\s+|,?\s+\bbut\b\s+", line)
+    return [part for part in parts if part.strip()]
+
+
 def has_confirmation_evidence(details: OutcomeDetails | None, business_lines: list[str]) -> bool:
-    """True if the business, in a line that isn't a refusal, said the confirmation number,
-    or said both the agreed time and the agreed date (month and day)."""
+    """True if the business, in a part of a line that isn't a refusal, said the confirmation
+    number, or said both the agreed time and the agreed date (month and day)."""
     if details is None:
         return False
-    lines = [line.casefold() for line in business_lines if line.strip() and not is_refusal(line)]
-    if not lines:
+    kept = [
+        part.casefold() for line in business_lines for part in clauses(line) if not is_refusal(part)
+    ]
+    if not kept:
         return False
-    text = " ".join(lines)
+    text = " ".join(kept)
     if details.confirmation_number and _contains_token(text, details.confirmation_number):
         return True
     if not details.time or not details.date:
