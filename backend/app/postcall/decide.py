@@ -5,8 +5,10 @@ No database and no network here, so every rule is unit-tested on its own. The jo
 
 Rules (docs/architecture.md, post-call processing):
 - Booked, Cancelled or Rescheduled count only when the agent's ``report_outcome`` says the
-  business confirmed it **and** the business's own words in the final transcript back it
-  up (a matching time, date or confirmation number). Otherwise: Needs follow-up.
+  business confirmed it **and** the business's own words back it up: the agreed time
+  together with a specific date (month and day), or the confirmation number. Lines where
+  the business refuses ("full", "sorry", "no availability", ...) are not evidence.
+  Otherwise: Needs follow-up.
 - With no ``report_outcome``, the outcome comes from Vapi's end reason. Only a clear
   "nobody answered" becomes No answer; anything else is Needs follow-up, never a guessed
   Failed.
@@ -27,7 +29,39 @@ NO_ANSWER_REASONS = frozenset({"customer-did-not-answer", "customer-busy", "voic
 
 PAUSE_CAP = "pause_cap"
 
-_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+# A business line containing any of these is a refusal or a problem, never a confirmation.
+REFUSAL_WORDS = (
+    "full",
+    "sorry",
+    "no availability",
+    "not available",
+    "unavailable",
+    "can't",
+    "cannot",
+    "can not",
+    "don't have",
+    "do not have",
+    "no openings",
+    "no tables",
+    "booked up",
+    "not possible",
+)
+
+# Profile fields that identify the user. Only these are checked for "spoken" (PO-3), so a
+# value like dietary_restrictions="None" can't match the agent saying "none".
+SPOKEN_FIELD_KEYS = frozenset(
+    {
+        "calling_name",
+        "full_name",
+        "phone",
+        "email",
+        "date_of_birth",
+        "address",
+        "insurance_carrier",
+        "insurance_member_id",
+    }
+)
+
 _MONTHS = (
     "january",
     "february",
@@ -81,77 +115,109 @@ def decide_outcome(
     return OutcomeDecision(reported, "reported, confirmed and found in the transcript")
 
 
+def is_refusal(line: str) -> bool:
+    """True if the business line refuses or reports a problem ("Sorry, 7:30 is full")."""
+    folded = line.casefold().replace("’", "'")
+    return any(_contains_token(folded, word) for word in REFUSAL_WORDS)
+
+
 def has_confirmation_evidence(details: OutcomeDetails | None, business_lines: list[str]) -> bool:
-    """True if the business said the agreed time, date or confirmation number."""
+    """True if the business, in a line that isn't a refusal, said the confirmation number,
+    or said both the agreed time and the agreed date (month and day)."""
     if details is None:
         return False
-    text = " ".join(business_lines).casefold()
-    if not text.strip():
+    lines = [line.casefold() for line in business_lines if line.strip() and not is_refusal(line)]
+    if not lines:
         return False
+    text = " ".join(lines)
     if details.confirmation_number and _contains_token(text, details.confirmation_number):
         return True
-    if details.time and any(_contains_token(text, t) for t in time_phrases(details.time)):
-        return True
-    if details.date and any(_contains_token(text, d) for d in date_phrases(details.date)):
-        return True
+    if not details.time or not details.date:
+        return False
+    said_time = mentions_time(text, details.time)
+    said_date = mentions_date(text, details.date)
+    return said_time and said_date
+
+
+def parse_time(value: str) -> tuple[int, int] | None:
+    """Read "19:30", "7:30 PM", "7:30pm", "7pm" or "7 p.m." as (hour 0-23, minute)."""
+    match = re.fullmatch(r"\s*(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?\s*", value.casefold())
+    if not match:
+        return None
+    hour, minute = int(match[1]), int(match[2] or 0)
+    meridiem = match[3]
+    if meridiem is None and match[2] is None:
+        return None  # a bare number like "7" is not a time
+    if meridiem is not None:
+        if not 1 <= hour <= 12:
+            return None
+        hour = hour % 12 + (12 if meridiem.startswith("p") else 0)
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return None
+    return hour, minute
+
+
+def mentions_time(text: str, value: str) -> bool:
+    """True if ``text`` (lowercased) says the time in ``value``: "7:30", "7:30pm",
+    "19:30", and for whole hours also "7pm", "7 p.m." or "7 o'clock". "7:30" never
+    matches inside "17:30"."""
+    parsed = parse_time(value)
+    if parsed is None:
+        return _contains_token(text, value)
+    hour, minute = parsed
+    h12 = hour % 12 or 12
+    numbers = {f"{h12}:{minute:02d}", f"{hour}:{minute:02d}"}
+    for number in numbers:
+        if re.search(rf"(?<![\d:]){re.escape(number)}(?!\d)", text):
+            return True
+    if minute == 0:
+        meridiem = "p" if hour >= 12 else "a"
+        if re.search(rf"(?<![\d:]){h12}\s?{meridiem}\.?m\b", text):
+            return True
+        if re.search(rf"(?<![\d:]){h12} o'clock", text.replace("’", "'")):
+            return True
     return False
 
 
-def time_phrases(value: str) -> list[str]:
-    """Ways a business might say a time. "19:30" gives "7:30" and "19:30"; "19:00" also
-    gives "7pm", "7 pm" and "7 o'clock". Anything else is matched as written."""
-    match = re.fullmatch(r"\s*(\d{1,2}):(\d{2})\s*", value)
-    if not match:
-        return [value.strip()] if value.strip() else []
-    hour, minute = int(match[1]), int(match[2])
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        return [value.strip()]
-    h12 = hour % 12 or 12
-    phrases = [f"{h12}:{minute:02d}", f"{hour}:{minute:02d}"]
-    if minute == 0:
-        phrases += [
-            f"{h12}pm" if hour >= 12 else f"{h12}am",
-            f"{h12} pm" if hour >= 12 else f"{h12} am",
-        ]
-        phrases.append(f"{h12} o'clock")
-    return phrases
-
-
-def date_phrases(value: str) -> list[str]:
-    """Ways a business might say a date. "2026-10-24" gives "saturday", "october 24",
-    "oct 24" and "24th". Anything else is matched as written."""
+def mentions_date(text: str, value: str) -> bool:
+    """True if ``text`` (lowercased) names the specific date in ``value`` ("2026-10-24"):
+    "october 24", "oct 24th", "24th of october" or "the 24th of october". A bare weekday
+    or ordinal is not enough, because "Saturday" or "the 24th" can refer to another date."""
     try:
         day = date.fromisoformat(value.strip())
     except ValueError:
-        return [value.strip()] if value.strip() else []
+        return _contains_token(text, value)
     month = _MONTHS[day.month - 1]
-    return [
-        _WEEKDAYS[day.weekday()],
-        f"{month} {day.day}",
-        f"{month[:3]} {day.day}",
-        f"{day.day}{_ordinal_suffix(day.day)}",
-    ]
+    months = rf"(?:{month}|{month[:3]}\.?)"
+    number = rf"{day.day}(?:st|nd|rd|th)?"
+    patterns = (
+        rf"\b{months}\s+(?:the\s+)?{number}(?!\d)",  # october 24, oct 24th
+        rf"(?<!\d){number}\s+(?:of\s+)?{months}\b",  # 24th of october, 24 october
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
 
 
 def spoken_fields(snapshot: dict[str, str], agent_lines: list[str]) -> list[str]:
-    """Profile field keys whose value the agent said out loud (PO-3), sorted.
+    """Identifying profile fields whose value the agent said out loud (PO-3), sorted.
 
-    ``snapshot`` maps field key to value (private: never log it). Phone-like values match on
-    their digits; other values match as whole words, ignoring case. Values shorter than two
-    characters are skipped, so they can't match by accident.
+    ``snapshot`` maps field key to value (private: never log it). Only keys in
+    ``SPOKEN_FIELD_KEYS`` are checked. A phone-like value matches one number the agent said
+    (compared by its last 10 digits, so "+16175550142" matches "617-555-0142"); other
+    values match as whole words, ignoring case. Values shorter than two characters are
+    skipped.
     """
     text = " ".join(agent_lines)
     folded = text.casefold()
-    digits = re.sub(r"\D", "", text)
+    said_numbers = [re.sub(r"\D", "", span) for span in re.findall(r"\+?\d[\d\s().-]*\d", text)]
     spoken = []
     for key, value in snapshot.items():
         value = value.strip()
-        if len(value) < 2:
+        if key not in SPOKEN_FIELD_KEYS or len(value) < 2:
             continue
         value_digits = re.sub(r"\D", "", value)
         if len(value_digits) >= 7 and len(value_digits) >= len(value) // 2:
-            # Compare the national number: "+16175550142" is said as "617-555-0142".
-            if value_digits[-10:] in digits:
+            national = value_digits[-10:]
+            if any(national in said for said in said_numbers):
                 spoken.append(key)
         elif _contains_token(folded, value.casefold()):
             spoken.append(key)
@@ -160,15 +226,9 @@ def spoken_fields(snapshot: dict[str, str], agent_lines: list[str]) -> list[str]
 
 def _contains_token(text: str, phrase: str) -> bool:
     """``phrase`` appears in ``text`` (both lowercased) and is not part of a longer word or
-    number, so "7:30" does not match "17:30" and "Al" does not match "Alex"."""
+    number, so "Al" does not match "Alex"."""
     phrase = phrase.strip().casefold()
     if not phrase:
         return False
     pattern = rf"(?<![\w]){re.escape(phrase)}(?![\w])"
     return re.search(pattern, text.casefold()) is not None
-
-
-def _ordinal_suffix(day: int) -> str:
-    if 11 <= day % 100 <= 13:
-        return "th"
-    return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")

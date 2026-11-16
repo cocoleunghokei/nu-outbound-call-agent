@@ -1,11 +1,13 @@
 """Post-call against the local Supabase stack: handlers, the jobs lane and what they write."""
 
 import asyncio
+import json
 import uuid
 from typing import Any
 
 import pytest
 
+from app.postcall import jobs as postcall_jobs
 from app.postcall.jobs import run_due_jobs
 from tests.calls_helpers import call_status, event_rows, make_app, outbox_rows, seed_call
 from tests.conftest import FreshCall, SupabaseEnv
@@ -53,7 +55,11 @@ def test_end_of_call_report_ends_the_call_and_queues_each_job_once(
             ("outcome", "pending"),
             ("shared_fields", "pending"),
         ]
-        assert jobs[0]["payload"] == {"ended_reason": "assistant-ended-call"}
+        assert jobs[0]["payload"] == {
+            "ended_reason": "assistant-ended-call",
+            "agent_lines": ["Hi, I'm calling for Alex Chen."],
+            "business_lines": ["Sure."],
+        }
 
     asyncio.run(scenario())
 
@@ -80,7 +86,7 @@ def test_confirmed_booking_is_booked_and_call_ended_goes_out_once(
                 client,
                 transcript_body(
                     call,
-                    "Got it, party of 2 at 7:30 Saturday. I'm Marco.",
+                    "Got it, party of 2 at 7:30 on Saturday, October 24th. I'm Marco.",
                     role="user",
                     timestamp=1794081609000,
                 ),
@@ -134,7 +140,7 @@ def test_booking_the_business_never_confirmed_needs_follow_up(supabase_env: Supa
     asyncio.run(scenario())
 
 
-def test_no_report_outcome_needs_follow_up_and_nothing_was_spoken(
+def test_no_report_outcome_needs_follow_up(
     supabase_env: SupabaseEnv,
 ) -> None:
     db = supabase_env.db_url
@@ -150,7 +156,8 @@ def test_no_report_outcome_needs_follow_up_and_nothing_was_spoken(
         assert ended_events(await event_rows(db, call)) == [
             {"outcome": "needs_follow_up", "ended_reason": "assistant-ended-call"}
         ]
-        assert await shared_rows(db, call) == []
+        # The report's own transcript has the agent saying "calling for Alex Chen".
+        assert await shared_rows(db, call) == [("calling_name", "spoken")]
 
     asyncio.run(scenario())
 
@@ -172,5 +179,108 @@ def test_outcome_already_set_is_never_overwritten(supabase_env: SupabaseEnv) -> 
 
         assert await outcome_of(db, call) == "refused_ai"
         assert ended_events(await event_rows(db, call))[0]["outcome"] == "refused_ai"
+
+    asyncio.run(scenario())
+
+
+def report_with_lines(call: FreshCall, lines: list[tuple[str, str]]) -> dict[str, Any]:
+    """The end-of-call-report fixture with its transcript replaced by ``(role, text)`` lines."""
+    body = fixture("end-of-call-report", call)
+    body["message"]["artifact"]["messages"] = [
+        {"role": role, "message": text, "time": 1794081601000 + i, "secondsFromStart": float(i)}
+        for i, (role, text) in enumerate(lines)
+    ]
+    return body
+
+
+async def insert_pending_report(db: str, call: FreshCall, args: dict[str, Any]) -> None:
+    """A report_outcome receipt still pending (its handler hasn't run yet)."""
+    await rows(
+        db,
+        "insert into public.tool_calls (call_id, tool_call_id, name, arguments, state)"
+        " values (%s, %s, 'report_outcome', %s::jsonb, 'pending') returning tool_call_id",
+        (call.call_id, f"tc-{uuid.uuid4()}", json.dumps(args)),
+    )
+
+
+def test_business_refusal_in_the_report_transcript_is_not_booked(
+    supabase_env: SupabaseEnv,
+) -> None:
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        app = make_app(db)
+        async with serve(app) as client:
+            tc = f"tc-{uuid.uuid4()}"
+            await post(client, tool_body(call, [(tc, "report_outcome", BOOKED_ARGS)]))
+            body = report_with_lines(call, [("user", "Sorry, Saturday at 7:30 is full.")])
+            await post(client, body)
+            await run_due_jobs(app.state.pool)
+
+        assert await outcome_of(db, call) == "needs_follow_up"
+
+    asyncio.run(scenario())
+
+
+def test_pending_report_and_report_transcript_are_used_as_evidence(
+    supabase_env: SupabaseEnv,
+) -> None:
+    # No transcript.final events arrived (late or lost webhooks), and the report_outcome
+    # receipt is still pending: the report's own transcript and the pending args decide.
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        await insert_pending_report(db, call, BOOKED_ARGS)
+        app = make_app(db)
+        async with serve(app) as client:
+            body = report_with_lines(
+                call,
+                [
+                    ("bot", "Hi, I'm calling on behalf of Alex. A table for 2?"),
+                    ("user", "Sure, 7:30 on October 24th works. You're booked."),
+                ],
+            )
+            await post(client, body)
+            await run_due_jobs(app.state.pool)
+
+        assert await outcome_of(db, call) == "booked"
+        assert await shared_rows(db, call) == [("calling_name", "spoken")]
+
+    asyncio.run(scenario())
+
+
+def test_outcome_job_that_keeps_failing_still_ends_the_call(
+    supabase_env: SupabaseEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def broken(*_args: Any) -> None:
+        raise RuntimeError("persistent failure")
+
+    monkeypatch.setattr(postcall_jobs, "run_outcome_job", broken)
+
+    async def scenario() -> None:
+        app = make_app(db)
+        async with serve(app) as client:
+            await post(client, fixture("end-of-call-report", call))
+            for _ in range(postcall_jobs.MAX_ATTEMPTS):
+                await rows(
+                    db,
+                    "update public.outbox set not_before = now()"
+                    " where call_id = %s and lane = 'jobs' returning id",
+                    (call.call_id,),
+                )
+                await run_due_jobs(app.state.pool)
+
+        jobs = {r["kind"]: r for r in await outbox_rows(db, call) if r["lane"] == "jobs"}
+        assert jobs["outcome"]["state"] == "failed"
+        assert jobs["outcome"]["attempts"] == postcall_jobs.MAX_ATTEMPTS
+        assert await outcome_of(db, call) == "needs_follow_up"
+        assert ended_events(await event_rows(db, call)) == [
+            {"outcome": "needs_follow_up", "ended_reason": postcall_jobs.GAVE_UP}
+        ]
 
     asyncio.run(scenario())

@@ -9,8 +9,13 @@ overwrites the other (docs/architecture.md, post-call processing):
 - ``shared_fields`` (PO-3): mark each profile field the agent said out loud as ``spoken``
   and append ``field.shared``.
 
+Both read the ``transcript.final`` events together with the transcript the report carried
+(``agent_lines`` / ``business_lines`` in the job payload).
+
 A job that raises is retried with backoff (2, 4, 8, ... up to 60 s) and marked ``failed``
-after ``MAX_ATTEMPTS``. Every write is guarded or deduplicated, so a rerun changes nothing.
+after ``MAX_ATTEMPTS``. When the ``outcome`` job gives up, the call still gets
+``needs_follow_up`` and ``call.ended`` in the same transaction, so it never stays without
+an outcome. Every write is guarded or deduplicated, so a rerun changes nothing.
 The summary job (PO-2, LLM) and the call-ended push (PO-5) are not here yet.
 """
 
@@ -37,6 +42,7 @@ POLL_EVERY_S = 2.0
 MAX_ATTEMPTS = 5
 MAX_JOBS_PER_PASS = 20
 CALL_ENDED_DEDUP = "call.ended"
+GAVE_UP = "post-call processing failed"
 
 
 async def postcall_worker(ctx: AppContext) -> None:
@@ -72,7 +78,7 @@ async def run_due_jobs(pool: AsyncConnectionPool[Any]) -> int:
             continue  # the call was deleted, and its outbox rows with it
         except Exception:
             logger.exception("postcall: job %s for call %s failed; will retry", row_id, call_id)
-            await _retry_later(pool, row_id)
+            await _retry_later(pool, row_id, call_id)
     return finished
 
 
@@ -93,7 +99,7 @@ async def _run_job(conn: AsyncConnection[Any], row_id: int, call_id: UUID) -> bo
     if kind == JOB_OUTCOME:
         await run_outcome_job(conn, call_id, payload)
     elif kind == JOB_SHARED_FIELDS:
-        await run_shared_fields_job(conn, call_id)
+        await run_shared_fields_job(conn, call_id, payload)
     else:
         logger.warning("postcall: unknown job kind %r on row %s", kind, row_id)
         await conn.execute("update public.outbox set state = 'failed' where id = %s", (row_id,))
@@ -105,16 +111,30 @@ async def _run_job(conn: AsyncConnection[Any], row_id: int, call_id: UUID) -> bo
     return True
 
 
-async def _retry_later(pool: AsyncConnectionPool[Any], row_id: int) -> None:
-    """Count the failed attempt and push the row back, or give up after MAX_ATTEMPTS."""
+async def _retry_later(pool: AsyncConnectionPool[Any], row_id: int, call_id: UUID) -> None:
+    """Count the failed attempt and push the row back, or give up after MAX_ATTEMPTS.
+
+    Giving up on the ``outcome`` job still ends the call properly: ``needs_follow_up`` and
+    ``call.ended`` are written in the same transaction, with the same guards as a success.
+    """
     async with pool.connection() as conn, conn.transaction():
-        await conn.execute(
-            "update public.outbox set attempts = attempts + 1,"
-            " state = case when attempts + 1 >= %s then 'failed' else state end,"
-            " not_before = now() + make_interval(secs => least(60, power(2, attempts + 1)))"
-            " where id = %s and state = 'pending'",
-            (MAX_ATTEMPTS, row_id),
-        )
+        await lock_call(conn, call_id)
+        row = await (
+            await conn.execute(
+                "update public.outbox set attempts = attempts + 1,"
+                " state = case when attempts + 1 >= %s then 'failed' else state end,"
+                " not_before = now() + make_interval(secs => least(60, power(2, attempts + 1)))"
+                " where id = %s and state = 'pending' returning kind, state",
+                (MAX_ATTEMPTS, row_id),
+            )
+        ).fetchone()
+        if row is not None and row[0] == JOB_OUTCOME and row[1] == "failed":
+            logger.error("postcall: outcome job for call %s failed for good", call_id)
+            try:
+                async with conn.transaction():  # savepoint: the attempt count must stick
+                    await _store_outcome(conn, call_id, "needs_follow_up", GAVE_UP)
+            except Exception:
+                logger.exception("postcall: could not store the fallback outcome for %s", call_id)
 
 
 async def run_outcome_job(
@@ -125,36 +145,42 @@ async def run_outcome_job(
     vapi_reason = raw_reason if isinstance(raw_reason, str) else ""
     report = await latest_report(conn, call_id)
     pause_capped = await was_pause_capped(conn, call_id)
-    decision = decide_outcome(
-        report,
-        vapi_reason,
-        await transcript_lines(conn, call_id, "business"),
-        pause_capped=pause_capped,
-    )
-    # Guarded: once set, the outcome never changes (one outcome per call).
-    await conn.execute(
-        "update public.calls set outcome = %s where id = %s and outcome is null",
-        (decision.outcome, call_id),
-    )
-    stored = await (
-        await conn.execute("select outcome from public.calls where id = %s", (call_id,))
-    ).fetchone()
-    outcome = stored[0] if stored is not None else decision.outcome
+    business = await transcript_lines(conn, call_id, "business") + _lines(payload, "business")
+    decision = decide_outcome(report, vapi_reason, business, pause_capped=pause_capped)
     ended_reason = PAUSE_CAP if pause_capped and report is None else (vapi_reason or "unknown")
+    outcome = await _store_outcome(conn, call_id, decision.outcome, ended_reason)
+    logger.info("postcall: call %s outcome %s (%s)", call_id, outcome, decision.reason)
+
+
+async def _store_outcome(
+    conn: AsyncConnection[Any], call_id: UUID, outcome: str, ended_reason: str
+) -> str:
+    """Write the outcome unless one is already set (one outcome per call), then append
+    ``call.ended`` with the stored one, at most once per call. Returns the stored outcome."""
+    row = await (
+        await conn.execute(
+            "update public.calls set outcome = coalesce(outcome, %s) where id = %s"
+            " returning outcome",
+            (outcome, call_id),
+        )
+    ).fetchone()
+    stored = str(row[0]) if row is not None and row[0] is not None else outcome
     await append_event(
         conn,
         call_id=call_id,
         type="call.ended",
         source="backend",
-        payload={"outcome": outcome, "ended_reason": ended_reason},
+        payload={"outcome": stored, "ended_reason": ended_reason},
         occurred_at=datetime.now(UTC),
         dedup_key=CALL_ENDED_DEDUP,
     )
-    logger.info("postcall: call %s outcome %s (%s)", call_id, outcome, decision.reason)
+    return stored
 
 
-async def run_shared_fields_job(conn: AsyncConnection[Any], call_id: UUID) -> None:
-    """PO-3: mark the profile fields the agent said out loud as ``spoken``."""
+async def run_shared_fields_job(
+    conn: AsyncConnection[Any], call_id: UUID, payload: dict[str, Any]
+) -> None:
+    """PO-3: mark the identifying profile fields the agent said out loud as ``spoken``."""
     snapshot = {
         key: value
         for key, value in await (
@@ -164,7 +190,8 @@ async def run_shared_fields_job(conn: AsyncConnection[Any], call_id: UUID) -> No
             )
         ).fetchall()
     }
-    for key in spoken_fields(snapshot, await transcript_lines(conn, call_id, "agent")):
+    agent = await transcript_lines(conn, call_id, "agent") + _lines(payload, "agent")
+    for key in spoken_fields(snapshot, agent):
         await conn.execute(
             "insert into public.shared_fields (call_id, field_key, state, spoken_at)"
             " values (%s, %s, 'spoken', now())"
@@ -184,12 +211,22 @@ async def run_shared_fields_job(conn: AsyncConnection[Any], call_id: UUID) -> No
         )
 
 
+def _lines(payload: dict[str, Any], role: str) -> list[str]:
+    """The report's transcript lines for ``role`` from the job payload."""
+    lines = payload.get(f"{role}_lines")
+    return [line for line in lines if isinstance(line, str)] if isinstance(lines, list) else []
+
+
 async def latest_report(conn: AsyncConnection[Any], call_id: UUID) -> ReportOutcomeArgs | None:
-    """The agent's most recent handled ``report_outcome``, or None if there is none."""
+    """The agent's most recent ``report_outcome``, or None if there is none.
+
+    A receipt still ``pending`` counts too: the ingress has already validated its
+    arguments, and only the acknowledgement is outstanding (for example during a deploy).
+    """
     row = await (
         await conn.execute(
             "select arguments from public.tool_calls"
-            " where call_id = %s and name = 'report_outcome' and state = 'handled'"
+            " where call_id = %s and name = 'report_outcome' and state in ('handled', 'pending')"
             " order by source_ts desc nulls last, created_at desc limit 1",
             (call_id,),
         )
@@ -204,21 +241,16 @@ async def latest_report(conn: AsyncConnection[Any], call_id: UUID) -> ReportOutc
 
 
 async def transcript_lines(conn: AsyncConnection[Any], call_id: UUID, role: str) -> list[str]:
-    """The text of every final transcript line spoken by ``role``, in call order."""
+    """The text of every final transcript line spoken by ``role``, in arrival order."""
     rows = await (
         await conn.execute(
-            "select payload from public.call_events"
-            " where call_id = %s and type = 'transcript.final' order by seq",
-            (call_id,),
+            "select payload->>'text' from public.call_events"
+            " where call_id = %s and type = 'transcript.final' and payload->>'role' = %s"
+            " order by seq",
+            (call_id, role),
         )
     ).fetchall()
-    lines = []
-    for (payload,) in rows:
-        if isinstance(payload, dict) and payload.get("role") == role:
-            text = payload.get("text")
-            if isinstance(text, str) and text.strip():
-                lines.append(text)
-    return lines
+    return [text for (text,) in rows if isinstance(text, str) and text.strip()]
 
 
 async def was_pause_capped(conn: AsyncConnection[Any], call_id: UUID) -> bool:

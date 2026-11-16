@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 
 from app.calls_lock import end_call_transition
 from app.webhooks.bind import BoundCall, message_of
+from app.webhooks.normalise import ROLE_MAP
 from app.webhooks.registry import ToolCallContext
 
 NOTED = "Noted. You can say goodbye and end the call."
@@ -39,11 +40,34 @@ async def handle_end_of_call_report(
     Runs again on every redelivery: the end transition is a no-op once the call has ended,
     and each job is queued at most once per call.
     """
-    reason = message_of(body).get("endedReason")
+    message = message_of(body)
+    reason = message.get("endedReason")
     ended_reason = reason.strip() if isinstance(reason, str) else ""
     await end_call_transition(conn, call.call_id, reason="end-of-call-report", source="vapi")
+    payload = {"ended_reason": ended_reason, **report_lines(message)}
     for kind in POSTCALL_JOBS:
-        await queue_job(conn, call.call_id, kind, {"ended_reason": ended_reason})
+        await queue_job(conn, call.call_id, kind, payload)
+
+
+def report_lines(message: dict[str, Any]) -> dict[str, list[str]]:
+    """The full transcript from the report (``artifact.messages``), split by speaker.
+
+    The jobs use it together with the ``transcript.final`` events, so a transcript webhook
+    that arrives late or not at all doesn't change the outcome. Roles use the ingress's
+    mapping (bot/assistant -> agent, user/customer -> business); others are left out.
+    """
+    artifact = message.get("artifact")
+    entries = artifact.get("messages") if isinstance(artifact, dict) else None
+    lines: dict[str, list[str]] = {"agent_lines": [], "business_lines": []}
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        vapi_role = entry.get("role")
+        role = ROLE_MAP.get(vapi_role) if isinstance(vapi_role, str) else None
+        text = entry.get("message")
+        if role is not None and isinstance(text, str) and text.strip():
+            lines[f"{role}_lines"].append(text.strip())
+    return lines
 
 
 async def queue_job(
