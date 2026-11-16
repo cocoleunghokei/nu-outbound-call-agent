@@ -207,13 +207,23 @@ async def _transcript(conn: AsyncConnection[Any], call_id: uuid.UUID) -> list[Tr
         role, text = payload.get("role"), payload.get("text")
         if not isinstance(role, str) or not isinstance(text, str):
             continue
-        started = payload.get("source_start_ts")
         lines.append(
             TranscriptLineOut(
                 seq=seq,
                 role=role,
                 text=text,
-                started_at=datetime.fromisoformat(started) if isinstance(started, str) else None,
+                started_at=parse_started(payload.get("source_start_ts")),
             )
         )
     return lines
+
+
+def parse_started(value: object) -> datetime | None:
+    """A line's start time, or None if it is missing or unreadable. One bad row keeps its
+    text (the transcript stays complete) instead of failing the whole result with a 500."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None

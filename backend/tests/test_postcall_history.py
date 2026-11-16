@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.postcall.history import parse_started
 from app.postcall.jobs import run_due_jobs
 from tests.calls_helpers import auth_headers, make_app, seed_call
 from tests.conftest import SupabaseEnv
@@ -32,6 +33,13 @@ def test_history_needs_a_signed_in_user() -> None:
     with TestClient(create_app(make_settings())) as client:
         assert client.get("/calls").status_code == 401
         assert client.get(f"/calls/{uuid.uuid4()}/result").status_code == 401
+
+
+def test_unreadable_start_time_is_dropped_not_a_500() -> None:
+    assert parse_started("2026-11-09T18:00:00+00:00") is not None
+    assert parse_started("not a time") is None
+    assert parse_started(None) is None
+    assert parse_started(1794081601000) is None
 
 
 @pytest.mark.db
