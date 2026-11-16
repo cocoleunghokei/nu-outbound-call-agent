@@ -28,6 +28,12 @@ export interface RealCall {
   sendCommand: SendCallCommand
   /** A plain-language problem to show above the call, or null. */
   problem: string | null
+  /**
+   * The highest `seq` in the first load of the call's events (0 if there were none),
+   * or null until that load finishes. Events up to it happened before the page opened,
+   * so the call-ended notification (PO-5) skips a call that had already ended.
+   */
+  historicalUpTo: number | null
 }
 
 async function loadClient(): Promise<SupabaseClient> {
@@ -45,6 +51,7 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
   const [summary, setSummary] = useState<LiveCallSummary | null>(null)
   const [events, setEvents] = useState<CallEvent[]>([])
   const [problem, setProblem] = useState<string | null>(null)
+  const [historicalUpTo, setHistoricalUpTo] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -75,6 +82,10 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
         if (cancelled) return
         if (error) setProblem('Couldn’t load the call. It may not exist, or you may be signed out.')
         else take(data ?? [])
+        // Only the first load marks history; reloads after a reconnect don't move it.
+        // A failed load leaves nothing loaded, so later events count as live.
+        const loaded = (error ? [] : (data ?? [])).map(toCallEvent).filter((e): e is CallEvent => e !== null)
+        setHistoricalUpTo((first) => first ?? loaded.reduce((max, e) => Math.max(max, e.seq), 0))
       }
 
       // Subscribe first, then load, so nothing between the two is missed.
@@ -130,5 +141,5 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
     [apiBase],
   )
 
-  return { summary, events, sendReply, sendCommand, problem }
+  return { summary, events, sendReply, sendCommand, problem, historicalUpTo }
 }
