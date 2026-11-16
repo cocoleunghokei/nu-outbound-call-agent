@@ -29,12 +29,15 @@ export interface TranscriptRow {
 }
 
 /**
- * Turns stored transcript lines into display rows: in call order (by `seq`),
- * with a speaker name and a clock relative to the first timed line.
- * Lines with only whitespace are left out.
+ * Turns stored transcript lines into display rows, with a speaker name and a
+ * clock relative to the first timed line. Lines with only whitespace are left out.
+ *
+ * Keeps the order it is given: the backend returns lines in spoken order
+ * (`occurred_at`, then `seq`). `seq` is arrival order, so sorting by it would put
+ * a reply that arrived early before the question it answers.
  */
 export function transcriptRows(lines: readonly TranscriptLine[], businessName: string): TranscriptRow[] {
-  const ordered = [...lines].filter((line) => line.text.trim() !== '').sort((a, b) => a.seq - b.seq)
+  const ordered = lines.filter((line) => line.text.trim() !== '')
   const start = firstTime(ordered)
 
   return ordered.map((line) => {

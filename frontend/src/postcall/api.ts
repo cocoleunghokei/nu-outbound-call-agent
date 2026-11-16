@@ -6,7 +6,7 @@
  * and a malformed row or field is dropped instead of crashing the screen.
  * The backend's shapes are in backend/app/postcall/history.py.
  */
-import { apiBase } from '../live-call/backend'
+import { apiBase, isCallId } from '../live-call/backend'
 import type { CallHistoryItem } from '../history/types'
 import type { TranscriptLine } from '../result/transcript'
 import type { AgentDecision, CallResult, OutcomeDetails, SharedField } from '../result/types'
@@ -131,6 +131,8 @@ export function toCallResult(body: unknown): CallResult | null {
 /** What a load gives the screen: the data, or a plain-language problem. */
 export type Loaded<T> = { ok: true; data: T } | { ok: false; message: string }
 
+const NOT_FOUND: Loaded<never> = { ok: false, message: 'That call wasn’t found.' }
+
 /** Turns an HTTP answer into `Loaded`, using `check` on a 200 body. */
 export function loadedFrom<T>(status: number, body: unknown, check: (body: unknown) => T | null): Loaded<T> {
   if (status === 200) {
@@ -138,7 +140,7 @@ export function loadedFrom<T>(status: number, body: unknown, check: (body: unkno
     return data === null ? { ok: false, message: 'The server sent something unexpected. Try again.' } : { ok: true, data }
   }
   if (status === 401) return { ok: false, message: 'You were signed out. Sign in and try again.' }
-  if (status === 404) return { ok: false, message: 'That call wasn’t found.' }
+  if (status === 404) return NOT_FOUND
   return { ok: false, message: 'Could not load your calls. Try again.' }
 }
 
@@ -158,8 +160,12 @@ export async function fetchHistory(base: string, token: string): Promise<Loaded<
   }
 }
 
-/** `GET /calls/{call_id}/result`. Network failures become a problem message. */
+/**
+ * `GET /calls/{call_id}/result`. Network failures become a problem message. The id comes
+ * from the address (`?open=`), so anything that isn't a UUID is "not found" without a request.
+ */
 export async function fetchCallResult(base: string, token: string, callId: string): Promise<Loaded<CallResult>> {
+  if (!isCallId(callId)) return NOT_FOUND
   try {
     const { status, body } = await get(base, `/calls/${encodeURIComponent(callId)}/result`, token)
     return loadedFrom(status, body, toCallResult)

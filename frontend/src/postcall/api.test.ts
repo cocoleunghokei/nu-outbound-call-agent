@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchHistory, historySource, loadedFrom, toCallResult, toHistory, toHistoryItem } from './api'
+import { fetchCallResult, fetchHistory, historySource, loadedFrom, toCallResult, toHistory, toHistoryItem } from './api'
 
 const CALL = {
   id: '7d4c1f0e-1a2b-4c3d-8e9f-000000000002',
@@ -146,6 +146,32 @@ describe('fetchHistory', () => {
     expect(await fetchHistory('http://api.test', 'tok')).toEqual({
       ok: false,
       message: 'No connection. Check your internet and try again.',
+    })
+  })
+})
+
+describe('fetchCallResult', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('treats an id that is not a UUID as not found, without a request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    for (const id of ['__proto__', 'constructor', '../me', '']) {
+      expect(await fetchCallResult('http://api.test', 'tok', id)).toEqual({
+        ok: false,
+        message: 'That call wasn’t found.',
+      })
+    }
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('fetches a result for a UUID', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ call: CALL }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const loaded = await fetchCallResult('http://api.test', 'tok', CALL.id)
+    expect(loaded.ok && loaded.data.call.id).toBe(CALL.id)
+    expect(fetchMock).toHaveBeenCalledWith(`http://api.test/calls/${CALL.id}/result`, {
+      headers: { Authorization: 'Bearer tok' },
     })
   })
 })
