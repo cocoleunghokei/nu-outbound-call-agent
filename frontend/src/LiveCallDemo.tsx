@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { LiveCall } from './live-call/LiveCall'
+import { LOADING_CALL_NAME } from './postcall/notification'
 import { liveCallMode } from './live-call/backend'
 import { DR_LEE_SCRIPT, MOCK_CALL_ID, mockSummary, useMockCall } from './live-call/mockCall'
 import { useRealCall } from './live-call/useRealCall'
@@ -20,13 +21,13 @@ function MockLiveCall() {
 
 /** A real call, followed through Supabase and controlled through the backend API. */
 function RealLiveCall({ callId, apiBase }: { callId: string; apiBase: string }) {
-  const { summary, events, sendReply, sendCommand, problem } = useRealCall(callId, apiBase)
+  const { summary, events, sendReply, sendCommand, problem, historicalUpTo } = useRealCall(callId, apiBase)
   return (
     <LiveCall
       summary={
         summary ?? {
           callId,
-          businessName: 'Loading call…',
+          businessName: LOADING_CALL_NAME,
           phoneE164: '',
           goal: '',
           createdAt: new Date().toISOString(),
@@ -37,6 +38,7 @@ function RealLiveCall({ callId, apiBase }: { callId: string; apiBase: string }) 
       sendReply={sendReply}
       sendCommand={sendCommand}
       notice={problem}
+      historicalUpTo={historicalUpTo}
     />
   )
 }

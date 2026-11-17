@@ -9,15 +9,17 @@ const line = (seq: number, role: TranscriptLine['role'], text: string, startedAt
 })
 
 describe('transcriptRows', () => {
-  it('orders lines by seq, not by array order', () => {
+  it('keeps the spoken order from the server, even when arrival order (seq) differs', () => {
+    // The question was spoken first but its webhook arrived second (seq 2).
     const rows = transcriptRows(
       [
-        line(2, 'agent', 'Hi, calling for Alex.', '2026-11-09T18:00:03Z'),
-        line(1, 'business', 'Juniper Ramen.', '2026-11-09T18:00:00Z'),
+        line(2, 'agent', 'Do you have a table for 2?', '2026-11-09T18:00:01Z'),
+        line(1, 'business', 'Yes, we have a table.', '2026-11-09T18:00:09Z'),
       ],
       'Juniper Ramen',
     )
-    expect(rows.map((r) => r.seq)).toEqual([1, 2])
+    expect(rows.map((r) => r.text)).toEqual(['Do you have a table for 2?', 'Yes, we have a table.'])
+    expect(rows.map((r) => r.clock)).toEqual(['00:00', '00:08'])
   })
 
   it('shows each line’s time since the first timed line', () => {
@@ -80,6 +82,7 @@ describe('speakerName', () => {
   })
 
   it('shows "Unknown" for a role this version does not know', () => {
+    expect(speakerName('unknown', 'Shop')).toBe('Unknown')
     expect(speakerName('operator' as TranscriptLine['role'], 'Shop')).toBe('Unknown')
   })
 })

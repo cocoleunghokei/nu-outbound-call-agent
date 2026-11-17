@@ -6,6 +6,8 @@ import { PingCard } from './PingCard'
 import type { SendPingReply } from './ping'
 import { STATUS_STEPS, deriveLiveCall, statusStep, type FeedItem } from './state'
 import type { CallEvent, LiveCallSummary } from './types'
+import { LOADING_CALL_NAME } from '../postcall/notification'
+import { endedHistory, useCallEndedNotification } from '../postcall/useCallEndedNotification'
 import './LiveCall.css'
 
 interface LiveCallProps {
@@ -18,6 +20,11 @@ interface LiveCallProps {
   sendCommand: SendCallCommand
   /** A connection problem to show above the call (real backend only). */
   notice?: string | null
+  /**
+   * Real backend only: the last `seq` of the first event load, or null while it loads
+   * (see `useRealCall`). Omitted for the mock call, whose events are all live.
+   */
+  historicalUpTo?: number | null
 }
 
 /**
@@ -25,10 +32,18 @@ interface LiveCallProps {
  * live feed of transcript and decisions (DC-3, DC-4, DC-5), the ping card
  * (DC-8) and Pause / Resume / End (DC-11).
  */
-export function LiveCall({ summary, events, sendReply, sendCommand, notice }: LiveCallProps) {
+export function LiveCall({ summary, events, sendReply, sendCommand, notice, historicalUpTo }: LiveCallProps) {
   const view = useMemo(() => deriveLiveCall(events), [events])
   const side = useRef<HTMLElement>(null)
   const openPingId = view.ping?.state === 'open' ? view.ping.ping.ping_id : null
+
+  // Post-call notification (PO-5, Harper): once, when this tab sees the call end.
+  useCallEndedNotification(
+    summary.callId,
+    summary.businessName === LOADING_CALL_NAME ? null : summary.businessName,
+    view.ended,
+    endedHistory(events.find((e) => e.type === 'call.ended')?.seq, historicalUpTo),
+  )
 
   // On a phone the card sits below the transcript, so bring a new question into view.
   useEffect(() => {
