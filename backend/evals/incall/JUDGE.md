@@ -212,11 +212,15 @@ apart from what the business and DeepSeek said. The runner builds it from `runs.
 
 **What the judge writes for each check** (one line per check in `judgments.jsonl`):
 
+`check` is the `id` attribute of the `<check>` in the judge input (for example `C4-03.6`, `G1`,
+`D5-true`), never its text: the report matches judgments to checks by that id. Write a line only
+for checks listed in `<checks>`, and append to `judgments.jsonl` in the same results folder.
+
 ```json
 {
   "case": "C4-03",
   "run": 2,
-  "check": "Ping has what's needed to decide",
+  "check": "C4-03.6",
   "level": "soft",
   "verdict": "pass",
   "evidence": "reason: \"They offered Thu 4pm. You said before 3pm.\"",
