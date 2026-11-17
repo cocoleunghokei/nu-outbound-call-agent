@@ -39,7 +39,7 @@ def main() -> int:
         if pending:
             print(f"{item}: {pending} cases ready, not built yet")
     wrong_booked = sum(report.wrong_booked for report in reports)
-    print(f"wrong 'booked' outcomes: {wrong_booked} (target 0)")
+    print(f"wrong booked/cancelled/rescheduled outcomes: {wrong_booked} (target 0)")
     times = [report.outcome_ms for report in reports]
     print(
         f"outcome decision time: P50 {percentile(times, 0.5):.3f} ms,"

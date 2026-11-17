@@ -733,6 +733,10 @@
         [
           "agent",
           "That's fine, go ahead."
+        ],
+        [
+          "business",
+          "Great, you're all set for 7:30 on October 24th, confirmation number 4417."
         ]
       ],
       "events": [
@@ -772,6 +776,10 @@
         [
           "agent",
           "Alex says that's fine."
+        ],
+        [
+          "business",
+          "Great, you're all set for 7:30 on October 24th, confirmation number 4417."
         ]
       ],
       "events": [

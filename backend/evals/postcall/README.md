@@ -35,7 +35,11 @@ The profile at the top is the fake user whose details the agent might say.
 
 - **Accuracy**: each item above, pass or fail per case.
 - **Latency**: the report prints P50 and P95 of the outcome decision. That is the rule only. The end-to-end time from the call ending to `call.ended` reaching the browser is measured in the integration test.
-- **Guardrails**: wrong "booked" outcomes and item 13 breaches must be 0, not a percentage.
+- **Guardrails**: wrong "booked", "cancelled" or "rescheduled" outcomes and item 13 breaches must be 0, not a percentage.
+
+## Known gap
+
+An offer with a date and time still reads as a confirmation: `decide.py` takes "We need a $20 deposit to hold 7:30 on October 24th." alone as booked. So the deposit cases end with a real confirmation from the business. Add a bare-offer case expecting `needs_follow_up` together with the fix in `decide.py`.
 
 ## Adding a case
 

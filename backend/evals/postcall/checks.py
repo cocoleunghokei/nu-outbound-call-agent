@@ -4,7 +4,7 @@
 Each case in ``cases.json`` is one ended call. The checks follow the AI evaluation scope:
 
 - item 10, outcome (PO-1): ``decide.decide_outcome`` must give ``expect.outcome``. A wrong
-  "booked" is the worst error and is counted on its own.
+  "booked" (or "cancelled" / "rescheduled") is the worst error and is counted on its own.
 - item 12, what was shared (PO-3): ``decide.spoken_fields`` must give exactly
   ``expect.spoken``. A missed field breaks the trust promise; an extra one alarms the user.
 - item 11, summary (PO-2) and item 13, the money guardrail: not built yet. Their
@@ -20,11 +20,17 @@ from pathlib import Path
 from typing import Any, Literal
 
 from app.contracts.generated import ReportOutcomeArgs
-from app.postcall.decide import decide_outcome, spoken_fields
+from app.postcall.decide import NEEDS_EVIDENCE, decide_outcome, spoken_fields
 
 CASES_PATH = Path(__file__).with_name("cases.json")
 
 Status = Literal["pass", "fail", "not_built"]
+
+CASE_KEYS = frozenset(
+    {"id", "about", "report", "ended_reason", "pause_capped", "transcript", "events", "expect"}
+)
+EXPECT_KEYS = frozenset({"outcome", "spoken", "summary", "guardrail_breach"})
+ROLES = frozenset({"agent", "business"})
 
 
 @dataclass(frozen=True)
@@ -56,6 +62,7 @@ class CaseReport:
     case_id: str
     results: list[ItemResult] = field(default_factory=list)
     outcome_ms: float = 0.0
+    # A wrong outcome that claims something happened (booked, cancelled or rescheduled).
     wrong_booked: bool = False
 
 
@@ -65,13 +72,16 @@ def load_cases() -> tuple[dict[str, str], list[PostcallCase]]:
     profile = {p["key"]: p["value"] for p in data["profile"]}
     cases = []
     for raw in data["cases"]:
+        _check_keys(raw)
         transcript = raw.get("transcript", [])
         cases.append(
             PostcallCase(
                 id=raw["id"],
                 about=raw.get("about", ""),
                 report=(
-                    ReportOutcomeArgs.model_validate(raw["report"]) if raw.get("report") else None
+                    ReportOutcomeArgs.model_validate(raw["report"])
+                    if raw.get("report") is not None
+                    else None
                 ),
                 ended_reason=raw.get("ended_reason", ""),
                 pause_capped=bool(raw.get("pause_capped", False)),
@@ -82,6 +92,20 @@ def load_cases() -> tuple[dict[str, str], list[PostcallCase]]:
             )
         )
     return profile, cases
+
+
+def _check_keys(raw: dict[str, Any]) -> None:
+    """Reject a typo in a case, so it can't pass by quietly testing nothing."""
+    case_id = raw.get("id", "?")
+    unknown = set(raw) - CASE_KEYS
+    if unknown:
+        raise ValueError(f"case {case_id}: unknown keys {sorted(unknown)}")
+    unknown = set(raw["expect"]) - EXPECT_KEYS
+    if unknown:
+        raise ValueError(f"case {case_id}: unknown expect keys {sorted(unknown)}")
+    roles = {role for role, _ in raw.get("transcript", [])}
+    if not roles <= ROLES:
+        raise ValueError(f"case {case_id}: unknown transcript roles {sorted(roles - ROLES)}")
 
 
 def evaluate(case: PostcallCase, profile: dict[str, str]) -> CaseReport:
@@ -97,7 +121,7 @@ def evaluate(case: PostcallCase, profile: dict[str, str]) -> CaseReport:
     if decision.outcome == expected:
         report.results.append(ItemResult("10 outcome", "pass", decision.outcome))
     else:
-        report.wrong_booked = decision.outcome == "booked"
+        report.wrong_booked = decision.outcome in NEEDS_EVIDENCE
         report.results.append(
             ItemResult(
                 "10 outcome",
