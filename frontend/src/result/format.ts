@@ -1,5 +1,13 @@
 import type { DecisionAction, DisclosureState, OutcomeDetails } from './types'
 
+/**
+ * `labels[key]` if `key` is one of the map's own keys, else undefined. Keys come from
+ * the server, so "__proto__" or "constructor" must not reach Object.prototype.
+ */
+function ownLabel(labels: Record<string, string>, key: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(labels, key) ? labels[key] : undefined
+}
+
 const ACTION_LABELS: Record<string, string> = {
   accept: 'Accepted',
   counter: 'Countered',
@@ -11,25 +19,29 @@ const ACTION_LABELS: Record<string, string> = {
 
 /** Short label for a decision's action. Unknown actions show "Acted". */
 export function actionLabel(action: DecisionAction): string {
-  return ACTION_LABELS[action] ?? 'Acted'
+  return ownLabel(ACTION_LABELS, action) ?? 'Acted'
 }
 
+/**
+ * Profile and template field keys, as listed in docs/template-format.md (#35).
+ * The profile key list and the insurance key names are still to be confirmed by Steve.
+ */
 const FIELD_LABELS: Record<string, string> = {
-  name: 'Full name',
+  full_name: 'Full name',
   calling_name: 'Calling name',
   phone: 'Phone',
   email: 'Email',
-  dob: 'Date of birth',
+  date_of_birth: 'Date of birth',
   address: 'Home address',
-  insurance: 'Insurance',
-  provider: 'Doctor',
+  insurance_carrier: 'Insurance carrier',
+  insurance_member_id: 'Insurance member ID',
+  provider_name: 'Doctor',
   party_size: 'Party size',
-  dietary: 'Dietary needs',
 }
 
 /** Readable name for a profile field key. Unknown keys are shown as written, with underscores as spaces. */
 export function fieldLabel(fieldKey: string): string {
-  return FIELD_LABELS[fieldKey] ?? fieldKey.replace(/_/g, ' ')
+  return ownLabel(FIELD_LABELS, fieldKey) ?? fieldKey.replace(/_/g, ' ')
 }
 
 const STATE_LABELS: Record<string, string> = {
@@ -40,7 +52,7 @@ const STATE_LABELS: Record<string, string> = {
 
 /** What happened to a shared field, in plain words. */
 export function disclosureLabel(state: DisclosureState): string {
-  return STATE_LABELS[state] ?? 'Unknown'
+  return ownLabel(STATE_LABELS, state) ?? 'Unknown'
 }
 
 const dateFormat = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' })

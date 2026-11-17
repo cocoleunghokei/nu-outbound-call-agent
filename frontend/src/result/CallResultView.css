@@ -157,3 +157,68 @@
   color: var(--cr-muted);
   text-align: right;
 }
+
+/* Transcript (PO-4) */
+.cr-transcript summary {
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.cr-transcript summary:focus-visible {
+  outline: 2px solid var(--cr-brand);
+  outline-offset: 2px;
+}
+
+.cr-lines {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cr-line {
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: var(--cr-surface-2);
+  font-size: 14px;
+}
+
+.cr-line-agent {
+  align-self: flex-end;
+  background: #e8f0ff;
+}
+
+.cr-line-user {
+  align-self: flex-end;
+  background: var(--cr-warn-soft);
+}
+
+.cr-who {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--cr-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cr-clock {
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.cr-said {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.cr-note {
+  margin: 10px 0 0;
+  color: var(--cr-muted);
+  font-size: 12px;
+}

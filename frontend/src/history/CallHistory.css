@@ -109,6 +109,16 @@
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
+
+  /* Own colours, so the badge also works outside .ch (e.g. on the result page) */
+  --ch-muted: #6b7280;
+  --ch-surface-2: #f1f4f9;
+  --ch-ok: #0e9f6e;
+  --ch-ok-soft: #e2f6ee;
+  --ch-warn: #c26a00;
+  --ch-warn-soft: #fff3df;
+  --ch-bad: #dc2626;
+  --ch-bad-soft: #fdecec;
 }
 
 .ch-badge::before {
