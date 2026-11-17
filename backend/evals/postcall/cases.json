@@ -332,7 +332,7 @@
     },
     {
       "id": "am_pm_time",
-      "about": "The business says the time with pm, and the date as 'Oct 24th'. The agent reports 24-hour time, as the contract requires.",
+      "about": "The business says the time with pm, and the date as 'Oct 24th'. The agent reports 24-hour time.",
       "report": {
         "outcome": "booked",
         "business_confirmed": true,
@@ -822,6 +822,186 @@
         "outcome": "needs_follow_up",
         "spoken": [],
         "guardrail_breach": false
+      }
+    },
+    {
+      "id": "readback_then_refusal",
+      "about": "Third review: the business reads the slot back, then refuses it on its next line.",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-10-24",
+          "time": "19:30"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm calling on behalf of Alex. A table for 2 on October 24 at 7:30pm?"
+        ],
+        [
+          "business",
+          "So October 24 at 7:30."
+        ],
+        [
+          "business",
+          "No, that doesn't work, we have no space."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "correction_in_same_line",
+      "about": "Third review: the business confirms, then corrects itself to another date.",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-10-24",
+          "time": "19:30"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm calling on behalf of Alex. A table for 2 on October 24 at 7:30pm?"
+        ],
+        [
+          "business",
+          "Booked October 24 at 7:30. Wait, no, October 25."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "number_inside_phone_number",
+      "about": "Third review: the agent's 'confirmation number' is the end of the phone number.",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "confirmation_number": "1234"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm calling on behalf of Alex. A table for 2 on October 24 at 7:30pm?"
+        ],
+        [
+          "business",
+          "Our number is 555-1234."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "number_is_a_year",
+      "about": "Third review: the agent's 'confirmation number' is the year, and the business refuses.",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "confirmation_number": "2026"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm calling on behalf of Alex. A table for 2 on October 24 at 7:30pm?"
+        ],
+        [
+          "business",
+          "That's Saturday October 24, 2026."
+        ],
+        [
+          "business",
+          "We have nothing then."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "lowercase_after_question",
+      "about": "Third review: speech-to-text dropped the capital after the question.",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-10-24",
+          "time": "19:30"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm calling on behalf of Alex. A table for 2 on October 24 at 7:30pm?"
+        ],
+        [
+          "business",
+          "October 24 at 7:30? let me check"
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "letters_only_code",
+      "about": "Third review: a letters-only confirmation code is real when the business gives it.",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "confirmation_number": "ABCD",
+          "time": "7:30 PM"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm calling on behalf of Alex. A table for 2 on October 24 at 7:30pm?"
+        ],
+        [
+          "business",
+          "You're all set, your confirmation number is ABCD."
+        ]
+      ],
+      "expect": {
+        "outcome": "booked",
+        "spoken": [
+          "calling_name"
+        ]
       }
     }
   ]
