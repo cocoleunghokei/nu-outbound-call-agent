@@ -105,7 +105,7 @@ Tests: `tests/test_calls_*.py` (`calls_helpers.py` seeds a call with a snapshot 
 
 ### In-call model eval (`evals/incall/`)
 
-Plays scripted conversations against DeepSeek with the real prompt and tools, no phone call: `make eval-incall` (live, costs about $0.09), then the judge, then `make eval-incall-report DIR=...`. The cases are in `CASES.md` and `cases.json`, the scoring in `JUDGE.md`. `play.py` answers each tool call the way the handlers above do (`ask_user_result`, `question_withdrawn_result`, "Noted."), so keep it in step when they change. Offline tests: `tests/test_incall_eval_runner.py` and `tests/test_incall_eval_cases.py`.
+Plays scripted conversations against DeepSeek with the real prompt and tools, no phone call: `make eval-incall` (live, costs about $0.09), then the judge, then `make eval-incall-report DIR=...`; `make eval-incall-history` writes one HTML page of every run, by date. The cases are in `CASES.md` and `cases.json`, the scoring in `JUDGE.md`. `play.py` answers each tool call the way the handlers above do (`ask_user_result`, `question_withdrawn_result`, "Noted."), so keep it in step when they change. Offline tests: `tests/test_incall_eval_runner.py` and `tests/test_incall_eval_cases.py`.
 
 ## Post-call (`app/postcall/`, Harper)
 
