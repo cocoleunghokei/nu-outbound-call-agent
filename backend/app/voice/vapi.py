@@ -39,10 +39,12 @@ def _created_from(body: Any) -> CreatedCall:
     monitor = monitor if isinstance(monitor, dict) else {}
     control = monitor.get("controlUrl")
     listen = monitor.get("listenUrl")
+    ended_at = body.get("endedAt")
     return CreatedCall(
         body["id"],
         control if isinstance(control, str) else None,
         listen if isinstance(listen, str) else None,
+        ended=body.get("status") == "ended" or (isinstance(ended_at, str) and bool(ended_at)),
     )
 
 

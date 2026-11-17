@@ -12,6 +12,9 @@ is neither ended nor failed counts as "running", so every new Start answers 409)
   - found: adopt it (store the Vapi id and control URL, ``-> dialing``). If it is found
     later than ``CHECKING_S``, the screen has already shown "failed", so the agent
     apologises and hangs up at once;
+  - found but already ended at Vapi (its end webhooks were lost, for example during a
+    redeploy): store the Vapi id and end the call. Adopting it as ``dialing`` would leave
+    it running forever, since only a webhook ends a ``dialing`` call;
   - not found by ``max_duration_s + GIVE_UP_AFTER_S``: ``failed``. By then any call Vapi
     did place has hit its own ``maxDurationSeconds``, so starting again can't double-dial.
 
@@ -31,7 +34,7 @@ from app.calls import messages
 from app.calls.commands import begin_ending
 from app.calls.create import record_not_placed, record_placed
 from app.calls.store import calling_name, set_status
-from app.calls_lock import CallNotFound, lock_call
+from app.calls_lock import CallNotFound, end_call_transition, lock_call
 from app.voice.port import CreatedCall, VoiceNotSent, VoicePlatform, VoiceRejected, VoiceUncertain
 
 logger = logging.getLogger(__name__)
@@ -120,8 +123,13 @@ async def _uncertain_calls(pool: AsyncConnectionPool[Any], limit: int) -> list[U
 
 
 async def _adopt(pool: AsyncConnectionPool[Any], call: UncertainCall, created: CreatedCall) -> str:
-    """Store the call Vapi did place; hang it up at once if the screen already said failed."""
+    """Store the call Vapi did place; hang it up at once if the screen already said failed.
+
+    A call Vapi reports as already ended gets its Vapi id and is ended, not adopted.
+    """
     async with pool.connection() as conn, conn.transaction():
+        if created.ended:
+            return await _end_found_call(conn, call.call_id, created)
         status = await record_placed(conn, call.call_id, created)
         if call.age_s < CHECKING_S or status != "dialing":
             return status
@@ -130,6 +138,21 @@ async def _adopt(pool: AsyncConnectionPool[Any], call: UncertainCall, created: C
         await begin_ending(conn, locked, messages.late_call_goodbye_line(name))
         logger.warning("call %s: found %.0f s after creation, ending it", call.call_id, call.age_s)
         return status
+
+
+async def _end_found_call(
+    conn: psycopg.AsyncConnection[Any], call_id: UUID, created: CreatedCall
+) -> str:
+    """Store the Vapi id of a call that already ended at Vapi, then end it here too."""
+    await lock_call(conn, call_id)
+    # The row keeps its link to the billed Vapi call, as in record_placed.
+    await conn.execute(
+        "update public.calls set vapi_call_id = %s where id = %s and vapi_call_id is null",
+        (created.vapi_call_id, call_id),
+    )
+    if await end_call_transition(conn, call_id, reason="ended before adoption", source="vapi"):
+        logger.warning("call %s: found already ended at the voice platform, ended", call_id)
+    return (await lock_call(conn, call_id)).status
 
 
 async def _give_up(pool: AsyncConnectionPool[Any], call_id: UUID) -> str:

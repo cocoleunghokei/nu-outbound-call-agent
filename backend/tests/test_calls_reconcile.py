@@ -45,10 +45,15 @@ def stuck_call(db_url: str, status: str, attempted_s_ago: float) -> FreshCall:
     return call
 
 
-def placed_at_vapi(voice: FakeVoicePlatform, call: FreshCall) -> CreatedCall:
+def placed_at_vapi(
+    voice: FakeVoicePlatform, call: FreshCall, *, ended: bool = False
+) -> CreatedCall:
     """Make the fake platform hold a call tagged with our call_id, as if Vapi had placed it."""
     created = CreatedCall(
-        f"vapi-found-{uuid.uuid4()}", f"https://fake.invalid/control/{call.call_id}", None
+        f"vapi-found-{uuid.uuid4()}",
+        f"https://fake.invalid/control/{call.call_id}",
+        None,
+        ended=ended,
     )
     voice.calls.append({"metadata": {"call_id": str(call.call_id)}, "created": created})
     return created
@@ -129,6 +134,28 @@ def test_a_call_found_after_the_screen_said_failed_is_hung_up(supabase_env: Supa
     assert call_state(db, call)["status"] == "dialing"  # ended when Vapi reports the hang-up
     kinds = [o["kind"] for o in run(db, lambda _: outbox_rows(db, call)) if o["lane"] == "control"]
     assert len(kinds) == 2  # the apology with endCallAfterSpoken, then end-call as a fallback
+
+
+def test_a_call_found_already_ended_is_ended_not_adopted(supabase_env: SupabaseEnv) -> None:
+    """Regression: Vapi placed the call and it ended while its webhooks were lost (a redeploy).
+
+    Adopting it as ``dialing`` left it running forever, and every later Start answered 409.
+    """
+    db = supabase_env.db_url
+    call = stuck_call(db, "creation_uncertain", 30)
+    voice = FakeVoicePlatform()
+    created = placed_at_vapi(voice, call, ended=True)
+
+    assert run(db, lambda pool: resolve_uncertain(pool, voice)) == 1
+
+    state = call_state(db, call)
+    assert state["status"] == "ended"
+    assert state["ended_at"] is not None
+    assert state["vapi_call_id"] == created.vapi_call_id  # keeps its link to the billed call
+    assert state["control_url"] is None
+    assert state["events"] == ["ended"]
+    assert [o for o in run(db, lambda _: outbox_rows(db, call)) if o["lane"] == "control"] == []
+    assert run(db, lambda pool: resolve_uncertain(pool, voice)) == 0  # settled for good
 
 
 def test_an_uncertain_call_is_kept_while_it_could_still_be_ringing(
