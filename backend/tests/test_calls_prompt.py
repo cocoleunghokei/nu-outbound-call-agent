@@ -120,6 +120,10 @@ def test_a_low_offer_gets_one_counter_before_a_ping() -> None:
     assert "counter once first" in prompt
     assert "call report_decision with action counter and confidence low" in prompt
     assert "Counter only once per offer." in prompt
+    # Found by the eval: the counter was logged a turn late (C4-03), and the agent asked
+    # again after "we can't seat 6 at all this weekend" (C4-11).
+    assert "confidence low in that same reply, before the business answers" in prompt
+    assert "call ask_user straight away; do not ask the business again" in prompt
     assert "neither gate applies, counter once first" in prompt  # money and ask-first still ping
 
 
