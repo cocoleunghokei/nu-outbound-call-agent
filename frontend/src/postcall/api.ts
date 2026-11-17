@@ -97,15 +97,20 @@ function toSharedField(raw: unknown): SharedField | null {
 
 const ROLES: ReadonlySet<string> = new Set(['agent', 'business', 'user'])
 
+/** A role this version doesn't know is kept as "unknown" (shown as "Unknown"), not dropped. */
+function toRole(raw: string): TranscriptLine['role'] {
+  return ROLES.has(raw) ? (raw as TranscriptLine['role']) : 'unknown'
+}
+
 function toTranscriptLine(raw: unknown): TranscriptLine | null {
   if (!isObject(raw)) return null
   const { seq } = raw
   const role = str(raw.role)
   const text = str(raw.text)
-  if (typeof seq !== 'number' || !Number.isInteger(seq) || !role || !ROLES.has(role) || text === null) {
+  if (typeof seq !== 'number' || !Number.isInteger(seq) || !role || text === null) {
     return null
   }
-  return { seq, role: role as TranscriptLine['role'], text, startedAt: str(raw.started_at) }
+  return { seq, role: toRole(role), text, startedAt: str(raw.started_at) }
 }
 
 function listOf<T>(raw: unknown, check: (item: unknown) => T | null): T[] {
@@ -131,17 +136,26 @@ export function toCallResult(body: unknown): CallResult | null {
 /** What a load gives the screen: the data, or a plain-language problem. */
 export type Loaded<T> = { ok: true; data: T } | { ok: false; message: string }
 
-const NOT_FOUND: Loaded<never> = { ok: false, message: 'That call wasn’t found.' }
+/** Shown when the call doesn't exist or isn't the user's; trying again won't help. */
+export const NOT_FOUND_MESSAGE = 'That call wasn’t found.'
 
-/** Turns an HTTP answer into `Loaded`, using `check` on a 200 body. */
-export function loadedFrom<T>(status: number, body: unknown, check: (body: unknown) => T | null): Loaded<T> {
+const NOT_FOUND: Loaded<never> = { ok: false, message: NOT_FOUND_MESSAGE }
+
+/** Turns an HTTP answer into `Loaded`, using `check` on a 200 body. `failed` is the message for
+ * any other error, so it can name what didn't load. */
+export function loadedFrom<T>(
+  status: number,
+  body: unknown,
+  check: (body: unknown) => T | null,
+  failed = 'Could not load your calls. Try again.',
+): Loaded<T> {
   if (status === 200) {
     const data = check(body)
     return data === null ? { ok: false, message: 'The server sent something unexpected. Try again.' } : { ok: true, data }
   }
   if (status === 401) return { ok: false, message: 'You were signed out. Sign in and try again.' }
   if (status === 404) return NOT_FOUND
-  return { ok: false, message: 'Could not load your calls. Try again.' }
+  return { ok: false, message: failed }
 }
 
 async function get(base: string, path: string, token: string): Promise<{ status: number; body: unknown }> {
@@ -168,7 +182,7 @@ export async function fetchCallResult(base: string, token: string, callId: strin
   if (!isCallId(callId)) return NOT_FOUND
   try {
     const { status, body } = await get(base, `/calls/${encodeURIComponent(callId)}/result`, token)
-    return loadedFrom(status, body, toCallResult)
+    return loadedFrom(status, body, toCallResult, 'Could not load this call. Try again.')
   } catch {
     return { ok: false, message: 'No connection. Check your internet and try again.' }
   }

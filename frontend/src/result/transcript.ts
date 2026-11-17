@@ -11,7 +11,8 @@ import { formatClock } from '../live-call/format'
 export interface TranscriptLine {
   /** Event order within the call, gap-free */
   seq: number
-  role: TranscriptRole
+  /** "unknown" for a role this version doesn't know yet */
+  role: TranscriptRole | 'unknown'
   text: string
   /** When the speaker started, ISO 8601, or null if the platform didn't say */
   startedAt: string | null
@@ -20,7 +21,7 @@ export interface TranscriptLine {
 /** A transcript line ready to show. */
 export interface TranscriptRow {
   seq: number
-  role: TranscriptRole
+  role: TranscriptLine['role']
   /** Who spoke, e.g. "Assistant", the business name, or "You" */
   speaker: string
   text: string
@@ -53,7 +54,7 @@ export function transcriptRows(lines: readonly TranscriptLine[], businessName: s
 }
 
 /** Display name for a speaker. Unknown roles show "Unknown" rather than failing. */
-export function speakerName(role: TranscriptRole, businessName: string): string {
+export function speakerName(role: TranscriptLine['role'], businessName: string): string {
   switch (role) {
     case 'agent':
       return 'Assistant'

@@ -30,7 +30,7 @@ Open http://localhost:5173.
 
 - **Demo mode** (default): `VITE_API_URL` is empty, Supabase isn't configured, or nobody is signed in. The pre-call flow runs on fake data, Start only logs the brief, and the top bar shows a small "Demo mode (fake data)" note.
 - **API mode**: `VITE_API_URL` is set (e.g. `http://localhost:8000`) and a Supabase session exists at page load. Start saves the brief to FastAPI and hands it to `POST /calls`. The profile and templates are still the fake ones until those APIs exist; the server checks the brief against the real profile, and its answer wins.
-- Any `accessToken` setup for Supabase is for Realtime subscriptions only; FastAPI calls read the token from `supabase.auth.getSession()` and send it as a Bearer header themselves. The Supabase client is loaded lazily, so demo mode works without the Supabase variables.
+- Any `accessToken` setup for Supabase is for Realtime subscriptions only; FastAPI calls get the token from `accessToken()` in `src/lib/accessToken.ts` (one shared helper over `supabase.auth.getSession()`) and send it as a Bearer header themselves. The Supabase client is loaded lazily, so demo mode works without the Supabase variables.
 
 ## Checks
 

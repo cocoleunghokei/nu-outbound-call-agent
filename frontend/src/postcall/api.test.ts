@@ -85,7 +85,7 @@ describe('toCallResult', () => {
     ],
   }
 
-  it('maps a full result and drops the malformed parts', () => {
+  it('maps a full result, drops the malformed parts and keeps unknown roles', () => {
     const result = toCallResult(body)
     expect(result?.call.businessName).toBe('Juniper Ramen')
     expect(result?.businessConfirmed).toBe(true)
@@ -98,6 +98,7 @@ describe('toCallResult', () => {
     expect(result?.transcript).toEqual([
       { seq: 1, role: 'business', text: 'Juniper Ramen.', startedAt: '2026-10-22T16:30:00Z' },
       { seq: 2, role: 'agent', text: 'Hi.', startedAt: null },
+      { seq: 3, role: 'unknown', text: 'bad role', startedAt: null },
     ])
   })
 
@@ -127,6 +128,10 @@ describe('loadedFrom', () => {
     expect(loadedFrom(401, null, toHistory).ok).toBe(false)
     expect(loadedFrom(404, null, toHistory)).toEqual({ ok: false, message: 'That call wasn’t found.' })
     expect(loadedFrom(500, null, toHistory)).toEqual({ ok: false, message: 'Could not load your calls. Try again.' })
+    expect(loadedFrom(500, null, toHistory, 'Could not load this call. Try again.')).toEqual({
+      ok: false,
+      message: 'Could not load this call. Try again.',
+    })
   })
 })
 
@@ -163,6 +168,14 @@ describe('fetchCallResult', () => {
       })
     }
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('names the call, not the list, when its result fails to load', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 500 })))
+    expect(await fetchCallResult('http://api.test', 'tok', CALL.id)).toEqual({
+      ok: false,
+      message: 'Could not load this call. Try again.',
+    })
   })
 
   it('fetches a result for a UUID', async () => {
