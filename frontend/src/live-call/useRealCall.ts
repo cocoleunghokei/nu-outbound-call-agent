@@ -16,6 +16,7 @@ import {
   toCallEvent,
   toCallSummary,
 } from './backend'
+import { accessToken } from '../lib/accessToken'
 import type { SendCallCommand } from './controls'
 import type { SendPingReply } from './ping'
 import { mergeEvents } from './state'
@@ -51,11 +52,6 @@ export function markHistory(first: number | null, loaded: CallEvent[] | null): n
 async function loadClient(): Promise<SupabaseClient> {
   const { supabase } = await import('../lib/supabase')
   return supabase
-}
-
-async function accessToken(): Promise<string | null> {
-  const { data } = await (await loadClient()).auth.getSession()
-  return data.session?.access_token ?? null
 }
 
 /** Follows one call. `apiBase` is the backend URL (see `apiBase()` in backend.ts). */

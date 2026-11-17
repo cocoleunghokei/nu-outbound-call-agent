@@ -82,6 +82,7 @@ describe('speakerName', () => {
   })
 
   it('shows "Unknown" for a role this version does not know', () => {
+    expect(speakerName('unknown', 'Shop')).toBe('Unknown')
     expect(speakerName('operator' as TranscriptLine['role'], 'Shop')).toBe('Unknown')
   })
 })
