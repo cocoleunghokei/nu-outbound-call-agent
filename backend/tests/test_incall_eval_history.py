@@ -79,3 +79,86 @@ def test_main_writes_the_page_even_with_no_results(tmp_path: Path) -> None:
     assert main([str(tmp_path)]) == 0
     page = (tmp_path / "history.html").read_text()
     assert "No results yet" in page and "<title>In-call Eval History</title>" in page
+
+
+# --- issues and things to fix --------------------------------------------------------------
+
+
+def _failed(check: str, text: str, level: str, evidence: str, case: str = "C4-03") -> CheckResult:
+    return CheckResult(case, 1, check, text, level, "script", "fail", evidence)  # type: ignore[arg-type]
+
+
+def test_failures_are_grouped_into_issues_hard_first() -> None:
+    from evals.incall.issues import find_issues
+
+    checks = [
+        _failed("D5-len", "Reasons", "soft", "101 chars", "C4-03"),
+        _failed("D5-len", "Reasons", "soft", "94 chars", "C4-09"),
+        _failed(
+            "C4-03.3", "Counters first: report_decision action=counter", "soft", "no tool call"
+        ),
+        _failed("C4-01.1", "report_decision accept", "hard", "no tool call", "C4-01"),
+        _failed(
+            "script-complete", "Follows the script", "hard", "step 3: no open ask_user", "R-01"
+        ),
+        CheckResult("C4-02", 1, "C4-02.1", "x", "hard", "script", "pass"),
+    ]
+    issues = find_issues(checks)
+    titles = [i.title for i in issues]
+    assert titles[:2] == [
+        "Left the script before the end",
+        "Talked but didn't call the expected tool",
+    ]
+    assert issues[0].hard and not issues[-1].hard
+    reasons = next(i for i in issues if i.title == "Reasons over 80 characters")
+    assert reasons.checks == 2 and reasons.cases == ["C4-03", "C4-09"]
+    assert "Countered in words without logging it (Q9)" in titles
+
+
+def test_notes_come_from_git_first_then_the_results_folder(tmp_path: Path) -> None:
+    from evals.incall.issues import notes_for
+
+    folder = tmp_path / "results" / "2026-11-17T2306Z"
+    folder.mkdir(parents=True)
+    notes_dir = tmp_path / "notes"
+    notes_dir.mkdir()
+    assert notes_for(folder, notes_dir) is None
+    (folder / "notes.md").write_text("local")
+    assert notes_for(folder, notes_dir) == "local"
+    (notes_dir / "2026-11-17T2306Z.md").write_text("in git")
+    assert notes_for(folder, notes_dir) == "in git"
+
+
+def test_notes_markdown_is_escaped_html() -> None:
+    from evals.incall.issues import notes_html
+
+    out = notes_html("## Found\n- **C4-01** said `checking` <script>\nPlain line.")
+    assert out == (
+        "<h4>Found</h4><ul><li><b>C4-01</b> said <code>checking</code> &lt;script&gt;</li></ul>"
+        "<p>Plain line.</p>"
+    )
+
+
+def test_the_report_and_the_page_show_issues_and_notes(tmp_path: Path) -> None:
+    from evals.incall.report import load
+    from evals.incall.report import render as render_report
+
+    make_eval(tmp_path, "2026-11-15T0900Z", accept=False)
+    results = load(tmp_path / "2026-11-15T0900Z")
+    text, _ = render_report(results, "## What we found\n- C4-01 never accepted.")
+    assert "## Issues and things to fix" in text and "### Notes and fixes" in text
+    assert "**[Hard] Talked but didn't call the expected tool**" in text
+    assert "- C4-01 never accepted." in text
+
+    (tmp_path / "2026-11-15T0900Z" / "notes.md").write_text("## Fixes made\n- Prompt line added.")
+    page = render_page(find_evals(tmp_path), GENERATED)
+    assert '<summary class="h">Issues and things to fix</summary>' in page
+    assert "<h4>Fixes made</h4><ul><li>Prompt line added.</li></ul>" in page
+
+
+def test_every_committed_note_names_a_results_folder() -> None:
+    from evals.incall.issues import NOTES_DIR
+
+    for path in NOTES_DIR.glob("*.md"):
+        if path.name != "README.md":
+            assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{4}Z\.md", path.name), path.name

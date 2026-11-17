@@ -44,7 +44,12 @@ instead of guessing.
 To see every run in one place, `make eval-incall-history` writes
 `evals/incall/results/history.html`: a case-by-case history across runs, then one collapsible
 toggle per date, and inside each run its summary numbers, failures with evidence, a per-case
-table and every transcript. Re-run it after each eval; open it with `open` on a Mac. The code is in `backend/evals/incall/` (`run.py`, `play.py`,
+table and every transcript. Re-run it after each eval; open it with `open` on a Mac.
+
+Both `report.md` and the history page start each run with **Issues and things to fix**: the failed
+checks grouped into issues (Hard first, with a hint on where to look), then the run's notes from
+`evals/incall/notes/<results folder>.md` (what we found, decisions, fixes made, still open). Write
+a notes file after looking at each run; it is kept in git, unlike the results. The code is in `backend/evals/incall/` (`run.py`, `play.py`,
 `checks.py`, `judge_input.py`, `report.py`); `tests/test_incall_eval_runner.py` runs it all
 offline with a scripted fake model.
 

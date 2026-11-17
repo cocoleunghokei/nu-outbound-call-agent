@@ -25,6 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from evals.incall.issues import find_issues, issues_markdown, notes_for
 from evals.incall.records import CheckResult, RunRecord
 from evals.incall.setup import CASES_PATH
 
@@ -223,8 +224,8 @@ def transcript(run: RunRecord) -> list[str]:
     return lines
 
 
-def render(results: Results) -> tuple[str, int]:
-    """report.md text and the exit code."""
+def render(results: Results, notes: str | None = None) -> tuple[str, int]:
+    """report.md text and the exit code. ``notes`` is the run's write-up, if any."""
     m = metrics(results)
     verdict, code = verdict_line(m)
     lat = m.latency
@@ -255,6 +256,7 @@ def render(results: Results) -> tuple[str, int]:
         f"({m.soft[0]} of {m.soft[1]} checks)  target 85%"
     )
     out += ["```", ""]
+    out += issues_markdown(find_issues(results.checks), notes)
 
     runs = {(r.case_id, r.run): r for r in results.runs}
     hard_fails = [
@@ -371,7 +373,7 @@ def main(argv: Sequence[str]) -> int:
         print("usage: python -m evals.incall.report <results dir>")
         return 2
     folder = Path(argv[0])
-    text, code = render(load(folder))
+    text, code = render(load(folder), notes_for(folder))
     (folder / "report.md").write_text(text, encoding="utf-8")
     print(text.splitlines()[2])
     print(f"wrote {folder / 'report.md'}")

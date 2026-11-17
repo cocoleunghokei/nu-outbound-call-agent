@@ -25,6 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from evals.incall.issues import find_issues, issues_html, notes_for
 from evals.incall.records import CheckResult, RunRecord
 from evals.incall.report import TARGETS_S, TURN_LABELS, Metrics, Results, cost, load, metrics
 from evals.incall.run import RESULTS_DIR
@@ -268,6 +269,8 @@ def eval_html(ev: Eval, open_: bool) -> str:
         f"{len(ev.results.runs)} runs {_badge(ev)}"
         f'<span class="muted small"> {e(ev.folder.name)}</span></summary>'
         f'<details open><summary class="h">Summary</summary>{summary_html(ev)}</details>'
+        '<details open><summary class="h">Issues and things to fix</summary>'
+        f"{issues_html(find_issues(ev.results.checks), notes_for(ev.folder))}</details>"
         '<details open><summary class="h">Failures with evidence</summary>'
         f"{failures_html(ev)}</details>"
         f'<details><summary class="h">Per-case results</summary>{cases_html(ev)}</details>'
@@ -333,6 +336,8 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12px;wor
 .t.tool{border-color:var(--line);color:var(--muted)}.t.note{color:var(--fail)}
 .fails{color:var(--fail);font-size:13px;margin:4px 0 8px}.scroll{overflow-x:auto}
 table.trend td,table.trend th{white-space:nowrap}
+h4{margin:12px 0 4px;font-size:14px}ul.issues{padding-left:18px;font-size:14px}
+ul.issues li{margin:6px 0}.lvl.soft{color:var(--wait)}
 """
 
 
