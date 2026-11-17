@@ -27,13 +27,16 @@
       "type": "object",
       "properties": {
         "date": {
-          "type": "string"
+          "type": "string",
+          "description": "The agreed date as YYYY-MM-DD, e.g. 2026-10-24"
         },
         "time": {
-          "type": "string"
+          "type": "string",
+          "description": "The agreed time, 24-hour HH:MM, e.g. 19:30"
         },
         "confirmation_number": {
-          "type": "string"
+          "type": "string",
+          "description": "Exactly as the business said it, e.g. A1B2"
         },
         "staff_name": {
           "type": "string"

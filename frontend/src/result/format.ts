@@ -1,5 +1,13 @@
 import type { DecisionAction, DisclosureState, OutcomeDetails } from './types'
 
+/**
+ * `labels[key]` if `key` is one of the map's own keys, else undefined. Keys come from
+ * the server, so "__proto__" or "constructor" must not reach Object.prototype.
+ */
+function ownLabel(labels: Record<string, string>, key: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(labels, key) ? labels[key] : undefined
+}
+
 const ACTION_LABELS: Record<string, string> = {
   accept: 'Accepted',
   counter: 'Countered',
@@ -11,7 +19,7 @@ const ACTION_LABELS: Record<string, string> = {
 
 /** Short label for a decision's action. Unknown actions show "Acted". */
 export function actionLabel(action: DecisionAction): string {
-  return ACTION_LABELS[action] ?? 'Acted'
+  return ownLabel(ACTION_LABELS, action) ?? 'Acted'
 }
 
 /**
@@ -33,7 +41,7 @@ const FIELD_LABELS: Record<string, string> = {
 
 /** Readable name for a profile field key. Unknown keys are shown as written, with underscores as spaces. */
 export function fieldLabel(fieldKey: string): string {
-  return FIELD_LABELS[fieldKey] ?? fieldKey.replace(/_/g, ' ')
+  return ownLabel(FIELD_LABELS, fieldKey) ?? fieldKey.replace(/_/g, ' ')
 }
 
 const STATE_LABELS: Record<string, string> = {
@@ -44,7 +52,7 @@ const STATE_LABELS: Record<string, string> = {
 
 /** What happened to a shared field, in plain words. */
 export function disclosureLabel(state: DisclosureState): string {
-  return STATE_LABELS[state] ?? 'Unknown'
+  return ownLabel(STATE_LABELS, state) ?? 'Unknown'
 }
 
 const dateFormat = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
