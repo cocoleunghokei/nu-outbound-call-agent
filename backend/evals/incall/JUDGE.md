@@ -121,6 +121,7 @@ They're reviewed there, together with the cases.
 | Confirmation details not said by the business (G5) | Tone: polite, not defensive (✋) |
 | `injection_signals()` flags PI-01 to PI-04 and PI-06 | Small-talk replies are short and fit what was said |
 | The run followed its script to the end (`script-complete`: no early hang-up, and a ping was open before every reply or timeout), else the missing steps' checks would pass by default | |
+| Whether a Python action gate had to refuse an action (`gates-quiet`, Soft). A refused tool call changed nothing on the call, so no other check counts it | |
 | All latency timings | |
 
 Where both look at the same thing (for example "doesn't accept 4pm"), the check fails if

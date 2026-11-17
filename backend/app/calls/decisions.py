@@ -11,27 +11,43 @@ returns the call to Talking, so the user never answers a question that no longer
 Only a ``decision`` ping is closed: an Ask-me-first approval stays open, because taking an
 offer doesn't answer "may I share your date of birth?". A decision older than the ping (a
 late webhook) closes nothing.
+
+Before anything is logged, the money and Low-offer gates (``app/calls/gates.py``) may refuse
+an accept or take_fallback: the agent then gets the refusal as its tool result, nothing is
+logged, and the open question stays open.
 """
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
 from psycopg import AsyncConnection
 
 from app.calls import messages
+from app.calls.gates import SETTLING_ACTIONS, load_facts, low_offer_gate, money_gate
 from app.calls.pings import close_ping, open_ping_for_update
 from app.calls.store import set_status
 from app.events import append_event
 from app.webhooks.registry import ToolCallContext
 
+logger = logging.getLogger(__name__)
+
 DECISION_FIELDS = ("situation", "action", "reason", "field_key", "missed_preference")
 NOTED = "Noted."
-# Actions that settle the offer an open question was about.
-SETTLING_ACTIONS = frozenset({"accept", "take_fallback"})
 
 
 async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContext) -> str:
-    """Log the decision for the live feed. Returns a short acknowledgement to the model."""
+    """Log the decision for the live feed. Returns a short acknowledgement to the model.
+
+    An accept or take_fallback that a gate refuses is not logged; the refusal is returned.
+    """
+    action = ctx.arguments.get("action")
+    if action in SETTLING_ACTIONS:
+        facts = await load_facts(conn, ctx.call_id)
+        refusal = money_gate(action, facts) or low_offer_gate(action, ctx.dimensions, facts)
+        if refusal is not None:
+            logger.info("report_decision refused by a gate for call %s", ctx.call_id)
+            return refusal
     payload = {
         key: value.strip()
         for key in DECISION_FIELDS

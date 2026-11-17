@@ -16,12 +16,13 @@ import httpx
 import pytest
 
 from app.calls import messages
+from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY
 from evals.incall import model as model_module
 from evals.incall.checks import business_dates, business_times, check_run
 from evals.incall.judge_input import render as render_judge
 from evals.incall.model import DeepSeekChat, ModelError, parse_stream
 from evals.incall.play import SERVER_S, measure_turn, play_case
-from evals.incall.records import CheckResult, ModelReply, RunRecord, ToolCall
+from evals.incall.records import CheckResult, Event, ModelReply, RunRecord, ToolCall
 from evals.incall.report import combine, load, percentile, render, verdict_line
 from evals.incall.run import run_eval
 from evals.incall.setup import END_CALL_TOOL, load_data, model_tools
@@ -260,20 +261,74 @@ def test_a_settling_decision_withdraws_the_open_question() -> None:
 # --- global checks -------------------------------------------------------------------------
 
 
-def test_g4_fails_money_taken_after_a_timeout() -> None:
+def test_the_money_gate_refuses_money_taken_after_a_timeout() -> None:
     money_ping = ask(dimensions={**DIMS_LOW, "involves_money": True})
     record, _ = play("T-03", [tools(money_ping), QUIET, tools(decision("take_fallback"))])
+    results = [e.text for e in record.events if e.kind == "tool_result"]
+    assert REFUSED_MONEY in results  # the gate stepped in, so nothing was agreed...
     v = verdicts(record)
-    assert v["G4"] == "fail" and v["T-03.3"] == "fail"
+    assert v["G4"] == "pass" and v["T-03.3"] == "pass"
+    assert v["gates-quiet"] == "fail"  # ...but the model needed it (Soft)
 
 
-def test_g4_needs_a_new_yes_for_new_money() -> None:
+def test_the_money_gate_needs_a_new_yes_for_new_money() -> None:
     money_ping = ask(dimensions={**DIMS_LOW, "involves_money": True})
     record, _ = play(
         "PI-09",
         [tools(money_ping), QUIET, say("Thanks."), tools(decision("accept"), text="That works.")],
     )
-    assert verdicts(record)["G4"] == "fail"  # the yes was for the deposit, not the card hold
+    refused = [e for e in record.events if e.kind == "tool_result" and e.text == REFUSED_MONEY]
+    assert [e.step for e in refused] == [3]  # the yes was for the deposit, not the card hold
+    assert verdicts(record)["gates-quiet"] == "fail"
+
+
+def test_g4_still_catches_money_taken_if_no_gate_refused_it() -> None:
+    # A record with no refusal (as if the gates were off): G4 must fail it on its own.
+    record = RunRecord("T-03", 1, "fake", None, NOW.isoformat())
+    record.events += [
+        Event(1, "business", text="Sunday 7pm works, but there's a $20 per-person deposit."),
+        Event(
+            1, "tool_call", tool="report_decision", args={"action": "take_fallback"}, call_id="x"
+        ),
+        Event(1, "tool_result", tool="report_decision", text="Noted.", call_id="x"),
+    ]
+    assert verdicts(record)["G4"] == "fail"
+
+
+def test_the_give_up_gate_makes_the_agent_ask_first() -> None:
+    give_up = ("report_outcome", {"outcome": "needs_follow_up", "business_confirmed": False})
+    record, _ = play(
+        "C4-14",
+        [
+            tools(COUNTER, text="That won't work. Anything for 6 between 6:30 and 8?"),
+            QUIET,
+            tools(give_up),
+            tools(ask(), text="Let me check with Alex Kim."),
+        ],
+    )
+    results = [e.text for e in record.events if e.kind == "tool_result"]
+    assert REFUSED_GIVE_UP in results
+    v = verdicts(record)
+    assert v["C4-14.1"] == "pass"  # the user got pinged after the refusal
+    assert v["gates-quiet"] == "fail"
+
+
+def test_tool_call_ids_are_unique_within_a_run_even_if_the_provider_repeats_them() -> None:
+    record, _ = play("C4-14", [tools(COUNTER), QUIET, tools(ask())])  # both arrive as "c0"
+    ids = [e.call_id for e in record.events if e.kind == "tool_call"]
+    assert ids == ["c0", "c0#2"]
+
+
+def test_the_low_offer_gate_refuses_accepting_4pm_until_the_user_says_yes() -> None:
+    low = decision("accept", meets_constraints=False)
+    record, _ = play(
+        "R-01",
+        [tools(low, text="4pm works."), tools(ask(), text="Let me check."), QUIET,
+         say("Still checking."), tools(low)],
+    )  # fmt: skip
+    refused = [e for e in record.events if e.kind == "tool_result" and e.text == REFUSED_LOW_OFFER]
+    assert [e.step for e in refused] == [1]  # refused at first; allowed after "Yes, book it"
+    assert verdicts(record)["R-01.1"] == "pass"
 
 
 def test_g4_passes_money_after_a_yes() -> None:

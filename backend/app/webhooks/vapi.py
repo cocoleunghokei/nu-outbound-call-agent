@@ -172,6 +172,12 @@ def _without_scores(arguments: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in arguments.items() if k not in SCORE_FIELDS}
 
 
+def _dimensions(arguments: dict[str, Any]) -> dict[str, Any] | None:
+    """The model's six checks, read-only for the action gates (never stored by a handler)."""
+    dims = arguments.get("dimensions")
+    return dict(dims) if isinstance(dims, dict) else None
+
+
 async def _store_scores(
     conn: AsyncConnection[Any], ctx: ToolCallContext, arguments: dict[str, Any]
 ) -> None:
@@ -279,6 +285,7 @@ async def _receive_tool_call(
         name=unit.name,
         arguments=_without_scores(unit.arguments),
         source_ts=unit.source_ts,
+        dimensions=_dimensions(unit.arguments),
     )
     _, result = await run_tool_handler(
         conn,
@@ -507,6 +514,7 @@ async def dispatch_pending(
                         name=name,
                         arguments=_without_scores(arguments),
                         source_ts=source_ts,
+                        dimensions=_dimensions(arguments),
                     )
                     ok, _ = await run_tool_handler(
                         conn,

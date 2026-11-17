@@ -14,19 +14,31 @@ The tool results follow the backend:
   birth"), so a later reply quotes that, not the model's wording (``app/calls/ask.py``).
 - ``report_decision`` with accept or take_fallback withdraws an open decision ping and returns
   ``question_withdrawn_result``; otherwise "Noted." (``app/calls/decisions.py``).
-- ``report_outcome`` returns "Noted."; ``endCall`` ends the run.
+- ``report_outcome`` returns the post-call acknowledgement; ``endCall`` ends the run.
+- The action gates (``app/calls/gates.py``) run first, from the same facts the backend reads:
+  an accept or take_fallback after unapproved money, a Low offer accepted without a "yes", or
+  ``needs_follow_up`` before the user was asked, gets the refusal instead and changes nothing.
 
 A run stops early, and is judged as it stands, when the model leaves the script: it ends the
 call, or a reply or timeout step arrives with no open ping to answer.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
 from app.calls import messages
-from app.calls.decisions import NOTED, SETTLING_ACTIONS
+from app.calls.decisions import NOTED
+from app.calls.gates import (
+    SETTLING_ACTIONS,
+    CallFacts,
+    facts_from_timeline,
+    give_up_gate,
+    low_offer_gate,
+    money_gate,
+)
+from app.postcall.handlers import NOTED as OUTCOME_NOTED
 from evals.incall.model import ChatModel, ModelError
 from evals.incall.records import Event, ModelReply, RunRecord, Turn, TurnType
 from evals.incall.setup import EvalData, call_setup
@@ -49,6 +61,29 @@ class _Ping:
 class _State:
     ping: _Ping | None = None
     ended: bool = False
+    # What the gates read, as the backend reads it from call_events: business lines and
+    # resolved pings in order, and the reply to the latest ping if it was a decision ping.
+    timeline: list[tuple[str, str]] = field(default_factory=list)
+    latest_answer: str | None = None
+
+    def facts(self) -> CallFacts:
+        """The gates' view of the call so far (``app.calls.gates.CallFacts``)."""
+        return facts_from_timeline(
+            self.timeline, latest_ping_answer=self.latest_answer, ending=False
+        )
+
+    def resolve(self, step: dict[str, Any]) -> None:
+        """Record how a reply or timeout step closed the open ping, as ``close_ping`` does."""
+        kind = step["system"]
+        if kind == "answer":
+            self.timeline.append(("answered", step["reply"]))
+            self.latest_answer = step["reply"]
+        elif kind == "field_shared":
+            self.timeline.append(("field_answered", messages.FIELD_APPROVAL_REPLIES[0]))
+        elif kind == "field_declined":
+            self.timeline.append(("field_answered", messages.FIELD_APPROVAL_REPLIES[1]))
+        elif kind == "timeout":
+            self.timeline.append(("expired", ""))
 
 
 def system_text(data: EvalData, step: dict[str, Any], ping: _Ping | None) -> str | None:
@@ -78,22 +113,51 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         return messages.call_over_result()
     args = args or {}
     if name == "ask_user":
-        field = args.get("field_requested")
-        if isinstance(field, str) and field in data.ask_first_values():
-            state.ping = _Ping(messages.field_approval_question(field)[0], "field_approval")
+        key = args.get("field_requested")
+        if isinstance(key, str) and key in data.ask_first_values():
+            state.ping = _Ping(messages.field_approval_question(key)[0], "field_approval")
         else:
             state.ping = _Ping(str(args.get("question", "")).strip(), "decision")
+        state.latest_answer = None  # a new question: no answer to it yet
         return messages.ask_user_result(data.calling_name)
     if name == "report_decision":
-        settles = args.get("action") in SETTLING_ACTIONS
-        if settles and state.ping is not None and state.ping.kind == "decision":
-            state.ping = None
-            return messages.question_withdrawn_result()
+        action = args.get("action")
+        if action in SETTLING_ACTIONS:
+            facts = state.facts()
+            dims = args.get("dimensions") if isinstance(args.get("dimensions"), dict) else None
+            refusal = money_gate(str(action), facts) or low_offer_gate(str(action), dims, facts)
+            if refusal is not None:
+                return refusal
+            if state.ping is not None and state.ping.kind == "decision":
+                state.ping = None
+                return messages.question_withdrawn_result()
         return NOTED
+    if name == "report_outcome":
+        outcome = args.get("outcome")
+        refusal = give_up_gate(outcome, state.facts()) if isinstance(outcome, str) else None
+        return refusal or OUTCOME_NOTED
     if name == END_CALL:
         state.ended = True
         return CALL_ENDED_RESULT
-    return NOTED  # report_outcome, or an unknown tool
+    return NOTED  # an unknown tool
+
+
+def unique_call_ids(reply: ModelReply, record: RunRecord) -> ModelReply:
+    """The reply with tool-call ids made unique within the run.
+
+    Providers normally send unique ids, but a missing one falls back to ``call_<index>`` in
+    every reply; a repeat would make one refused call hide the others from the checks.
+    """
+    seen = {e.call_id for e in record.events if e.kind == "tool_call"}
+    calls = []
+    for call in reply.tool_calls:
+        call_id, n = call.call_id, 1
+        while call_id in seen:
+            n += 1
+            call_id = f"{call.call_id}#{n}"
+        seen.add(call_id)
+        calls.append(replace(call, call_id=call_id))
+    return replace(reply, tool_calls=calls)
 
 
 def _assistant_message(reply: ModelReply) -> dict[str, Any]:
@@ -166,6 +230,7 @@ async def play_case(
 
     for number, step in enumerate(case["steps"], start=1):
         if "business" in step:
+            state.timeline.append(("business", step["business"]))
             convo.append({"role": "user", "content": step["business"]})
             record.events.append(Event(step=number, kind="business", text=step["business"]))
         else:
@@ -175,6 +240,7 @@ async def play_case(
                 break
             if step["system"] in ("answer", "field_shared", "field_declined", "timeout"):
                 state.ping = None  # the backend closes the ping it answers
+                state.resolve(step)
             convo.append({"role": "system", "content": text})
             record.events.append(
                 Event(step=number, kind="system", text=text, system_kind=step["system"])
@@ -204,7 +270,7 @@ async def _respond(
     """The model's replies to one step: one call, plus one more after each round of tools."""
     replies: list[ModelReply] = []
     for _ in range(MAX_CALLS_PER_STEP):
-        reply = await model.reply(convo, tools)
+        reply = unique_call_ids(await model.reply(convo, tools), record)
         replies.append(reply)
         record.usage.append(reply.usage)
         convo.append(_assistant_message(reply))

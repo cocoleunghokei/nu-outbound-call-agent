@@ -66,6 +66,12 @@ def theme(check: CheckResult) -> tuple[str, str]:
             "It hung up early, or said it was checking with the user without calling ask_user, "
             "so a reply had no question to answer. Read the last turns of the transcript.",
         )
+    if check.check == "gates-quiet":
+        return (
+            "A Python gate had to refuse an action",
+            "The gate kept the call safe, but the prompt didn't. The evidence names the gate "
+            "(money, Low offer, or giving up); strengthen that rule in the prompt.",
+        )
     if check.check == "run-error":
         return ("The model call failed", "Network, key or provider error. Re-run these cases.")
     if check.check in _GLOBAL_HINTS:
