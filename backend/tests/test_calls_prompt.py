@@ -61,7 +61,7 @@ def config(brief: Brief | None = None, snapshot: Snapshot = SNAPSHOT) -> dict[st
 def test_prompt_carries_the_brief() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     assert "Brookline Family Medicine" in prompt and "on behalf of Alex" in prompt
-    assert "Your goal: Move the Thursday appointment with Dr. Lee to before 3pm" in prompt
+    assert "<goal>Move the Thursday appointment with Dr. Lee to before 3pm</goal>" in prompt
     assert "- Before 3pm" in prompt
     assert "- In person, not a video visit" in prompt
     assert "1. Fri morning\n2. Tue afternoon" in prompt  # ranked, best first
@@ -115,7 +115,7 @@ def test_prompt_has_the_dc4_rubric() -> None:
 
 def test_prompt_explains_waiting_and_the_no_reply_rule() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
-    assert "WHILE YOU WAIT FOR ALEX" in prompt
+    assert "<while_you_wait>" in prompt and "</while_you_wait>" in prompt
     assert "quotes your question" in prompt
     assert "did not reply in time" in prompt and "Never guess." in prompt
 
@@ -129,11 +129,24 @@ def test_prompt_includes_the_guardrail_rules() -> None:
 def test_empty_lists_say_none() -> None:
     brief = make_brief(preferences=[], fallbacks=[], never_agree=[])
     prompt = build_system_prompt(brief, SNAPSHOT)
-    assert (
-        "PREFERENCES (try to meet them; missing one is allowed but must be reported):\n- (none)"
-        in prompt
-    )
-    assert "FALLBACKS (acceptable alternatives, best first):\n- (none)" in prompt
+    assert "<preferences>\n- (none)\n</preferences>" in prompt
+    assert "<fallbacks>\n- (none)\n</fallbacks>" in prompt
+    assert "<never_agree>\n- (none)\n</never_agree>" in prompt
+
+
+def test_every_section_has_one_xml_tag_and_the_brief_holds_the_typed_lists() -> None:
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    sections = (
+        "brief", "goal", "first_sentence_asked_for", "share_freely", "call_details",
+        "ask_first", "hard_constraints", "preferences", "fallbacks", "never_agree",
+        "using_the_brief", "deciding", "while_you_wait", "finishing", "rules",
+    )  # fmt: skip
+    for tag in sections:
+        # Prose may name a tag ("<rules>"), but only the section itself closes it.
+        assert f"<{tag}>" in prompt and prompt.count(f"</{tag}>") == 1, tag
+    brief = prompt[prompt.index("<brief>") : prompt.index("</brief>")]
+    assert "- Before 3pm" in brief and "1. Fri morning" in brief
+    assert prompt.index("</brief>") < prompt.index("</using_the_brief>") < prompt.index("</rules>")
 
 
 # --- the assistant config ---------------------------------------------------------------------
@@ -211,7 +224,10 @@ def test_an_ask_first_value_typed_into_the_brief_blocks_the_call() -> None:
 
 def test_prompt_quotes_what_the_opening_line_asked_for_as_a_hard_constraint() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
-    assert 'It asked for: "I\'d like to reschedule an appointment with Dr. Lee."' in prompt
+    assert (
+        "<first_sentence_asked_for>I'd like to reschedule an appointment with Dr. Lee."
+        "</first_sentence_asked_for>"
+    ) in prompt
     assert "What your first sentence asked for" in prompt and "is also a hard constraint" in prompt
     assert "it wins, because it is the range Alex accepts" in prompt
 
