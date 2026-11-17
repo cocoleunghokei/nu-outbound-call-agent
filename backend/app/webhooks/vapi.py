@@ -39,6 +39,7 @@ from app.events import append_event
 from app.registry import Registries
 from app.secrets_registry import get_secret_registry
 from app.webhooks.bind import BoundCall, bind_call, message_of, vapi_call_id_of, vapi_call_of
+from app.webhooks.injection import injection_signals
 from app.webhooks.normalise import (
     SCORE_FIELDS,
     RawUnit,
@@ -68,6 +69,23 @@ _MAX_ERROR_CHARS = 8000
 # A receipt keeps confidence/dimensions only while pending (dispatch_pending needs them to
 # write agent_scores); leaving pending strips them in the same UPDATE (DC-5).
 _STRIP_SCORES = "arguments - 'confidence' - 'dimensions'"
+
+
+def _log_injection_attempt(call_id: UUID, payload: dict[str, Any]) -> None:
+    """Log, for review, business speech that looks like prompt injection (DC-13).
+
+    Logs only the call id and the matched pattern names, never the spoken text. Nothing on
+    the call changes: the in-call model's rules already say to ignore such speech.
+    """
+    if payload.get("role") != "business":
+        return
+    signals = injection_signals(str(payload.get("text", "")))
+    if signals:
+        logger.warning(
+            "call %s: business speech looks like prompt injection (%s)",
+            call_id,
+            ", ".join(signals),
+        )
 
 
 class _DatabaseUnavailable(Exception):
@@ -300,6 +318,7 @@ async def _process_unit(
                     occurred_at=normalised.occurred_at,
                     dedup_key=normalised.dedup_key,
                 )
+                _log_injection_attempt(call.call_id, normalised.payload)
                 return None
             if isinstance(normalised, ToolCallUnit):
                 result = await _receive_tool_call(
