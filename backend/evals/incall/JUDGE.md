@@ -65,7 +65,7 @@ on their own. For example, C4-03 ("The only Thursday slot is 4pm") has these che
 "doesn't accept 4pm" or "invents nothing"). Everything else is not an accuracy check: the ✋
 quality checks, the reason-text checks and the global guardrail checks G1 to G5.
 
-The runner writes each case's checks into `cases.json`, each with its level and who checks it.
+Each case's checks are in [`cases.json`](cases.json), each with its level, who checks it and, for a script check, the exact test it runs.
 They're reviewed there, together with the cases.
 
 ## Who checks what
