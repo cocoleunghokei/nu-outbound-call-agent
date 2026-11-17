@@ -86,6 +86,8 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted }: C
     switch (result.kind) {
       case 'started':
         dispatch({ type: 'start' })
+        // Opens the call even if the user left this screen while it was being placed:
+        // a call that is ringing should be on screen.
         onCallStarted?.(result.callId)
         break
       case 'saved_not_connected':

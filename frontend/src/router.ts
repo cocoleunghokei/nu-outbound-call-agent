@@ -8,7 +8,11 @@ import { useSyncExternalStore } from 'react'
  * Addresses:
  * - `/`                    chat home (pre-call)
  * - `/live?call=<call_id>` the live call; without `call`, the scripted demo call
- * - `/history`             past calls
+ * - `/history`             past calls (`?open=<call_id>` opens one call's result)
+ *
+ * Old addresses from the `?screen=` switcher still work, because notifications already
+ * shown and saved links carry them: `/?screen=history`, `/?screen=live&call=<id>` and
+ * `/?call=<id>` (see `legacyRoute`).
  *
  * Vercel serves `index.html` for every path (`vercel.json`), so a refresh or a shared link
  * on any of these opens the right screen.
@@ -32,6 +36,16 @@ export function routeOf(pathname: string, search: string): Route {
     return { name: 'live', callId: callId || null }
   }
   if (path === '/history') return { name: 'history' }
+  if (path === '/') return legacyRoute(new URLSearchParams(search))
+  return { name: 'home' }
+}
+
+/** The screen for an address of the old `?screen=` switcher on `/`. */
+function legacyRoute(params: URLSearchParams): Route {
+  const screen = params.get('screen')
+  if (screen === 'history') return { name: 'history' }
+  const callId = params.get('call')?.trim() || null
+  if (screen === 'live' || (!screen && callId)) return { name: 'live', callId }
   return { name: 'home' }
 }
 

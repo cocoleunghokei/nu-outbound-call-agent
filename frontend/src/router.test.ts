@@ -17,8 +17,16 @@ describe('routeOf', () => {
     expect(routeOf('/live', '')).toEqual({ name: 'live', callId: null })
   })
 
-  it('ignores the old ?screen= switcher', () => {
-    expect(routeOf('/', '?screen=history')).toEqual({ name: 'home' })
+  // Regression (#62 review): the call-ended notification and saved links still carry the
+  // old switcher's addresses, which used to open the chat home after the router landed.
+  it('still opens the old ?screen= switcher addresses', () => {
+    expect(routeOf('/', '?screen=history&open=abc-123')).toEqual({ name: 'history' })
+    expect(routeOf('/', `?screen=live&call=${CALL_ID}`)).toEqual({ name: 'live', callId: CALL_ID })
+    expect(routeOf('/', '?screen=live')).toEqual({ name: 'live', callId: null })
+    expect(routeOf('/', `?call=${CALL_ID}`)).toEqual({ name: 'live', callId: CALL_ID })
+    expect(routeOf('/', `?screen=&call=${CALL_ID}`)).toEqual({ name: 'live', callId: CALL_ID })
+    expect(routeOf('/', '?screen=precall')).toEqual({ name: 'home' })
+    expect(routeOf('/', '?screen=nope')).toEqual({ name: 'home' })
   })
 })
 
