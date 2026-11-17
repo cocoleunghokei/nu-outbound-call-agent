@@ -15,6 +15,34 @@ judges the expected result against the actual one, and how the five metrics are 
 5. Review   Lotto reads every Hard failure and a sample of passes
 ```
 
+### Running it
+
+From `backend/`, with `DEEPSEEK_API_KEY` in the environment:
+
+```bash
+make eval-incall                                  # all 65 cases x 3 runs, about $0.09
+make eval-incall ARGS="--cases C4-,G-03 --runs 1" # a few cases, for a quick check
+```
+
+The runner prints each run's script failures and writes a new folder
+`evals/incall/results/<UTC time>/` (git-ignored) with `runs.jsonl`, `script.jsonl` and one
+judge input per run in `judge/<case>-<run>.xml`. Other options: `--model` (time the same
+cases on another model), `--temperature` (default: unset, the provider's default, which is
+what live calls get until `assistant.py` pins one) and `--out`.
+
+Then Claude Code judges each file in `judge/` with this document as its instructions, and
+appends one line per decided check to `judgments.jsonl` in the same folder (the format is in
+"What the judge writes" below). Last:
+
+```bash
+make eval-incall-report DIR=evals/incall/results/<UTC time>
+```
+
+writes `report.md`. Until every judged check has a verdict, the report says **Incomplete**
+instead of guessing. The code is in `backend/evals/incall/` (`run.py`, `play.py`,
+`checks.py`, `judge_input.py`, `report.py`); `tests/test_incall_eval_runner.py` runs it all
+offline with a scripted fake model.
+
 **Step 1, Run.** The runner saves everything about each run, so it can be judged and
 re-judged without paying DeepSeek again:
 

@@ -1,5 +1,5 @@
 # Backend targets. The root Makefile calls lint, test and build.
-.PHONY: lint test test-db build seed-dev replay realtime-smoke eval-briefs
+.PHONY: lint test test-db build seed-dev replay realtime-smoke eval-briefs eval-incall eval-incall-report
 
 lint:
 	uv run ruff check .
@@ -28,3 +28,10 @@ realtime-smoke: ## seeds Alex and Bob, starts uvicorn, checks Realtime delivery 
 
 eval-briefs: ## LIVE DeepSeek brief eval (costs money, ~11 API calls); needs DEEPSEEK_API_KEY in the environment. Not in CI.
 	uv run python -m evals.briefs.run
+
+ARGS ?=
+eval-incall: ## LIVE in-call model eval (costs ~$0.09, 195 runs); needs DEEPSEEK_API_KEY. ARGS="--cases C4- --runs 1". Not in CI.
+	uv run python -m evals.incall.run $(ARGS)
+
+eval-incall-report: ## write report.md for one in-call eval after judging: make eval-incall-report DIR=evals/incall/results/<time>
+	uv run python -m evals.incall.report $(DIR)

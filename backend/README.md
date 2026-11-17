@@ -96,12 +96,16 @@ The pause-and-ping loop (DC-6 to DC-9), Pause / Resume / End (DC-11), the call s
 | `decisions.py` | `report_decision` handler: writes `agent.decision` (situation, action, reason, `field_key`, `missed_preference`), deduplicated per tool call. |
 | `sweeper.py` | Worker: every 0.5 s expires open pings whose clock ran out (queues the "did not reply" message) and ends calls paused longer than 2 min with a call-back offer (the outcome is left to post-call for now); every 5 s runs `dispatch_pending`. |
 | `outbox.py` | Worker: sends due `control` rows per call in id order via the voice port, outside any transaction. Fillers are dropped if their ping closed or the call is paused, pause lines after Resume, and everything but the goodbye once the call is ending; fillers and reassurances are never retried. Replies and timeouts wait while the call is paused. `VoiceNotSent` is retried once; `VoiceUncertain` becomes `uncertain` and is never resent. On start-up a pending row that may have been sent becomes `uncertain`. Assumes one backend instance. |
-| `prompt.py` | The agent's system prompt from the brief and the profile snapshot: share-freely values, ask-first field names (never values), constraints, preferences, ranked fallbacks, never-agree items, the DC-4 rubric (2 gates, 4 checks, 3 tiers), how to wait for the user and the no-reply rule. `GUARDRAIL_RULES` is a placeholder for DC-13. |
+| `prompt.py` | The agent's system prompt from the brief and the profile snapshot, each section in its own XML tag (user-typed text only inside `<brief>`, with `<` `>` escaped): share-freely values, ask-first field names (never values), constraints, preferences, ranked fallbacks, never-agree items, the DC-4 rubric (2 gates, 4 checks, 3 tiers), how to wait for the user and the no-reply rule. `GUARDRAIL_RULES` is a placeholder for DC-13. |
 | `assistant.py` | `build_assistant_config`: the DC-1 opening line (`voice/prompt_safety.build_first_message`), the prompt, recording off and transcripts on, the webhook URL and secret header, the max duration and the model (DeepSeek-V3; its key is set in the Vapi dashboard). Runs `assert_prompt_safe` over both texts. Pure; call creation will use it. |
 | `messages.py` | Every sentence put into a call, in one place to tune from test calls. |
 | `store.py`, `pings.py` | Shared helpers: profile snapshot reads, guarded status changes, outbox writes, ping open/close. |
 
 Tests: `tests/test_calls_*.py` (`calls_helpers.py` seeds a call with a snapshot and a control URL). They need the local Supabase stack, like the other `db` tests. `test_calls_e2e.py` runs the real workers and checks the reply is handed to the voice adapter within 2 s.
+
+### In-call model eval (`evals/incall/`)
+
+Plays scripted conversations against DeepSeek with the real prompt and tools, no phone call: `make eval-incall` (live, costs about $0.09), then the judge, then `make eval-incall-report DIR=...`. The cases are in `CASES.md` and `cases.json`, the scoring in `JUDGE.md`. `play.py` answers each tool call the way the handlers above do (`ask_user_result`, `question_withdrawn_result`, "Noted."), so keep it in step when they change. Offline tests: `tests/test_incall_eval_runner.py` and `tests/test_incall_eval_cases.py`.
 
 ## Post-call (`app/postcall/`, Harper)
 

@@ -2,7 +2,7 @@
 
 Owner: Lotto & Coco. Status: **draft, not yet approved**. The machine-readable version is
 [`cases.json`](cases.json): the same cases, each split into its checks, for the runner
-(`make eval-incall`, not built yet) that follows the pattern of `backend/evals/briefs/`. Change
+(`make eval-incall`, see [JUDGE.md](JUDGE.md), "Running it"). Change
 both together: `backend/tests/test_incall_eval_cases.py` fails if their IDs or totals differ.
 
 ## How a case runs

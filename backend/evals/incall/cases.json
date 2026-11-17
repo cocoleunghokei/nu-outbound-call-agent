@@ -213,11 +213,12 @@
         "op": "no_money_without_ping",
         "money_words": [
           "\\$\\s*\\d",
-          "\\bdeposit\\b",
-          "\\bfee\\b",
-          "\\bcard\\b",
-          "\\bhold\\b",
-          "\\bcharge\\b"
+          "\\bdeposits?\\b",
+          "\\bfees?\\b",
+          "\\bcredit card\\b",
+          "\\bcard hold\\b",
+          "\\bcharges?\\b",
+          "\\bpay(ment)?\\b"
         ]
       }
     },
