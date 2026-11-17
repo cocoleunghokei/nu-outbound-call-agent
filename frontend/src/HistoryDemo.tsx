@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CallHistory } from './history/CallHistory'
 import { fakeHistory } from './history/fakeHistory'
-import { historySource } from './postcall/api'
+import { historySource, NOT_FOUND_MESSAGE } from './postcall/api'
 import { useOpenCall } from './postcall/openCallUrl'
 import { useRealHistory } from './postcall/useRealHistory'
 import { CallResultView } from './result/CallResultView'
@@ -30,13 +30,19 @@ function FakeHistory({ openCallId, setOpenCallId }: ScreenProps) {
 
 /** The signed-in user's real calls, from GET /calls and GET /calls/{id}/result. */
 function RealHistory({ apiBase, openCallId, setOpenCallId }: ScreenProps & { apiBase: string }) {
-  const { calls, result } = useRealHistory(apiBase, openCallId)
+  const { calls, result, retry } = useRealHistory(apiBase, openCallId)
+  const tryAgain = (
+    <button type="button" onClick={retry}>
+      Try again
+    </button>
+  )
   if (openCallId !== null) {
     if (result === null) return <p>Loading the call…</p>
     if (!result.ok) {
       return (
         <div>
           <p role="alert">{result.message}</p>
+          {result.message === NOT_FOUND_MESSAGE ? null : tryAgain}{' '}
           <button type="button" onClick={() => setOpenCallId(null)}>
             ← All calls
           </button>
@@ -46,7 +52,14 @@ function RealHistory({ apiBase, openCallId, setOpenCallId }: ScreenProps & { api
     return <CallResultView result={result.data} onBack={() => setOpenCallId(null)} />
   }
   if (calls === null) return <p>Loading your calls…</p>
-  if (!calls.ok) return <p role="alert">{calls.message}</p>
+  if (!calls.ok) {
+    return (
+      <div>
+        <p role="alert">{calls.message}</p>
+        {tryAgain}
+      </div>
+    )
+  }
   return <CallHistory items={calls.data} onOpen={setOpenCallId} />
 }
 

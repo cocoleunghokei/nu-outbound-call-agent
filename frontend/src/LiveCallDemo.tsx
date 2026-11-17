@@ -21,7 +21,7 @@ function MockLiveCall() {
 
 /** A real call, followed through Supabase and controlled through the backend API. */
 function RealLiveCall({ callId, apiBase }: { callId: string; apiBase: string }) {
-  const { summary, events, sendReply, sendCommand, problem } = useRealCall(callId, apiBase)
+  const { summary, events, sendReply, sendCommand, problem, historicalUpTo } = useRealCall(callId, apiBase)
   return (
     <LiveCall
       summary={
@@ -38,6 +38,7 @@ function RealLiveCall({ callId, apiBase }: { callId: string; apiBase: string }) 
       sendReply={sendReply}
       sendCommand={sendCommand}
       notice={problem}
+      historicalUpTo={historicalUpTo}
     />
   )
 }

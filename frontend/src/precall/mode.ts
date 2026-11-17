@@ -9,6 +9,7 @@
  * demo mode works even without the Supabase variables (`lib/supabase.ts`
  * throws at import when they are missing).
  */
+import { accessToken } from '../lib/accessToken'
 import { createApiClient, normaliseBaseUrl } from './api'
 import { apiStarter, demoStarter, type Starter } from './start'
 
@@ -24,11 +25,8 @@ export type LoadTokenSource = () => Promise<TokenSource>
 
 /** The token source backed by the shared client in `lib/supabase.ts` (never a second client). */
 export const loadSupabaseTokenSource: LoadTokenSource = async () => {
-  const { supabase } = await import('../lib/supabase')
-  return async () => {
-    const { data } = await supabase.auth.getSession()
-    return data.session?.access_token ?? null
-  }
+  await import('../lib/supabase') // rejects here when Supabase isn't configured
+  return accessToken
 }
 
 /** Short note for the top bar in demo mode; null in API mode. */
