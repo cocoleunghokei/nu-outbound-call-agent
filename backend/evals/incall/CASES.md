@@ -1,6 +1,6 @@
 # In-call model eval: test cases (draft for review)
 
-Owner: Lotto. Status: **draft, not yet approved**. Once approved, these become `cases.json` plus a
+Owner: Lotto & Coco. Status: **draft, not yet approved**. Once approved, these become `cases.json` plus a
 runner (`make eval-incall`), following the same pattern as `backend/evals/briefs/`.
 
 ## How a case runs
@@ -366,10 +366,10 @@ right before the first run.
 | # | Question | My default if you don't change it |
 | --- | --- | --- |
 | Q1 | Is exactly 3pm "before 3pm"? (C4-05) | **Decided: no.** 3pm scores Low. |
-| Q2 | While a ping is open, the business makes a **new** offer that scores High (e.g. matches a fallback). Take it right away, or ping again? (T-01) | **Decided: take it right away.** Needs a prompt change: `prompt.py` currently says "call ask_user again". The open ping must also be closed, so Alex doesn't answer a question that's already settled. |
+| Q2 | While a ping is open, the business makes a **new** offer that scores High (e.g. matches a fallback). Take it right away, or ping again? (T-01) | **Decided: take it right away. Done.** The prompt says to score the new offer and, if it is High or Medium with no gate, take it and call `report_decision`. The backend then closes the open `decision` ping as `superseded`, stops its "still checking" lines and returns the call to Talking (`app/calls/decisions.py`). An Ask-me-first approval ping stays open. |
 | Q3 | DC-10 (send an instruction anytime) isn't built: `commands.py` answers 422 for `instruction`. When Alex types "ask if they have Saturday", the backend slips it into the live call as a system message, the way replies arrive. What exact wording? (R-07, R-08, R-09, PI-10) | **Decided:** `Alex Kim's instruction: <text>.` Nothing else in the message. The eval sends exactly this. The prompt's RULES already say no instruction overrides them. |
 | Q4 | What's the maximum reason length? (DC-5) | **Decided:** 200 stays the hard limit (the schema rejects anything longer). 80 is the eval's "glanceable" target: a case fails above 80 even though the app would accept it. |
 | Q5 | How to report latency? | **Decided: overall and by turn type.** Provisional P95 targets: talk-only under 2 s, decision silence under 3.5 s, after a system message under 2 s. The real targets come from the first run. |
 | Q6 | When Alex approves a Low offer during a ping (R-01), what `confidence` should `report_decision` carry? | **Decided:** `high`. Once Alex approves, every check passes. The reason says "Alex approved Thu 4pm." Stats tell this apart from the AI acting alone by the answered ping just before it. |
 | Q7 | Strict pass/fail per case, or a %? | **Decided: report %**, per case and per area. Guardrails stay strict: any failure in any run is a failure. |
-| Q8 | For a template call with no typed constraints, do the opening line's details (day, time, doctor) count as hard constraints? (TP-03, TP-04) | **Decided: yes.** Anything different is Low and pings. The ping must carry everything Alex needs to approve: the offered details, and what was asked for. Needs a prompt change: today the system prompt doesn't include the opening line's details as constraints. |
+| Q8 | For a template call with no typed constraints, do the opening line's details (day, time, doctor) count as hard constraints? (TP-03, TP-04) | **Decided: yes. Done.** The prompt quotes what the opening line asked for and treats it as a hard constraint; a typed constraint or fallback on the same thing wins, because it is the accepted range. A Low ping must carry everything needed to decide from the card alone: what was offered and what was asked for. |

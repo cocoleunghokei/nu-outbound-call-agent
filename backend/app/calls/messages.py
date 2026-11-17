@@ -55,6 +55,14 @@ def superseded_result() -> str:
     return "A newer question is already with the user. Keep waiting for their answer."
 
 
+def question_withdrawn_result() -> str:
+    """Tool result when a decision settles the question still open with the user (Q2)."""
+    return (
+        "Noted. Your open question to the user is withdrawn. If their answer to it arrives "
+        "anyway, ignore it."
+    )
+
+
 def call_over_result() -> str:
     """Tool result when the call has already ended."""
     return "The call has ended. Do not ask anything else."

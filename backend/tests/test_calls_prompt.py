@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from app.calls.assistant import build_assistant_config
-from app.calls.prompt import GUARDRAIL_RULES, build_system_prompt
+from app.calls.prompt import GUARDRAIL_RULES, build_system_prompt, opening_request
 from app.contracts.generated import Brief
 from app.voice.fake import FakeVoicePlatform
 from app.voice.port import prepare_assistant
@@ -204,3 +204,51 @@ def test_an_ask_first_value_typed_into_the_brief_blocks_the_call() -> None:
     brief = make_brief(constraints=[{"text": f"Patient born {FAKE_DOB}"}])
     with pytest.raises(AskFirstInPrompt):
         config(brief)
+
+
+# --- Q2 and Q8 (backend/evals/incall/CASES.md) ----------------------------------------------
+
+
+def test_prompt_quotes_what_the_opening_line_asked_for_as_a_hard_constraint() -> None:
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert 'It asked for: "I\'d like to reschedule an appointment with Dr. Lee."' in prompt
+    assert "What your first sentence asked for" in prompt and "is also a hard constraint" in prompt
+    assert "it wins, because it is the range Alex accepts" in prompt
+
+
+def test_opening_request_resolves_share_freely_field_refs() -> None:
+    brief = make_brief(
+        task_line="Book a table for {party_size} under {full_name}.",
+        task_vars={"party_size": {"literal": "6"}, "full_name": {"field_ref": "full_name"}},
+    )
+    assert opening_request(brief, SNAPSHOT) == "Book a table for 6 under Alex Chen."
+
+
+def test_opening_request_is_left_out_when_a_variable_is_missing() -> None:
+    brief = make_brief(task_line="Book a table for {party_size}.", task_vars={})
+    assert opening_request(brief, SNAPSHOT) is None
+    prompt = build_system_prompt(brief, SNAPSHOT)
+    assert "Your first sentence has already been said for you.\n" in prompt
+    assert "It asked for" not in prompt
+
+
+def test_opening_request_never_resolves_an_ask_first_field() -> None:
+    brief = make_brief(
+        task_line="Born {date_of_birth}.",
+        task_vars={"date_of_birth": {"field_ref": "date_of_birth"}},
+    )
+    with pytest.raises(AskFirstInPrompt):
+        opening_request(brief, SNAPSHOT)
+
+
+def test_low_pings_must_carry_everything_needed_to_decide() -> None:
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "everything needed to decide from the card alone" in prompt
+    assert "what they offered (day, time, who, price) and what Alex asked for" in prompt
+
+
+def test_a_better_offer_while_waiting_is_taken_right_away() -> None:
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "If the business speaks without a new offer, say only" in prompt
+    assert "take it right away and call report_decision: that withdraws your question" in prompt
+    assert "If it is still Low, call ask_user again" in prompt
