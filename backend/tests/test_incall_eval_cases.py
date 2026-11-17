@@ -207,7 +207,8 @@ def test_check_scopes_point_at_a_real_step() -> None:
         scope = check.get("scope", f"step:{steps[case_id]}")
         if scope == "run":
             continue
-        n = int(scope.removeprefix("step:"))
+        assert scope.startswith(("step:", "from:")), check["id"]
+        n = int(scope.split(":")[1])
         assert 1 <= n <= steps[case_id], check["id"]
     for case in CASES:
         for check in case["checks"]:

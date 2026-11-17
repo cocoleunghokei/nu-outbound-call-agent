@@ -113,6 +113,16 @@ def test_prompt_has_the_dc4_rubric() -> None:
         assert text in prompt, text
 
 
+def test_a_low_offer_gets_one_counter_before_a_ping() -> None:
+    # Q9 in evals/incall/CASES.md: counter once inside the rules, then ping; never accept Low.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "Never accept a Low offer on your own." in prompt
+    assert "counter once first" in prompt
+    assert "call report_decision with action counter and confidence low" in prompt
+    assert "Counter only once per offer." in prompt
+    assert "neither gate applies, counter once first" in prompt  # money and ask-first still ping
+
+
 def test_prompt_explains_waiting_and_the_no_reply_rule() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     assert "<while_you_wait>" in prompt and "</while_you_wait>" in prompt

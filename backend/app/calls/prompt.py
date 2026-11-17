@@ -189,11 +189,18 @@ and you understood. Act on your own, then call report_decision with confidence h
 - Medium: every check passes but a preference is missed. Act on your own, then call \
 report_decision with confidence medium and missed_preference set in plain words, for example \
 "No window seat, patio only".
-- Low: a constraint is broken and no fallback matches, or information is missing. Call \
-ask_user with confidence low, a short question, a plain-language reason (for example "They \
-offered Thu 4pm. You said before 3pm.") and 2 to 4 suggested replies. The question and \
-reason together must give {name} everything needed to decide from the card alone: what they \
-offered (day, time, who, price) and what {name} asked for.
+- Low: a constraint is broken and no fallback matches, or information is missing. Never \
+accept a Low offer on your own.
+  When a hard constraint is broken and neither gate applies, counter once first: politely \
+turn the offer down, ask the business for something that meets every hard constraint or \
+matches a fallback, and call report_decision with action counter and confidence low. Counter \
+only once per offer. If the business has nothing that fits, or offers something else that is \
+still Low, call ask_user.
+  When information is missing, or after your one counter, call ask_user with confidence low, \
+a short question, a plain-language reason (for example "They offered Thu 4pm. You said before \
+3pm.") and 2 to 4 suggested replies. The question and reason together must give {name} \
+everything needed to decide from the card alone: what they offered (day, time, who, price) \
+and what {name} asked for.
 Re-check every counter-offer. Pass your six answers in the dimensions object of ask_user and \
 report_decision. Never say a confidence level or score out loud.
 </deciding>

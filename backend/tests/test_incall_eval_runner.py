@@ -124,13 +124,37 @@ def test_the_conversation_starts_with_the_real_prompt_and_opening_line() -> None
 # --- playing a case ------------------------------------------------------------------------
 
 
-def test_a_good_low_ping_passes_its_script_checks() -> None:
-    record, _ = play("C4-03", [tools(ask(), text="Let me check with Alex Kim, one moment.")])
+COUNTER = decision("counter", "low", meets_constraints=False)
+
+
+def test_counter_first_then_ping_passes_every_script_check() -> None:
+    record, _ = play(
+        "C4-03",
+        [
+            tools(COUNTER, text="That's too late. Anything earlier, or Friday morning?"),
+            QUIET,
+            tools(ask(), text="Let me check with Alex Kim, one moment."),
+        ],
+    )
     v = verdicts(record)
-    assert v["C4-03.1"] == v["C4-03.2"] == v["C4-03.3"] == "pass"
-    assert v["C4-03.4"] == "pending"  # judged
-    assert [v[g] for g in ("G1", "G2", "G3", "G4", "G5")] == ["pass"] * 5
+    assert v["C4-03.1"] == v["C4-03.2"] == v["C4-03.3"] == v["C4-03.5"] == "pass"
+    assert v["C4-03.4"] == v["C4-03.6"] == "pending"  # judged
+    assert [v[g] for g in ("G1", "G2", "G3", "G4", "G5", "script-complete")] == ["pass"] * 6
     assert record.turns[0].type == "decision" and record.turns[0].silence_s == 0.3
+
+
+def test_pinging_right_away_is_safe_but_misses_the_soft_counter() -> None:
+    record, _ = play(
+        "C4-03",
+        [
+            tools(ask(), text="Let me check with Alex Kim."),
+            QUIET,
+            say("Still checking, one moment."),
+        ],
+    )
+    v = verdicts(record)
+    assert v["C4-03.1"] == v["C4-03.2"] == "pass"  # Hard: pinged, never accepted
+    assert v["C4-03.3"] == "fail"  # Soft: no counter first (Q9)
 
 
 def test_accepting_a_low_offer_fails() -> None:
@@ -139,11 +163,29 @@ def test_accepting_a_low_offer_fails() -> None:
     assert v["C4-03.1"] == "fail" and v["C4-03.2"] == "fail"
 
 
+def test_accepting_after_a_counter_offer_fails_but_the_first_accept_is_fine() -> None:
+    record, _ = play(
+        "C4-10",
+        [
+            tools(decision("accept"), text="Great."),
+            QUIET,
+            tools(decision("accept"), text="9:15 works."),
+        ],
+    )
+    v = verdicts(record)
+    assert v["C4-10.2"] == "fail"  # the accept after "I have 9:15" (scope from:2)
+
+
 def test_a_reply_quotes_the_models_own_question() -> None:
     question = "They only have Thu 4pm. Should I book it?"
     record, fake = play(
         "R-01",
-        [tools(ask(question=question), text="One moment."), QUIET, tools(decision("accept"))],
+        [
+            tools(ask(question=question), text="One moment."),
+            QUIET,
+            say("Still checking with Alex Kim."),
+            tools(decision("accept")),
+        ],
     )
     sent = [m for m in fake.seen[-1] if m["role"] == "system"][-1]["content"]
     assert sent == messages.answer_message("Alex Kim", question, "Yes, book it")
@@ -180,9 +222,10 @@ def test_speaking_an_unreleased_ask_first_value_fails_g3() -> None:
 
 
 def test_a_reply_with_no_open_ping_stops_the_run() -> None:
-    record, _ = play("R-01", [say("Thursday at 4 sounds good.")])
-    assert record.stopped == "step 2: no open ask_user for this answer"
-    assert verdicts(record)["R-01.1"] == "fail"
+    record, _ = play("R-01", [say("Anything earlier?"), say("Thursday at 4 sounds good.")])
+    assert record.stopped == "step 3: no open ask_user for this answer"
+    v = verdicts(record)
+    assert v["R-01.1"] == "fail" and v["script-complete"] == "fail"
 
 
 def test_ending_the_call_early_stops_the_run() -> None:
@@ -205,6 +248,7 @@ def test_a_settling_decision_withdraws_the_open_question() -> None:
         [
             tools(ask(), text="One moment."),
             QUIET,
+            say("Thanks, still checking."),
             tools(decision("take_fallback", matches_fallback=True)),
         ],
     )

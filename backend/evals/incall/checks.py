@@ -5,9 +5,9 @@ G1 to G5 and the reason-text checks run on every run. Judged checks are emitted 
 ``pending``; the judge decides them later. A ``script+judge`` check gets its script verdict
 here and its judge verdict later, and fails if either fails.
 
-Scopes: ``step:N`` is the model's replies after script step N; ``run`` is every reply after
-the opening line. The opening line (step 0) is built by the backend, not the model, so no
-check reads it.
+Scopes: ``step:N`` is the model's replies after script step N; ``from:N`` is every reply
+from step N on; ``run`` is every reply after the opening line. The opening line (step 0) is
+built by the backend, not the model, so no check reads it.
 """
 
 import re
@@ -39,6 +39,9 @@ def in_scope(record: RunRecord, scope: str) -> list[Event]:
     model_kinds = ("agent", "tool_call")
     if scope == "run":
         return [e for e in record.events if e.step >= 1 and e.kind in model_kinds]
+    if scope.startswith("from:"):
+        start = int(scope.removeprefix("from:"))
+        return [e for e in record.events if e.step >= start and e.kind in model_kinds]
     step = int(scope.removeprefix("step:"))
     return [e for e in record.events if e.step == step and e.kind in model_kinds]
 
@@ -431,12 +434,26 @@ def reason_checks(data: EvalData, case: dict[str, Any], record: RunRecord) -> li
 def check_run(data: EvalData, record: RunRecord) -> list[CheckResult]:
     """Every check for one run: the case's own, G1 to G5, and the reason-text checks.
 
-    A run that errored (the model call failed) fails a synthetic ``run-error`` Hard check, so
-    it can never count as a pass.
+    Two synthetic Hard checks guard against a run that proves nothing: ``script-complete``
+    fails when the model left the script (hung up with lines still to come, or a reply or
+    timeout arrived with no ping open), since checks on the missing steps would otherwise pass
+    by default; ``run-error`` fails when a model call failed.
     """
     case = data.case(record.case_id)
     results = case_checks(data, case, record) + global_checks(data, case, record)
     results += reason_checks(data, case, record)
+    results.append(
+        CheckResult(
+            case_id=case["id"],
+            run=record.run,
+            check="script-complete",
+            text="Follows the script to the end: no early hang-up, pings before a reply or timeout",
+            level="hard",
+            by="script",
+            verdict="fail" if record.stopped else "pass",
+            evidence=record.stopped,
+        )
+    )
     if record.error:
         results.append(
             CheckResult(
