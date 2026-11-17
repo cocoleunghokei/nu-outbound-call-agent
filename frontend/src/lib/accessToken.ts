@@ -14,16 +14,29 @@ export async function accessToken(): Promise<string | null> {
 }
 
 /**
- * Calls `onChange` when the user signs in or out, so a screen loaded while signed out can
- * load again. Resolves to the unsubscribe function, or to a no-op when Supabase isn't
- * configured.
+ * Calls `onChange` when the signed-in user changes (sign-in, sign-out or a different
+ * account), so a screen loaded while signed out can load again. Resolves to the
+ * unsubscribe function, or to a no-op when Supabase isn't configured.
+ *
+ * It compares the session's user id, not the event name: Supabase also reports
+ * `SIGNED_IN` for the same user, for example each time the tab becomes visible again,
+ * and that must not reload the screen.
  */
 export async function onSignInChange(onChange: () => void): Promise<() => void> {
   try {
     const { supabase } = await import('./supabase')
-    const { data } = supabase.auth.onAuthStateChange((event) => {
-      // INITIAL_SESSION fires right away on subscribing; the first load already covers it.
-      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') onChange()
+    // undefined until INITIAL_SESSION (fired right away on subscribing) gives the user
+    // the first load already saw.
+    let userId: string | null | undefined
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      const next = session?.user.id ?? null
+      if (event === 'INITIAL_SESSION') {
+        userId = next
+        return
+      }
+      if (next === userId) return
+      userId = next
+      onChange()
     })
     return () => data.subscription.unsubscribe()
   } catch {
