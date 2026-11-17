@@ -8,15 +8,15 @@ Update this page when a gap below closes, and link the PR.
 
 ## What the live site shows, and why it's still a demo
 
-Site: https://nu-outbound-call-agent-frontend.vercel.app. Pick a screen with `?screen=precall|live|history`.
+Site: https://nu-outbound-call-agent-frontend.vercel.app. Screens: `/` (chat home), `/live?call=<id>` (live call; without `call`, the demo call), `/history`.
 
-Every screen runs on fake data. `?screen=live` always plays the scripted "Brookline Family Medicine" call (`frontend/src/live-call/mockCall.ts`), even after you press **Start call** on the pre-call screen with your own number.
+Every screen runs on fake data. `/live` without a call id plays the scripted "Brookline Family Medicine" call (`frontend/src/live-call/mockCall.ts`), even after you press **Start call** on the pre-call screen with your own number.
 
 There are five independent reasons. Each one alone keeps the app in demo mode:
 
 | # | Layer | What happens | Where | Fix tracked in |
 |---|---|---|---|---|
-| 1 | Routing | The screens aren't linked. `App.tsx` is a temporary `?screen=` switcher, so Start doesn't open the live page, and the live page doesn't know which call to follow. It shows a real call only with `?call=<uuid>`. | `frontend/src/App.tsx`, `LiveCallDemo.tsx` | #46 |
+| 1 | Routing | Start opens `/live?call=<id>` (router in `frontend/src/router.ts`, #62). Still missing: live → result and history → result links. | `frontend/src/App.tsx`, `router.ts` | #46 |
 | 2 | Vercel build | Production is built without `VITE_API_URL` or `VITE_LIVE_CALL_SOURCE`. Vite inlines env vars at build time, so `liveCallMode()` returns `mock` and the pre-call screen picks `demoStarter`, which only logs `start call with brief (demo mode, nothing sent)`. | `live-call/backend.ts` `liveCallMode()`, `precall/mode.ts`, `precall/start.ts` | #51 |
 | 3 | Sign-in | API mode also needs a signed-in Supabase session. There's no sign-in screen yet, so the pre-call screen falls back to demo with reason `no_session`. | `precall/mode.ts`; ON-1 | not filed yet |
 | 4 | Backend route | `POST /calls {brief_id}` doesn't exist (it returns 404), so nothing calls `VapiVoice.create_call`. Even in API mode, Start saves the brief and reports "saved, not connected". | `backend/app/voice/vapi.py` exists; the route is missing | #45 |
@@ -91,7 +91,7 @@ backend/                 FastAPI app (Python 3.12, uv). See backend/README.md
   app/dev/               Local stack, seed and replay tools
   tests/                 pytest; `-m db` tests need local Supabase (Docker)
 frontend/                React 19 + TypeScript + Vite, on Vercel. See frontend/README.md
-  src/App.tsx            Temporary ?screen= switcher (to be replaced, #46)
+  src/App.tsx            Picks the screen for the address (router: src/router.ts)
   src/precall/           Chat home, review card, demo/API mode, Start                   (Lotto)
   src/live-call/         Live call page, ping card, controls, mock + real data          (Coco)
   src/history/           Call history list                                              (Harper)
