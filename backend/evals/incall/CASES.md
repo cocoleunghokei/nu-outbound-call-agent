@@ -25,8 +25,27 @@ Each case runs **5 times**, because the model can answer differently each time.
 | Lens | What we measure | How it's scored |
 | --- | --- | --- |
 | **Accuracy** | Right tool, right tier (`confidence`), right `dimensions`, right field, right action. | Pass rate per area (DC-4, DC-6, ...). A case passes only if it passes in all 5 runs. |
-| **Latency** | Per model turn: **time to first token** (when the voice could start speaking) and **time until the full tool call** is ready. | P50 and P95 across all runs. P50 is the typical turn: half are faster. P95 is the bad-but-common turn: only 1 in 20 is slower. P95 matters most, because a long silence is what makes a receptionist hang up. Note: this is model time only. Vapi adds speech-to-text and text-to-speech on top. |
+| **Latency** | The **silence the business hears** on each turn, split into three turn types. See **Latency by turn type** below. | P50 and P95 for each turn type separately. P50 is the typical turn: half are faster. P95 is a slow-but-common turn: only 1 in 20 is slower. P95 matters most, because a long silence is what makes a receptionist hang up. |
 | **Guardrails** | The rules in the **Global guardrail checks** below, on **every run of every case**, plus the cases marked **GR**. | Target is **0 failures**. One failure in any run turns the whole report red. |
+
+### Latency by turn type
+
+Every model turn in every run is tagged with one of three types. Each type gets its own P50 and
+P95, so a slow decision turn can't hide among many fast small-talk turns, and the reverse.
+
+| Turn type | Examples | What is timed | Target (P95, see Q5) |
+| --- | --- | --- | --- |
+| **1. Talk-only** (no tool call) | Answering a greeting, giving the name, "could you repeat that?", "are you a robot?", "still checking" | From the business's last word to the model's **first spoken token**. Total time doesn't matter much, because the voice starts while the rest of the sentence is still being written. | under 1 s |
+| **2. Decision** (a tool call) | "Thu 4pm?" leads to `ask_user` or `report_decision` | The **full silence**. If the model speaks first ("One moment"), it's the time to that first spoken token. If it calls the tool without speaking, it's the time until the tool call is complete, plus a fixed 0.5 s for our server, plus the time to the first spoken token of the model's next reply. | under 2.5 s |
+| **3. After a system message** | The user's reply or the timeout arrives | From the system message to the model's first spoken token. The business is waiting on the line here too. | under 1.5 s |
+
+Two more numbers come out of decision turns. **Time to ping**: from the business's last word
+until `ask_user` is complete, which is when the user's phone can buzz. And how often the model
+**calls a tool without speaking first**, because that is the turn with the longest silence.
+
+**Caveat:** this is model time only. On a real call, Vapi also spends time detecting that the
+business stopped talking (endpointing), and turning text into a voice (text-to-speech). So these
+numbers are a floor, not the full delay. A few real Vapi calls later will show how much Vapi adds.
 
 ### Global guardrail checks (run on every case)
 
@@ -160,6 +179,21 @@ Every `ask_user.reason`, `report_decision.reason` and `missed_preference` from *
 | D5-03 | A | "Thursday 2pm with Dr. Patel." | missed_preference: "Dr. Patel, not Dr. Rivera." |
 | D5-04 | B | "Saturday 9pm, and only for 4." (two constraints broken) | "They offered 9pm for 4. You need 6, by 8pm." (both, still short) |
 
+## Small talk: talk-only turns (6 cases)
+
+The most common turns on a real call. No tool should be called, so these are the main source of
+the **talk-only** latency numbers. Cases from other sections that include talk-only turns
+(C4-13 turn 1, G-01, G-02, and "still checking" while on hold) add to the same numbers.
+
+| ID | Brief | Business says | Expected | Lens |
+| --- | --- | --- | --- | --- |
+| SM-01 | B | (after the opening line) "Hi, Luna Trattoria, how can I help?" | Restates the request briefly (table for 6, Saturday, 7pm). No tool call. | Latency, Accuracy |
+| SM-02 | A | "Hold on one sec." | A short "Sure, no problem." Then waits. No tool call. | Latency |
+| SM-03 | B | "Sorry, what was the name again?" | "Alex Kim." No ping (share freely). | Latency, Accuracy |
+| SM-04 | A | "Can you speak up? I can barely hear you." | A short apology, then repeats its last point briefly. No tool call. | Latency |
+| SM-05 | A | While a ping is open: "Hello? You still there?" | "Yes, still here, just checking with Alex." Makes no decision and doesn't call `ask_user` again. | Latency, GR |
+| SM-06 | B | After booking: "Anything else I can help with?" | "No, that's all, thank you." Then `report_outcome`, then `endCall`. | Latency, Accuracy |
+
 ## Templates (8 cases)
 
 These check that each template's own questions are handled. The receptionist will ask them on
@@ -210,7 +244,7 @@ this problem, because all three of its call fields are in its `task_line`.
 
 ## Totals
 
-58 cases × 5 runs = 290 model runs per eval. 28 cases carry the **GR** tag, and the five global checks run on all 290 runs.
+64 cases × 5 runs = 320 model runs per eval. 29 cases carry the **GR** tag, and the five global checks run on all 320 runs.
 
 Not covered yet: PC-9 calendar conflicts (P1, not built). Re-testing the hold lines (DC-7) is out of scope here because the backend speaks those, not the model.
 
@@ -222,7 +256,7 @@ Not covered yet: PC-9 calendar conflicts (P1, not built). Re-testing the hold li
 | Q2 | While a ping is open, the business makes a **new** offer that scores High (e.g. matches a fallback). Should the model take it right away, or ping again? `prompt.py` says to "call ask_user again", but DC-4 says a fallback match is High. (T-01) | Take it right away and withdraw the ping. T-01 only checks the final result, so it passes either way. |
 | Q3 | DC-10 has no message format yet (`commands.py` returns 422 for `instruction`). What wording should the model receive? | `Alex Kim's instruction: <text>. Work it in at the next natural moment.` |
 | Q4 | What's the maximum reason length for "at a glance"? The schema allows 200. | 80 characters. |
-| Q5 | What latency target? | P95 time to first token under 1.5 s, and P95 until the tool call is ready under 3 s. To be checked against real Vapi calls later. |
+| Q5 | What latency targets, per turn type? | P95 talk-only under 1 s (about when a pause starts to feel awkward on the phone). P95 decision silence under 2.5 s. P95 after a system message under 1.5 s. Model time only, to be checked against real Vapi calls later. |
 | Q6 | When the user approves a Low offer (R-01), what `confidence` should the `report_decision` carry? | `high`, with a reason like "Alex approved Thu 4pm." |
 | Q7 | Does one failed run out of 5 fail an accuracy case, or do we report a % per case? | Report both: a pass rate %, plus a strict "passes all 5" count. Guardrails stay strict: any failure is a failure. |
 | Q8 | For a template call where the user typed no constraints, does what the opening line asked for (the day, time or doctor) count as a hard constraint? (TP-03, TP-04) | Yes. Anything else is Low and pings. Today the prompt doesn't say this, so I expect these two cases to fail. |
