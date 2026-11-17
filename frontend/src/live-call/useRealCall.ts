@@ -36,6 +36,18 @@ export interface RealCall {
   historicalUpTo: number | null
 }
 
+/**
+ * The new `historicalUpTo` after a load of the call's events: `loaded` is what came back,
+ * or null when the load failed.
+ * - Only the first successful load marks history; reloads after a reconnect don't move it.
+ * - A failed load leaves it null (still unknown), so the call-ended notification waits for
+ *   a load that works instead of treating every stored event as live.
+ */
+export function markHistory(first: number | null, loaded: CallEvent[] | null): number | null {
+  if (first !== null || loaded === null) return first
+  return loaded.reduce((max, e) => Math.max(max, e.seq), 0)
+}
+
 async function loadClient(): Promise<SupabaseClient> {
   const { supabase } = await import('../lib/supabase')
   return supabase
@@ -82,10 +94,8 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
         if (cancelled) return
         if (error) setProblem('Couldn’t load the call. It may not exist, or you may be signed out.')
         else take(data ?? [])
-        // Only the first load marks history; reloads after a reconnect don't move it.
-        // A failed load leaves nothing loaded, so later events count as live.
-        const loaded = (error ? [] : (data ?? [])).map(toCallEvent).filter((e): e is CallEvent => e !== null)
-        setHistoricalUpTo((first) => first ?? loaded.reduce((max, e) => Math.max(max, e.seq), 0))
+        const loaded = error ? null : (data ?? []).map(toCallEvent).filter((e): e is CallEvent => e !== null)
+        setHistoricalUpTo((first) => markHistory(first, loaded))
       }
 
       // Subscribe first, then load, so nothing between the two is missed.
