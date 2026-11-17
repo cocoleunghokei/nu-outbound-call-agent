@@ -29,6 +29,24 @@ export interface RealCall {
   sendCommand: SendCallCommand
   /** A plain-language problem to show above the call, or null. */
   problem: string | null
+  /**
+   * The highest `seq` in the first load of the call's events (0 if there were none),
+   * or null until that load finishes. Events up to it happened before the page opened,
+   * so the call-ended notification (PO-5) skips a call that had already ended.
+   */
+  historicalUpTo: number | null
+}
+
+/**
+ * The new `historicalUpTo` after a load of the call's events: `loaded` is what came back,
+ * or null when the load failed.
+ * - Only the first successful load marks history; reloads after a reconnect don't move it.
+ * - A failed load leaves it null (still unknown), so the call-ended notification waits for
+ *   a load that works instead of treating every stored event as live.
+ */
+export function markHistory(first: number | null, loaded: CallEvent[] | null): number | null {
+  if (first !== null || loaded === null) return first
+  return loaded.reduce((max, e) => Math.max(max, e.seq), 0)
 }
 
 async function loadClient(): Promise<SupabaseClient> {
@@ -41,6 +59,7 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
   const [summary, setSummary] = useState<LiveCallSummary | null>(null)
   const [events, setEvents] = useState<CallEvent[]>([])
   const [problem, setProblem] = useState<string | null>(null)
+  const [historicalUpTo, setHistoricalUpTo] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -71,6 +90,8 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
         if (cancelled) return
         if (error) setProblem('Couldn’t load the call. It may not exist, or you may be signed out.')
         else take(data ?? [])
+        const loaded = error ? null : (data ?? []).map(toCallEvent).filter((e): e is CallEvent => e !== null)
+        setHistoricalUpTo((first) => markHistory(first, loaded))
       }
 
       // Subscribe first, then load, so nothing between the two is missed.
@@ -126,5 +147,5 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
     [apiBase],
   )
 
-  return { summary, events, sendReply, sendCommand, problem }
+  return { summary, events, sendReply, sendCommand, problem, historicalUpTo }
 }
