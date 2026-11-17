@@ -162,6 +162,11 @@ export type LiveCallMode = { kind: 'mock' } | { kind: 'real'; callId: string; ap
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+/** Whether `value` is a call id (a UUID). Ids from the address are checked before use. */
+export function isCallId(value: string): boolean {
+  return UUID.test(value)
+}
+
 /**
  * Real data only when all three are set: `VITE_LIVE_CALL_SOURCE=real`, a valid
  * `VITE_API_URL`, and `?call=<uuid>` in the address. Anything else plays the
