@@ -294,13 +294,67 @@ this problem, because all three of its call fields are in its `task_line`.
 
 74 cases × 5 runs = 370 runs per eval. 39 cases carry the **GR** tag, and the five global checks run on all 370 runs.
 
-**Cost:** about $0.20 to $1.15 per full eval on DeepSeek Flash, and up to about $5 on V4 Pro at
-peak hours. That assumes about 3 model calls per run (about 1,100 calls), about 2,800 input
-tokens per call (the measured prompt plus tool definitions is about 2,400) and about 150 output
-tokens. The low end is off-peak with DeepSeek's prompt cache, which applies because every run of
-a brief sends the same prompt. Prices are from DeepSeek's pricing page, checked 17 Nov 2026.
-
 Not covered yet: PC-9 calendar conflicts (P1, not built). Re-testing the hold lines (DC-7) is out of scope here because the backend speaks those, not the model.
+
+## Cost estimate (DeepSeek V4 Flash)
+
+**About $0.17 to $1.13 per full eval**, which is under a cent per case. Expect about $0.17 in
+practice: US daytime runs are off-peak, and the prompt cache applies.
+
+### Prices
+
+From [DeepSeek's pricing page](https://api-docs.deepseek.com/quick_start/pricing), checked
+17 Nov 2026, in USD per 1 million tokens. A token is about 4 characters of English text.
+
+| | Off-peak | Peak |
+| --- | --- | --- |
+| Input, cache hit | $0.003 | $0.006 |
+| Input, cache miss | $0.15 | $0.30 |
+| Output | $0.60 | $1.20 |
+
+**Peak** is 01:00 to 04:00 and 06:00 to 10:00 UTC, Monday to Friday. Every other hour is
+off-peak, including weekends and all of US business hours.
+
+**Cache hit:** DeepSeek charges about 50 times less for the start of a request when it matches
+a recent earlier request. Every run of the same brief starts with the same system prompt and tool
+definitions, so after the first run that part is a cache hit.
+
+### What one eval sends
+
+| Item | Estimate | Where it comes from |
+| --- | --- | --- |
+| Runs | 370 | 74 cases × 5 runs |
+| Model calls per run | about 3 | Most cases are one turn, but a tool call needs a second call for the model's next reply. Timeout, reply and multi-turn cases need 3 to 5 calls. |
+| Model calls per eval | about 1,110 | 370 × 3 |
+| Input tokens per call | about 2,800 | About 2,400 measured for the system prompt plus tool definitions (brief A), plus about 400 for the conversation so far |
+| Cacheable part of that | about 2,400 | The system prompt and tool definitions are identical across runs of a brief |
+| Output tokens per call | about 150 | A tool call with its six `dimensions` answers and a reason, or one or two spoken sentences |
+| Total per eval | about 3.1 M input, 0.17 M output | |
+
+### Cost per full eval
+
+| | Off-peak | Peak |
+| --- | --- | --- |
+| With the prompt cache (expected) | **$0.17** | $0.35 |
+| Without the cache (worst case) | $0.57 | $1.13 |
+
+Output is $0.10 off-peak and $0.20 at peak of those totals. The rest is input.
+
+**Margin:** if conversations turn out twice as long as estimated, the worst case is still about
+$2.30 per eval.
+
+**Other runs:**
+- The pre-call eval (`make eval-briefs`, 14 cases, one call each) costs under $0.01.
+- Running the full in-call eval 3 times every weekday is about 65 evals a month: about $11 a
+  month off-peak with the cache, and at most about $75 a month in the worst case.
+
+The runner prints the real token counts and the cost of every eval, from the `usage` field
+DeepSeek returns on each call. Replace these estimates with those numbers after the first run.
+
+**Model name:** `backend/app/config.py` and `backend/app/calls/assistant.py` still send
+`deepseek-chat`, which DeepSeek's pricing page no longer lists. The page lists `deepseek-flash`
+for V4 Flash. The eval should send the same name as the live calls, so confirm which name is
+right before the first run.
 
 ## Open questions for Lotto
 
