@@ -28,6 +28,10 @@ export interface Brief {
   never_agree: BriefNeverAgree[];
   share_freely_keys: ShareFreelyKey[];
   ask_first_keys: AskFirstKey[];
+  /**
+   * Answers the user gave in the pre-call chat for this call's template fields with source 'call' (e.g. patient_status), in template order, so the agent can answer when asked (PC-4). Never profile values. Optional: briefs stored before it existed don't have it.
+   */
+  call_details?: BriefCallDetail[];
 }
 export interface TaskVarLiteral {
   literal: string;
@@ -46,6 +50,14 @@ export interface BriefFallback {
 }
 export interface BriefNeverAgree {
   text: string;
+}
+export interface BriefCallDetail {
+  key: string;
+  /**
+   * The template's question, e.g. 'Are you a new or existing patient?'
+   */
+  question: string;
+  value: string;
 }
 
 export type EventSource = "vapi" | "backend" | "user";

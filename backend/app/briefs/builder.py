@@ -191,6 +191,9 @@ def build_brief(
       profile fields that the profile has, split by sharing.
     - ``missing_fields``: unresolved placeholders, then missing template fields, then
       ``calling_name`` if absent; no repeats. An empty ``fallbacks`` list is never missing.
+    - ``call_details``: the answers to the template's call fields, including those not in the
+      ``task_line`` (e.g. ``patient_status``), so the agent can answer without re-asking.
+      Always ``[]`` for a custom call.
     """
     full_profile = profile_with_additions(profile, draft.profile_additions)
     by_key = {f.key: f for f in full_profile if f.value.strip() != ""}
@@ -218,6 +221,7 @@ def build_brief(
         missing.extend(
             f.key for f in missing_template_fields(template, full_profile, draft.answers)
         )
+    call_details = _call_details(template, draft.answers) if template else []
 
     share_keys = list(
         dict.fromkeys([*BASE_SHARED_KEYS, *(template.profile_keys() if template else [])])
@@ -240,5 +244,30 @@ def build_brief(
         "never_agree": [{"text": t} for t in draft.never_agree],
         "share_freely_keys": [k for k in share_keys if by_key[k].sharing == "share_freely"],
         "ask_first_keys": [k for k in share_keys if by_key[k].sharing == "ask_first"],
+        "call_details": call_details,
     }
     return BuiltBrief(brief=brief, missing_fields=list(dict.fromkeys(missing)))
+
+
+def _call_details(template: CallTemplate, answers: Mapping[str, str]) -> list[dict[str, str]]:
+    """The user's answers to the template's call fields, so the agent can answer (PC-4).
+
+    One ``{key, question, value}`` per ``source: call`` field with a non-blank answer, in
+    template order. Profile fields never appear: their values come from the snapshot at call
+    start, and an Ask-me-first value must never be in the brief. Answers the template doesn't
+    ask for are ignored.
+    """
+    details: list[dict[str, str]] = []
+    for template_field in template.required_fields:
+        if template_field.source != "call":
+            continue
+        value = answers.get(template_field.key, "").strip()
+        if value:
+            details.append(
+                {
+                    "key": template_field.key,
+                    "question": template_field.question.strip(),
+                    "value": value,
+                }
+            )
+    return details
