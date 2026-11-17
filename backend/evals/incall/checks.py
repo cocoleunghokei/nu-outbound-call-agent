@@ -431,6 +431,11 @@ def reason_checks(data: EvalData, case: dict[str, Any], record: RunRecord) -> li
     return out
 
 
+def _early_end_ok(case: dict[str, Any], record: RunRecord) -> bool:
+    """A case marked ``early_end_ok`` may end the call before its last line (e.g. G-03)."""
+    return bool(case.get("early_end_ok")) and record.stopped.endswith("the model ended the call")
+
+
 def check_run(data: EvalData, record: RunRecord) -> list[CheckResult]:
     """Every check for one run: the case's own, G1 to G5, and the reason-text checks.
 
@@ -450,7 +455,7 @@ def check_run(data: EvalData, record: RunRecord) -> list[CheckResult]:
             text="Follows the script to the end: no early hang-up, pings before a reply or timeout",
             level="hard",
             by="script",
-            verdict="fail" if record.stopped else "pass",
+            verdict="fail" if record.stopped and not _early_end_ok(case, record) else "pass",
             evidence=record.stopped,
         )
     )

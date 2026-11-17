@@ -123,6 +123,28 @@ def test_a_low_offer_gets_one_counter_before_a_ping() -> None:
     assert "neither gate applies, counter once first" in prompt  # money and ask-first still ping
 
 
+def test_every_action_is_logged_and_checking_always_pings() -> None:
+    # Found by the in-call eval: it countered or accepted without report_decision, and said
+    # "Let me check with Alex" without calling ask_user, so the user was never pinged.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "call report_decision in the same reply as your words" in prompt
+    assert (
+        "Never say you are checking with Alex unless you call ask_user in the same reply." in prompt
+    )
+    assert "under 80 characters" in prompt
+
+
+def test_inventing_includes_saying_a_detail_does_not_exist() -> None:
+    assert any('"no referral"' in rule and "inventing too" in rule for rule in GUARDRAIL_RULES)
+
+
+def test_a_refusal_to_talk_to_an_ai_gets_one_polite_ask_then_refused_ai() -> None:
+    # Q10 in evals/incall/CASES.md.
+    rule = next(r for r in GUARDRAIL_RULES if "refused_ai" in r)
+    assert "say once, politely, that you are an AI" in rule
+    assert "If they refuse again, or refuse outright" in rule
+
+
 def test_prompt_explains_waiting_and_the_no_reply_rule() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     assert "<while_you_wait>" in prompt and "</while_you_wait>" in prompt
