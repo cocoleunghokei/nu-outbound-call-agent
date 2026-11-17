@@ -287,7 +287,7 @@ export interface OutcomeDetails {
    */
   time?: string;
   /**
-   * Exactly as the business said it; at least 4 characters with a digit
+   * Exactly as the business said it, e.g. A1B2
    */
   confirmation_number?: string;
   staff_name?: string;

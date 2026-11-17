@@ -35,6 +35,7 @@ from app.secrets_registry import (
 )
 from app.voice.port import VoiceUncertain
 from app.webhooks.bind import BoundCall
+from app.webhooks.normalise import ToolCallUnit, normalise_unit, split_units
 from app.webhooks.redact import redact
 from app.webhooks.registry import ToolCallContext
 from app.webhooks.vapi import dispatch_pending
@@ -319,6 +320,28 @@ def test_partial_transcript_never_touches_the_database() -> None:
             PATH, json=fixture("transcript-partial", None), headers={"X-Vapi-Secret": SECRET}
         )
     assert (response.status_code, response.json()) == (200, {})
+
+
+# --- tool arguments (no database) --------------------------------------------------------
+
+
+def test_report_outcome_with_loose_details_is_still_accepted() -> None:
+    """One odd detail must not throw away the whole report (a refused_ai call would quietly
+    become needs_follow_up). decide.py checks each detail itself."""
+    args = {
+        "outcome": "refused_ai",
+        "business_confirmed": False,
+        "details": {"date": "Oct 24", "time": "7:30 PM", "confirmation_number": "ABCD"},
+    }
+    entry = {
+        "id": "tc-loose",
+        "type": "function",
+        "function": {"name": "report_outcome", "arguments": json.dumps(args)},
+    }
+    [unit] = split_units({"message": {"type": "tool-calls", "toolCallList": [entry]}})
+    normalised = normalise_unit(unit, set())
+    assert isinstance(normalised, ToolCallUnit)
+    assert normalised.arguments["details"]["time"] == "7:30 PM"
 
 
 # --- redaction and logging (no database) ------------------------------------------------

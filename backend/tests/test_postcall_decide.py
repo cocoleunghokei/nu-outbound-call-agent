@@ -15,6 +15,7 @@ from app.postcall.decide import (
     mentions_date,
     mentions_time,
     parse_time,
+    says_confirmation_number,
     spoken_fields,
     valid_confirmation_number,
     valid_iso_date,
@@ -90,6 +91,20 @@ def test_cancelled_and_rescheduled_use_the_same_rules() -> None:
         ["7:30 is full, but 8pm on October 24 works."],
         # a question is never evidence
         ["You want October 24 at 7:30?"],
+        # third review: a refusal on a LATER line undoes a readback
+        ["So October 24 at 7:30.", "No, that doesn't work, we have no space."],
+        ["Booked October 24 at 7:30. Wait, no, October 25."],
+        # a question without a capital after it (speech-to-text drops it)
+        ["October 24 at 7:30? let me check"],
+        # refusal words added in the third review
+        ["Not October 24 at 7:30, but 9 works."],
+        ["October 24 at 7:30 is no longer available."],
+        ["I'd have to check October 24 at 7:30 and call you back."],
+        ["Sorry, we couldn't fit you October 24 at 7:30."],
+        ["October 24 at 7:30 is gone."],
+        ["October 24 at 7:30 is not going to work."],
+        # a year said with the date must be the agreed one
+        ["See you October 24, 2027 at 7:30."],
     ],
 )
 def test_refused_or_doubtful_slots_are_not_booked(lines: list[str]) -> None:
@@ -108,31 +123,78 @@ def test_reschedule_refusal_is_not_rescheduled() -> None:
 def test_a_later_clean_line_still_confirms() -> None:
     lines = ["Sorry, 7 is full.", "But October 24 at 7:30 works, you're booked."]
     assert outcome(BOOKED, *lines) == "booked"
+    # A refusal BEFORE the confirmation is fine.
+    assert outcome(BOOKED, "Sorry, 7:30 is full.", "Sure, October 24 at 7:30.") == "booked"
+
+
+def test_no_problem_still_confirms_but_not_a_problem_does_not() -> None:
+    # A bare "no" is not a refusal word, so this still counts.
+    assert outcome(BOOKED, "No problem, see you October 24 at 7:30.") == "booked"
+    # "not" is, so this becomes needs_follow_up. Accepted: when in doubt, the user checks.
+    assert outcome(BOOKED, "Not a problem, see you October 24 at 7:30.") == "needs_follow_up"
+    # A refusal word after the confirmation, even a polite one, also sends it to the user.
+    assert outcome(BOOKED, "October 24 at 7:30, done.", "Not at all, bye!") == "needs_follow_up"
+
+
+# --- the confirmation number ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("number", "lines"),
+    [
+        ("1234", ["Our number is 555-1234."]),
+        ("2026", ["That's Saturday October 24, 2026.", "We have nothing then."]),
+        ("1500", ["Thanks for calling Luigi's at 1500 Main Street."]),
+        ("1234", ["We have no record of 1234."]),
+        ("1234", ["Your confirmation number is 12345."]),
+        ("1234", ["The reference is 1234/5."]),
+        ("ABCD", ["Abcd, how can I help?"]),
+    ],
+)
+def test_confirmation_number_needs_a_cue_and_must_stand_alone(
+    number: str, lines: list[str]
+) -> None:
+    numbered = report(outcome="booked", details={"confirmation_number": number})
+    assert outcome(numbered, *lines) == "needs_follow_up"
+
+
+@pytest.mark.parametrize(
+    ("number", "line"),
+    [
+        ("A1B2", "Your confirmation number is A1B2."),
+        ("ABCD", "Your reference is ABCD."),
+        ("TB-1234", "Booking number TB-1234, see you then."),
+        ("7781", "Conf 7781."),
+    ],
+)
+def test_confirmation_number_with_a_cue_is_booked(number: str, line: str) -> None:
+    numbered = report(outcome="booked", details={"confirmation_number": number})
+    assert outcome(numbered, line) == "booked"
+
+
+def test_says_confirmation_number() -> None:
+    assert says_confirmation_number("your confirmation number is a1b2.", "A1B2")
+    assert not says_confirmation_number("our number is 555-1234.", "1234")
+    assert not says_confirmation_number("a1b2, see you.", "A1B2")
 
 
 # --- the agent's details must be well-formed ------------------------------------------------
 
 
 def test_malformed_details_are_not_evidence() -> None:
-    # The contract now rejects these at the ingress; decide.py checks again, built from
-    # OutcomeDetails directly, in case a receipt predates the stricter contract.
-    weekday = OutcomeDetails.model_construct(date="Saturday", time="19:30")
+    # The contract accepts any string (so one odd field doesn't throw away the report);
+    # decide.py checks each detail itself.
+    weekday = OutcomeDetails(date="Saturday", time="19:30")
     assert not has_confirmation_evidence(weekday, ["Saturday at 7:30, see you."])
-    tiny = OutcomeDetails.model_construct(confirmation_number="24")
-    assert not has_confirmation_evidence(tiny, ["October 24 works."])
-    letters = OutcomeDetails.model_construct(confirmation_number="abcd")
-    assert not has_confirmation_evidence(letters, ["Your code is abcd."])
+    tiny = OutcomeDetails(confirmation_number="24")
+    assert not has_confirmation_evidence(tiny, ["Confirmation number 24."])
 
 
-def test_contract_rejects_malformed_details() -> None:
-    for details in (
-        {"date": "Saturday"},
-        {"date": "2026-10-24", "time": "7:30 PM"},
-        {"confirmation_number": "24"},
-        {"confirmation_number": "abcd"},
-    ):
-        with pytest.raises(ValueError):
-            report(outcome="booked", details=details)
+def test_loose_details_are_accepted_and_checked_here() -> None:
+    loose = report(outcome="booked", details={"date": "2026-10-24", "time": "7:30 PM"})
+    assert outcome(loose, "See you October 24 at 7:30pm.") == "booked"
+    for details in ({"date": "Oct 24"}, {"confirmation_number": "ABCD"}):
+        report(outcome="refused_ai", details=details)  # no ValidationError
 
 
 def test_valid_iso_date_and_confirmation_number() -> None:
@@ -141,7 +203,8 @@ def test_valid_iso_date_and_confirmation_number() -> None:
     assert valid_iso_date("Oct 24") is None
     assert valid_confirmation_number(" TB-1234 ") == "TB-1234"
     assert valid_confirmation_number("A1") is None
-    assert valid_confirmation_number("ABCD") is None
+    assert valid_confirmation_number("ABCD") == "ABCD"
+    assert valid_confirmation_number("A-1") is None
 
 
 # --- other outcomes ------------------------------------------------------------------------
@@ -186,6 +249,7 @@ def test_clauses_split_on_sentence_ends_only() -> None:
     ]
     assert clauses("Oct. 24 at 8 p.m. works.") == ["Oct. 24 at 8 p.m. works."]
     assert clauses("7:30 is full, but 8pm works.") == ["7:30 is full, but 8pm works."]
+    assert clauses("October 24 at 7:30? let me check") == ["October 24 at 7:30?", "let me check"]
 
 
 def test_is_refusal_and_is_question() -> None:
@@ -193,6 +257,10 @@ def test_is_refusal_and_is_question() -> None:
     assert is_refusal("We can’t do that")
     assert is_refusal("We cant do that")
     assert not is_refusal("Got it, see you at 7:30")
+    assert is_refusal("No, that's too late")
+    assert is_refusal("Wait, no, October 25")
+    assert not is_refusal("No problem")
+    assert not is_refusal("You're booked")  # a bare "booked" must still confirm
     assert is_question("October 24 at 7:30?  ")
     assert not is_question("October 24 at 7:30.")
 
@@ -235,8 +303,9 @@ def test_mentions_date_needs_month_and_day() -> None:
     day = date(2026, 10, 24)
     for said in ("october 24", "oct 24th", "oct. 24", "24th of october", "24 october"):
         assert mentions_date(f"that's {said}.", day), said
-    for said in ("saturday", "the 24th", "october 25", "october 241"):
+    for said in ("saturday", "the 24th", "october 25", "october 241", "october 24, 2027"):
         assert not mentions_date(f"that's {said}.", day), said
+    assert mentions_date("that's october 24, 2026.", day)
 
 
 # --- what was shared (PO-3) ----------------------------------------------------------------
@@ -252,6 +321,10 @@ def test_spoken_fields_match_names_as_whole_words() -> None:
 def test_names_that_are_ordinary_words_need_a_name_cue() -> None:
     assert spoken_fields({"calling_name": "May"}, ["May I book a table?"]) == []
     assert spoken_fields({"calling_name": "May"}, ["Calling on behalf of May."]) == ["calling_name"]
+    # "for" before a month and a day is a date, not the name
+    assert spoken_fields({"calling_name": "May"}, ["a table for May 24"]) == []
+    june = spoken_fields({"calling_name": "June"}, ["A table for June, please."])
+    assert june == ["calling_name"]
 
 
 def test_spoken_fields_only_check_identifying_fields() -> None:
@@ -281,6 +354,8 @@ def test_date_of_birth_needs_the_year_and_the_right_day() -> None:
     snapshot = {"date_of_birth": "1990-04-12"}
     assert spoken_fields(snapshot, ["The appointment is April 12."]) == []
     assert spoken_fields(snapshot, ["Born 04/13/1990."]) == []
+    # the year must go with the date, not appear somewhere else in the call
+    assert spoken_fields(snapshot, ["The appointment is April 12.", "Ref 1990."]) == []
 
 
 def test_address_matches_street_and_st_alike() -> None:

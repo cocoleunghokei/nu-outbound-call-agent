@@ -9,10 +9,18 @@ Outcome rules (docs/architecture.md, post-call processing). When in doubt: Needs
   business confirmed it **and** one clause of the business's own words backs it up: the
   confirmation number, or the agreed time and the agreed date (month and day) together.
 - The agent's details must be well-formed to count: an ISO date (YYYY-MM-DD), a time that
-  parses, a confirmation number of at least 4 characters with a digit.
-- A clause that is a question ("October 24 at 7:30?") is never evidence, and a line where
-  any clause refuses ("full", "sorry", "unfortunately", "can't find", ...) is never evidence.
-  So a counteroffer in the same line as a refusal is Needs follow-up: the user checks.
+  parses, a confirmation number of at least 4 letters or digits. The contract doesn't
+  enforce these (one odd field must not throw away the whole report), so they are checked
+  here.
+- The confirmation number counts only with a cue in the same clause ("confirmation",
+  "reference", "number is", ...) and never inside a longer number ("555-1234", a year).
+- A clause that is a question ("October 24 at 7:30?") is never evidence. A line where any
+  clause refuses ("full", "sorry", "not", "let me check", ...) is never evidence, and
+  neither is anything said before a later refusal ("So October 24 at 7:30." then "No, that
+  doesn't work."). A refusal before the confirmation is fine. So a counteroffer in the same
+  line as a refusal is Needs follow-up: the user checks.
+- Known limit: an offer from the business ("How about October 24 at 7:30.") reads like a
+  confirmation. The agent's ``business_confirmed`` is the guard for that case.
 - With no ``report_outcome``, the outcome comes from Vapi's end reason. Only a clear
   "nobody answered" becomes No answer; anything else is Needs follow-up, never a guessed
   Failed.
@@ -66,6 +74,31 @@ REFUSAL_WORDS = (
     "don't have",
     "dont have",
     "do not have",
+    "not",
+    "couldn't",
+    "couldnt",
+    "could not",
+    "no longer",
+    "gone",
+    "no record",
+    "call you back",
+    "let me check",
+)
+
+# Corrections that start with "no" ("No, that doesn't work", "Wait, no, October 25"). A bare
+# "no" is not a refusal word, so "No problem, see you October 24 at 7:30" can still confirm.
+REFUSAL_PATTERNS = (
+    r"^no\b\s*[,.!]",
+    r"\b(?:wait|actually|oh|sorry|um|uh),?\s+no\b",
+)
+
+# One of these must be in the same clause as the confirmation number.
+CONFIRMATION_CUES = (
+    "confirmation",
+    "reference",
+    "booking number",
+    "number is",
+    "conf",
 )
 
 # Profile fields that identify the user. Only these are checked for "spoken" (PO-3), so a
@@ -179,10 +212,11 @@ def decide_outcome(
 
 
 def clauses(line: str) -> list[str]:
-    """Split a line at sentence ends: ".", "!", "?" or ";" followed by a space and a capital
-    letter. "Oct. 24" and "8 p.m. on" stay whole, because no capital follows."""
-    parts = re.split(r"(?<=[.!?;])\s+(?=[A-Z])", line.strip())
-    return [part for part in parts if part.strip()]
+    """Split a line at sentence ends: any "?", or ".", "!" or ";" followed by a space and a
+    capital letter. "Oct. 24" and "8 p.m. on" stay whole, because no capital follows.
+    Speech-to-text often drops the capital after a question, so "?" always ends one."""
+    parts = re.split(r"(?<=\?)\s*|(?<=[.!;])\s+(?=[A-Z])", line.strip())
+    return [part.strip() for part in parts if part and part.strip()]
 
 
 def _fold(text: str) -> str:
@@ -191,8 +225,10 @@ def _fold(text: str) -> str:
 
 def is_refusal(clause: str) -> bool:
     """True if the clause refuses or reports a problem ("Sorry, 7:30 is full")."""
-    folded = _fold(clause)
-    return any(_contains_token(folded, word) for word in REFUSAL_WORDS)
+    folded = _fold(clause).strip()
+    if any(_contains_token(folded, word) for word in REFUSAL_WORDS):
+        return True
+    return any(re.search(pattern, folded) for pattern in REFUSAL_PATTERNS)
 
 
 def is_question(clause: str) -> bool:
@@ -211,19 +247,31 @@ def valid_iso_date(value: str | None) -> date | None:
 
 
 def valid_confirmation_number(value: str | None) -> str | None:
-    """The number if it has at least 4 characters and a digit, else None ("24" or "a" would
-    match almost any line)."""
+    """The number if it has at least 4 letters or digits, else None ("24" or "a" would match
+    almost any line). Letters-only codes ("ABCD") are real; the cue rule in
+    ``says_confirmation_number`` keeps them from matching ordinary words."""
     if value is None:
         return None
     value = value.strip()
-    if len(value) < _MIN_CONFIRMATION_LENGTH or not re.search(r"\d", value):
+    if len(re.sub(r"[^0-9A-Za-z]", "", value)) < _MIN_CONFIRMATION_LENGTH:
         return None
     return value
 
 
+def says_confirmation_number(text: str, number: str) -> bool:
+    """True if ``text`` (one lowercased clause) has a confirmation cue and says ``number`` on
+    its own: not inside a longer number or word, and not next to "-" or "/". So "Our number
+    is 555-1234." does not say 1234, and a year or a street number has no cue."""
+    if not any(_contains_token(text, cue) for cue in CONFIRMATION_CUES):
+        return False
+    pattern = rf"(?<![\w/-]){re.escape(_fold(number))}(?![\w/]|-\w)"
+    return re.search(pattern, text) is not None
+
+
 def has_confirmation_evidence(details: OutcomeDetails | None, business_lines: list[str]) -> bool:
-    """True if one clause of the business's words says the confirmation number, or says both
-    the agreed time and the agreed date. Questions and lines with a refusal don't count."""
+    """True if one clause of the business's words says the confirmation number (with a cue),
+    or says both the agreed time and the agreed date. Questions, lines with a refusal and
+    anything said before a later refusal line don't count."""
     if details is None:
         return False
     number = valid_confirmation_number(details.confirmation_number)
@@ -231,15 +279,16 @@ def has_confirmation_evidence(details: OutcomeDetails | None, business_lines: li
     agreed_time = parse_time(details.time) if details.time else None
     if number is None and (agreed_day is None or agreed_time is None):
         return False
-    for line in business_lines:
-        parts = clauses(line)
-        if any(is_refusal(part) for part in parts):
-            continue  # when in doubt, needs_follow_up
+    split_lines = [clauses(line) for line in business_lines]
+    refuses = [any(is_refusal(part) for part in parts) for parts in split_lines]
+    for index, parts in enumerate(split_lines):
+        if any(refuses[index:]):
+            continue  # a refusal in this line or a later one: when in doubt, needs_follow_up
         for part in parts:
             if is_question(part):
                 continue
             text = _fold(part)
-            if number is not None and _contains_token(text, number):
+            if number is not None and says_confirmation_number(text, number):
                 return True
             if agreed_day is not None and agreed_time is not None:
                 if mentions_time(text, agreed_time) and mentions_date(text, agreed_day):
@@ -291,18 +340,26 @@ def mentions_time(text: str, agreed: tuple[int, int]) -> bool:
     return False
 
 
-def mentions_date(text: str, agreed: date) -> bool:
-    """True if ``text`` (lowercased) names the agreed date: "october 24", "oct 24th",
-    "oct. 24", "24th of october" or "the 24th of october". A bare weekday or ordinal is not
-    enough, because "Saturday" or "the 24th" can refer to another date."""
-    month = _MONTHS[agreed.month - 1]
+def _date_patterns(day: date) -> tuple[str, str]:
+    month = _MONTHS[day.month - 1]
     months = rf"(?:{month}|{month[:3]}\.?)"
-    number = rf"{agreed.day}(?:st|nd|rd|th)?"
-    patterns = (
+    number = rf"{day.day}(?:st|nd|rd|th)?"
+    return (
         rf"\b{months}\s+(?:the\s+)?{number}(?!\d)",  # october 24, oct 24th
         rf"(?<!\d){number}\s+(?:of\s+)?{months}\b",  # 24th of october, 24 october
     )
-    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def mentions_date(text: str, agreed: date) -> bool:
+    """True if ``text`` (lowercased) names the agreed date: "october 24", "oct 24th",
+    "oct. 24", "24th of october" or "the 24th of october". A bare weekday or ordinal is not
+    enough, because "Saturday" or "the 24th" can refer to another date. A year said right
+    after it must be the agreed one ("October 24, 2027" is not 2026-10-24)."""
+    for pattern in _date_patterns(agreed):
+        for match in re.finditer(pattern + r"(?:,?\s+(\d{4})\b)?", text):
+            if match.group(1) is None or int(match.group(1)) == agreed.year:
+                return True
+    return False
 
 
 def spoken_fields(snapshot: dict[str, str], agent_lines: list[str]) -> list[str]:
@@ -352,7 +409,8 @@ def _date_spoken(value: str, text: str) -> bool:
     if day is None:
         return _contains_token(_fold(text), _fold(value))
     folded = _fold(text)
-    if value in text or (mentions_date(folded, day) and re.search(rf"\b{day.year}\b", folded)):
+    year = rf",?\s+{day.year}\b"  # right after the day, not anywhere in the call
+    if value in text or any(re.search(p + year, folded) for p in _date_patterns(day)):
         return True
     numeric = rf"(?<!\d)0?{day.month}[/.-]0?{day.day}[/.-](?:{day.year}|{day.year % 100:02d})(?!\d)"
     return re.search(numeric, text) is not None
@@ -376,7 +434,9 @@ def _address_spoken(value: str, folded: str) -> bool:
 def _name_spoken(value: str, folded: str) -> bool:
     name = _fold(value)
     if " " not in name and name in AMBIGUOUS_NAMES:
-        return re.search(rf"\b{NAME_CUES}\s+{re.escape(name)}\b", folded) is not None
+        # "a table for May 24" is a date, not the name: skip a match followed by a day.
+        pattern = rf"\b{NAME_CUES}\s+{re.escape(name)}\b(?!\s*\d)"
+        return re.search(pattern, folded) is not None
     return _contains_token(folded, name)
 
 
