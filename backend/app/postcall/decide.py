@@ -7,7 +7,9 @@ Outcome rules (docs/architecture.md, post-call processing). When in doubt: Needs
 
 - Booked, Cancelled or Rescheduled count only when the agent's ``report_outcome`` says the
   business confirmed it **and** one clause of the business's own words backs it up: the
-  confirmation number, or the agreed time and the agreed date (month and day) together.
+  confirmation number, or the agreed time and the agreed date together. The date is the
+  month and day ("October 24"), or a weekday ("Thursday") that can only mean the agreed
+  date: see ``call_days`` and ``mentions_weekday``.
 - The agent's details must be well-formed to count: an ISO date (YYYY-MM-DD), a time that
   parses, a confirmation number of at least 4 letters or digits. The contract doesn't
   enforce these (one odd field must not throw away the whole report), so they are checked
@@ -28,8 +30,9 @@ Outcome rules (docs/architecture.md, post-call processing). When in doubt: Needs
 """
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from app.contracts.generated import OutcomeDetails, ReportOutcomeArgs
 
@@ -171,6 +174,16 @@ _MONTHS = (
     "december",
 )
 
+_WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+# No time zone is stored for a call, and every call is to a US number. US local time runs
+# from UTC-4 (Eastern daylight time) to UTC-10 (Hawaii), so these bound the call's local day.
+_US_UTC_OFFSETS = (timedelta(hours=-4), timedelta(hours=-10))
+
+# A weekday counts for a date 1 to 6 days after the call day. The call day's own weekday
+# ("Tuesday" said on a Tuesday) could mean today or next week, so it never counts.
+_MAX_WEEKDAY_AHEAD = 6
+
 _MIN_CONFIRMATION_LENGTH = 4
 
 
@@ -188,8 +201,13 @@ def decide_outcome(
     business_lines: list[str],
     *,
     pause_capped: bool = False,
+    call_days: Collection[date] = (),
 ) -> OutcomeDecision:
-    """Decide the call's outcome (PO-1) from the agent's report and the final transcript."""
+    """Decide the call's outcome (PO-1) from the agent's report and the final transcript.
+
+    ``call_days`` are the local days the call could have happened on (``call_days_for``).
+    Without them a weekday is never enough to confirm a date.
+    """
     if pause_capped and report is None:
         return OutcomeDecision("needs_follow_up", "ended by the pause cap")
     if report is None:
@@ -204,7 +222,7 @@ def decide_outcome(
         return OutcomeDecision(reported, "reported by the agent")
     if not report.business_confirmed:
         return OutcomeDecision("needs_follow_up", f"{reported} not confirmed by the business")
-    if not has_confirmation_evidence(report.details, business_lines):
+    if not has_confirmation_evidence(report.details, business_lines, call_days=call_days):
         return OutcomeDecision(
             "needs_follow_up", f"{reported} not found in the business's words in the transcript"
         )
@@ -268,9 +286,15 @@ def says_confirmation_number(text: str, number: str) -> bool:
     return re.search(pattern, text) is not None
 
 
-def has_confirmation_evidence(details: OutcomeDetails | None, business_lines: list[str]) -> bool:
+def has_confirmation_evidence(
+    details: OutcomeDetails | None,
+    business_lines: list[str],
+    *,
+    call_days: Collection[date] = (),
+) -> bool:
     """True if one clause of the business's words says the confirmation number (with a cue),
-    or says both the agreed time and the agreed date. Questions, lines with a refusal and
+    or says both the agreed time and the agreed date (``mentions_date``, or
+    ``mentions_weekday`` for the possible ``call_days``). Questions, lines with a refusal and
     anything said before a later refusal line don't count."""
     if details is None:
         return False
@@ -291,7 +315,9 @@ def has_confirmation_evidence(details: OutcomeDetails | None, business_lines: li
             if number is not None and says_confirmation_number(text, number):
                 return True
             if agreed_day is not None and agreed_time is not None:
-                if mentions_time(text, agreed_time) and mentions_date(text, agreed_day):
+                if mentions_time(text, agreed_time) and (
+                    mentions_date(text, agreed_day) or mentions_weekday(text, agreed_day, call_days)
+                ):
                     return True
     return False
 
@@ -323,7 +349,7 @@ def mentions_time(text: str, agreed: tuple[int, int]) -> bool:
     """True if ``text`` (lowercased) says the agreed (hour, minute): "7:30", "7:30pm",
     "19:30", and for whole hours also "7pm" or "7 o'clock". An am/pm that contradicts the
     agreed time ("7:30 am" for 19:30) doesn't count, and "7:30" never matches inside
-    "17:30"."""
+    "17:30". A whole hour also counts as "at 7" with no am/pm, as people book."""
     hour, minute = agreed
     h12 = hour % 12 or 12
     wanted = "p" if hour >= 12 else "a"
@@ -336,6 +362,12 @@ def mentions_time(text: str, agreed: tuple[int, int]) -> bool:
         if re.search(rf"(?<![\d:]){h12}\s?{wanted}\.?m\b", text):
             return True
         if re.search(rf"(?<![\d:]){h12} o'clock", text):
+            return True
+        # "at 2" with no am/pm, the way people book: the hour must follow "at" and nothing
+        # that makes it a longer number, a time with minutes or a date ("at 2 on the 3rd" is
+        # fine, "at 2:15", "at 20" and "at 2/3" are not). The agent's report decides the half
+        # of the day; an am/pm said after it is handled above.
+        if re.search(rf"\bat {h12}(?![\d:/]|\.\d|\s?[ap]\.?m\b)", text):
             return True
     return False
 
@@ -360,6 +392,51 @@ def mentions_date(text: str, agreed: date) -> bool:
             if match.group(1) is None or int(match.group(1)) == agreed.year:
                 return True
     return False
+
+
+def call_days_for(started_at: datetime, ended_at: datetime) -> frozenset[date]:
+    """Every local day a US call between ``started_at`` and ``ended_at`` (both timezone-aware)
+    could have been on, from the earliest US time zone to the latest. Usually one day; two
+    when the call was near midnight somewhere in the US."""
+    first = (started_at + min(_US_UTC_OFFSETS)).date()
+    last = (ended_at + max(_US_UTC_OFFSETS)).date()
+    days = set()
+    day = first
+    while day <= last:
+        days.add(day)
+        day += timedelta(days=1)
+    return frozenset(days)
+
+
+def mentions_weekday(text: str, agreed: date, call_days: Collection[date]) -> bool:
+    """True if ``text`` (lowercased) names the agreed date by its weekday ("Thursday", "this
+    Thursday"), and that weekday means the agreed date whichever of ``call_days`` the call was
+    on: 1 to 6 days later. So "Thursday" said on Tue 17 Nov 2026 means 19 Nov.
+
+    Never counts: no ``call_days``; the call day's own weekday (today or a week from now?);
+    "next Thursday", "last Thursday" or "Thursday next week" (people disagree on which week);
+    and a clause that also names a month and day, which ``mentions_date`` decides alone.
+    """
+    if not call_days:
+        return False
+    if not all(1 <= (agreed - day).days <= _MAX_WEEKDAY_AHEAD for day in call_days):
+        return False
+    weekday = _WEEKDAYS[agreed.weekday()]
+    if not re.search(rf"\b{weekday}\b", text):
+        return False
+    if re.search(rf"\b(?:next|last|following)\s+{weekday}\b|\b(?:next|last) week\b", text):
+        return False
+    return not _names_a_month_day(text)
+
+
+def _names_a_month_day(text: str) -> bool:
+    """True if ``text`` (lowercased) names any month and day, such as "november 26"."""
+    months = "|".join(rf"{m}|{m[:3]}\.?" for m in _MONTHS)
+    day = r"\d{1,2}(?:st|nd|rd|th)?"
+    return (
+        re.search(rf"\b(?:{months})\s+(?:the\s+)?{day}(?!\d)", text) is not None
+        or re.search(rf"(?<!\d){day}\s+(?:of\s+)?(?:{months})\b", text) is not None
+    )
 
 
 def spoken_fields(snapshot: dict[str, str], agent_lines: list[str]) -> list[str]:
