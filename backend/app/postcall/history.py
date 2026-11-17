@@ -19,7 +19,7 @@ from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 
 from app.auth import current_user
-from app.contracts.generated import OutcomeDetails
+from app.contracts.generated import OutcomeDetails, ReportOutcomeArgs
 from app.db import get_pool
 from app.errors import ApiError
 from app.postcall.jobs import latest_report
@@ -30,6 +30,13 @@ MAX_CALLS = 100
 
 # Outcomes for which the agent's report (business_confirmed, details) was checked and kept.
 ACCEPTED_CLAIMS = frozenset({"booked", "cancelled", "rescheduled"})
+
+
+def claims_accepted(report: ReportOutcomeArgs | None, outcome: str | None) -> bool:
+    """True if the report's claims (business_confirmed, details) may be shown: the outcome
+    job accepted a booked, cancelled or rescheduled report, and it is this same report. A
+    report stored after the job ran, with another outcome, was never checked."""
+    return report is not None and outcome in ACCEPTED_CLAIMS and report.outcome.value == outcome
 
 
 class HistoryItem(BaseModel):
@@ -146,7 +153,7 @@ async def get_call_result(
         report = await latest_report(conn, call_id)
         # The agent's claims only stand when the outcome job accepted them. A report that
         # was downgraded to needs_follow_up must not show as a confirmed booking.
-        accepted = report is not None and call.outcome in ACCEPTED_CLAIMS
+        accepted = claims_accepted(report, call.outcome)
         return CallResultResponse(
             call=call,
             business_confirmed=report.business_confirmed if report and accepted else False,

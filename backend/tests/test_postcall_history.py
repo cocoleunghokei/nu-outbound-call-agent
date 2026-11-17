@@ -6,8 +6,9 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
+from app.contracts.generated import ReportOutcomeArgs
 from app.main import create_app
-from app.postcall.history import parse_started
+from app.postcall.history import claims_accepted, parse_started
 from app.postcall.jobs import run_due_jobs
 from tests.calls_helpers import auth_headers, make_app, seed_call
 from tests.conftest import SupabaseEnv
@@ -40,6 +41,24 @@ def test_unreadable_start_time_is_dropped_not_a_500() -> None:
     assert parse_started("not a time") is None
     assert parse_started(None) is None
     assert parse_started(1794081601000) is None
+
+
+def test_claims_show_only_for_the_report_the_outcome_job_accepted() -> None:
+    booked = ReportOutcomeArgs.model_validate(BOOKED_ARGS)
+    assert claims_accepted(booked, "booked")
+    assert not claims_accepted(booked, "needs_follow_up")  # downgraded
+    assert not claims_accepted(None, "booked")
+    # A later report with another outcome was never checked by the outcome job.
+    cancelled = ReportOutcomeArgs.model_validate({**BOOKED_ARGS, "outcome": "cancelled"})
+    assert not claims_accepted(cancelled, "booked")
+
+
+def test_loose_receipts_still_read_with_their_details() -> None:
+    """#55 dropped the schema patterns, so receipts may hold "7:30 PM" or "ABCD"."""
+    loose = {**BOOKED_ARGS, "details": {"time": "7:30 PM", "confirmation_number": "ABCD"}}
+    report = ReportOutcomeArgs.model_validate(loose)
+    assert report.details is not None
+    assert (report.details.time, report.details.confirmation_number) == ("7:30 PM", "ABCD")
 
 
 @pytest.mark.db
