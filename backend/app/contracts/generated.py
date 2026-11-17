@@ -387,9 +387,15 @@ class ReportedOutcome(StrEnum):
 
 
 class OutcomeDetails(BaseModel):
-    date: str | None = None
-    time: str | None = None
-    confirmation_number: str | None = None
+    date: Annotated[
+        str | None, Field(description="The agreed date as YYYY-MM-DD, e.g. 2026-10-24")
+    ] = None
+    time: Annotated[str | None, Field(description="The agreed time, 24-hour HH:MM, e.g. 19:30")] = (
+        None
+    )
+    confirmation_number: Annotated[
+        str | None, Field(description="Exactly as the business said it, e.g. A1B2")
+    ] = None
     staff_name: str | None = None
 
 
