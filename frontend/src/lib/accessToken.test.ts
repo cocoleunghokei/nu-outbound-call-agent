@@ -64,8 +64,8 @@ describe('onSignInChange', () => {
     expect(onChange).toHaveBeenCalledOnce()
   })
 
-  // Linking an email keeps the user id (emailSignIn.ts); the screen must still re-pick its
-  // mode, because placing a call is only allowed once the user is permanent.
+  // Converting an anonymous user to a permanent one keeps the user id; the screen must
+  // still re-pick its mode (ready for a later email sign-in).
   it('calls back when the same user stops being anonymous', async () => {
     const { emit, onChange } = await subscribe()
     const anonymous = { user: { id: 'user-a', is_anonymous: true } }

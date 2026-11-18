@@ -42,7 +42,7 @@ Vercel's GitHub integration builds `frontend/`. Every merge to `main` goes to pr
 - Root directory: `frontend` (Vite is detected automatically)
 - Environment variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, for Production and Preview
 - The Supabase project needs anonymous sign-ins enabled (dashboard: Authentication, then Sign In / Providers): the app has no sign-in screen and signs each browser in anonymously. `supabase/config.toml` has the same switch for the local stack.
-- Placing a call needs an email, verified by a 6-digit code typed in the app (ON-1). In the dashboard, Authentication → Email Templates: the **Magic Link** and **Change Email Address** templates must print `{{ .Token }}` (the defaults only carry a link); `supabase/templates/` has the local versions. Supabase's built-in email sender only delivers to the project's team members and is limited to a couple of emails per hour, which is enough for the team's own test calls. For anyone else, set custom SMTP (Project Settings → Authentication → SMTP; Resend's free tier works).
+- No auth email is sent: the profile (name, calling name, phone, email) is collected on the first visit and the email is stored unverified (ON-3, ON-8). Anonymous sign-ins on is the only auth setting the hosted project needs; its email templates and SMTP don't matter. The email-code sign-in from #72/#73 was retired because hosted Supabase only lets projects with custom SMTP edit the templates that would carry the code; `supabase/templates/` and the `current_permanent_user` dependency are kept for when that returns.
 
 ## Backend deploys (Railway)
 

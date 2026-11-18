@@ -14,7 +14,7 @@ describe('ensureSession', () => {
     await expect(ensureSession(existing)).resolves.toEqual({
       kind: 'session',
       userId: 'user-a',
-      account: { anonymous: false, email: 'alex@example.test' },
+      account: { userId: 'user-a', anonymous: false, email: 'alex@example.test' },
     })
     expect(signIn).not.toHaveBeenCalled()
   })
@@ -22,7 +22,7 @@ describe('ensureSession', () => {
   it('reports an existing anonymous session as anonymous', async () => {
     const signIn = vi.fn<SessionAuth['signInAnonymously']>()
     const anonymous = fakeAuth(session({ id: 'anon-1', is_anonymous: true, email: '' }), signIn)
-    await expect(ensureSession(anonymous)).resolves.toMatchObject({ userId: 'anon-1', account: { anonymous: true, email: null } })
+    await expect(ensureSession(anonymous)).resolves.toMatchObject({ userId: 'anon-1', account: { userId: 'anon-1', anonymous: true, email: null } })
     // A token from before the claim existed is a permanent user.
     const legacy = fakeAuth(session({ id: 'user-b' }), signIn)
     await expect(ensureSession(legacy)).resolves.toMatchObject({ account: { anonymous: false, email: null } })
@@ -36,7 +36,7 @@ describe('ensureSession', () => {
     await expect(ensureSession(fakeAuth(null, signIn))).resolves.toEqual({
       kind: 'session',
       userId: 'anon-1',
-      account: { anonymous: true, email: null },
+      account: { userId: 'anon-1', anonymous: true, email: null },
     })
     expect(signIn).toHaveBeenCalledOnce()
   })

@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { contractExampleBrief } from './contractExample'
+import { EMPTY_PROFILE } from '../lib/profile'
 import { SignInFailedError, type Account } from '../lib/session'
 import { modeNote, resolveDataMode, type LoadTokenSource } from './mode'
 import { emptySession } from './start'
 
-const anonymous: Account = { anonymous: true, email: null }
-const permanent: Account = { anonymous: false, email: 'alex@example.test' }
+const anonymous: Account = { userId: 'anon-1', anonymous: true, email: null }
+const permanent: Account = { userId: 'user-a', anonymous: false, email: 'alex@example.test' }
 
 const tokenSource =
   (token: string | null, account: Account = anonymous): LoadTokenSource =>
@@ -68,23 +69,20 @@ describe('resolveDataMode', () => {
     expect(headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/)
   })
 
-  // The browser's own check is only a shortcut; the server is the one that refuses.
-  it("in API mode with an anonymous session, the server's 403 becomes sign_in_required", async () => {
+  // The session kind no longer matters to the server: an anonymous session places the call.
+  it('in API mode with an anonymous session, Start reaches POST /calls', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) =>
       String(input).endsWith('/briefs')
         ? new Response(
             JSON.stringify({ brief_id: 'b1', brief: contractExampleBrief, missing_fields: [], opening_line: 'Hi', created_at: 'now' }),
             { status: 201 },
           )
-        : new Response(
-            JSON.stringify({ error: { code: 'sign_in_required', message: 'Add your email before placing a call', retryable: false } }),
-            { status: 403 },
-          ),
+        : new Response(JSON.stringify({ call_id: 'c2', status: 'dialing' }), { status: 201 }),
     )
     const mode = await resolveDataMode('http://localhost:8000', tokenSource('jwt-anon', anonymous), fetchMock)
     expect(mode).toMatchObject({ kind: 'api', account: anonymous })
     const { result } = await mode.starter(contractExampleBrief, emptySession)
-    expect(result).toMatchObject({ kind: 'sign_in_required', message: /Add your email/ })
+    expect(result).toMatchObject({ kind: 'started', callId: 'c2' })
   })
 })
 
@@ -94,12 +92,15 @@ describe('modeNote', () => {
     expect(modeNote(demo)).toMatchObject({ text: 'Demo mode (fake data)' })
     expect(modeNote(null)).toBeNull()
 
-    const guest = await resolveDataMode('http://localhost:8000', tokenSource('jwt', anonymous))
-    expect(modeNote(guest)).toMatchObject({ text: 'This browser only' })
-    expect(modeNote(guest)?.title).toMatch(/Add your email when you place a call/)
+    const api = await resolveDataMode('http://localhost:8000', tokenSource('jwt', anonymous))
+    expect(modeNote(api)).toMatchObject({ text: 'This browser only' })
+    expect(modeNote(api, EMPTY_PROFILE)?.title).toMatch(/Set up your profile/)
+    // Stored but never finished onboarding: still "this browser only".
+    const partial = { onboardedAt: null, fields: [{ key: 'email', value: 'alex@example.test', sharing: 'share_freely' as const }] }
+    expect(modeNote(api, partial)).toMatchObject({ text: 'This browser only' })
 
-    const signedIn = await resolveDataMode('http://localhost:8000', tokenSource('jwt', permanent))
-    expect(modeNote(signedIn)).toMatchObject({ text: 'alex@example.test' })
-    expect(modeNote(signedIn)?.title).toMatch(/follow this email/)
+    const onboarded = { ...partial, onboardedAt: '2026-11-18T12:00:00.000Z' }
+    expect(modeNote(api, onboarded)).toMatchObject({ text: 'alex@example.test' })
+    expect(modeNote(api, onboarded)?.title).toMatch(/stay in this browser/)
   })
 })
