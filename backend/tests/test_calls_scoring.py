@@ -260,3 +260,45 @@ def test_the_year_is_left_alone_when_the_brief_names_no_date() -> None:
 def test_a_malformed_offer_date_is_left_alone() -> None:
     offer = {"date": "Thursday"}
     assert fix_offer_year(BRIEF_A, offer) is offer
+
+
+# --- what the offer leaves out (missing_detail_gate) --------------------------------------
+
+
+def test_c4_05_a_friday_fallback_with_no_time_is_missing_the_time() -> None:
+    # The 03:54 run: after "3pm is the earliest", the agent took the Friday morning fallback
+    # with offer {date: 2026-11-20} and no time. Python couldn't check "morning".
+    score = score_offer(BRIEF_A, {"date": "2026-11-20", "person": "Dr. Rivera"})
+    assert score.matches_fallback is None
+    assert score.missing_to_settle("take_fallback") == ("time",)
+    # Friday breaks "On Thursday", so an accept rests on the fallback, which needs the time.
+    assert score.fits is False
+    assert score.missing_to_settle("accept") == ("time",)
+
+
+def test_nothing_is_missing_once_python_can_tell() -> None:
+    fits = score_offer(BRIEF_A, {"date": "2026-11-19", "time": "14:00"})
+    friday_10 = score_offer(BRIEF_A, {"date": "2026-11-20", "time": "10:00"})
+    low = score_offer(BRIEF_A, {"date": "2026-11-19", "time": "15:00"})  # fails, not unknown
+    for score in (fits, friday_10):
+        assert score.missing_to_settle("accept") == ()
+        assert score.missing_to_settle("take_fallback") == ()
+    assert low.missing_to_settle("accept") == ()  # the Low-offer gate's job
+
+
+def test_every_missing_field_is_named_once_in_rule_order() -> None:
+    score = score_offer(BRIEF_A, {"person": "Dr. Rivera"})
+    assert score.missing_to_settle("accept") == ("date", "time")
+    assert score.missing_to_settle("counter") == ()  # only settling actions need them
+
+
+def test_text_only_items_never_count_as_missing() -> None:
+    text_only = {"constraints": [{"text": "Somewhere quiet"}], "fallbacks": [{"text": "Patio"}]}
+    score = score_offer(text_only, {"time": "19:00"})
+    assert score.missing_to_settle("accept") == ()
+    assert score.missing_to_settle("take_fallback") == ()
+
+
+def test_a_malformed_value_counts_as_missing() -> None:
+    score = score_offer(BRIEF_A, {"date": "2026-11-20", "time": "morning"})
+    assert score.missing_to_settle("take_fallback") == ("time",)

@@ -34,6 +34,7 @@ from app.calls.gates import (
     load_brief,
     load_facts,
     low_offer_gate,
+    missing_detail_gate,
     money_gate,
 )
 from app.calls.pings import close_ping, open_ping_for_update
@@ -66,7 +67,11 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
     if action in SETTLING_ACTIONS:
         facts = await load_facts(conn, ctx.call_id)
         score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)
-        refusal = money_gate(action, facts) or low_offer_gate(action, ctx.dimensions, facts, score)
+        refusal = (
+            money_gate(action, facts)
+            or low_offer_gate(action, ctx.dimensions, facts, score)
+            or missing_detail_gate(action, facts, score)
+        )
         if refusal is not None:
             logger.info("report_decision refused by a gate for call %s", ctx.call_id)
             return refusal

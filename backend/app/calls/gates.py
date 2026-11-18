@@ -16,6 +16,10 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
   model's own ``meets_constraints`` and ``matches_fallback`` in the Low-offer and
   needless-ping gates, and the refusal names the broken rule. Where Python can't tell
   (unknown), the model's ``dimensions`` decide as before.
+- **Missing detail** (``missing_detail_gate``): accept or take_fallback is refused when the
+  brief has a rule Python could check, but the offer the model wrote down leaves out the
+  value it needs (C4-05: "take the Friday morning fallback" with no time, which the business
+  never offered). A booking never rests on a guess. The user's "yes" lets it through.
 - **Too long** (``length_gate``): ``ask_user`` (a decision ping) and ``report_decision`` are
   refused when ``reason`` or ``missed_preference`` is over ``CARD_TEXT_MAX`` characters, the
   length the user can read on the card at a glance (DC-5). Models can't count characters, so
@@ -119,6 +123,19 @@ REFUSED_SECOND_COUNTER = (
     "Not done: you already countered once. Do not ask the business for anything else. Call "
     "ask_user now with what they offered and what the user asked for."
 )
+
+
+def missing_detail_refusal(fields: tuple[str, ...]) -> str:
+    """The refusal for settling on an offer that leaves out ``fields`` the rules need."""
+    names = " and ".join(f.replace("_", " ") for f in fields)
+    return (
+        f"Not done: the offer you wrote down has no {names}, and the user's rules need it. "
+        f"If the business said it or it is clear from the call (for example the party size "
+        f"you asked for and they didn't change), call again with it in offer. If not, ask "
+        f"them for the {names} first. Never accept or take a fallback on a guess."
+    )
+
+
 REFUSALS = (
     REFUSED_MONEY,
     REFUSED_LOW_OFFER,
@@ -253,6 +270,16 @@ def unsaid_name_gate(arguments: Mapping[str, Any], facts: CallFacts) -> str | No
     if folded in " ".join(facts.business_said.split()):
         return None
     return REFUSED_UNSAID_NAME
+
+
+def missing_detail_gate(action: str, facts: CallFacts, score: OfferScore | None) -> str | None:
+    """The refusal for accepting or taking a fallback when the offer leaves out a value the
+    brief's rules need (so Python can't check it), else None. A "yes" from the user to the
+    latest ping lets it through, as in ``low_offer_gate``."""
+    if score is None or facts.latest_ping_approved or action not in SETTLING_ACTIONS:
+        return None
+    missing = score.missing_to_settle(action)
+    return missing_detail_refusal(missing) if missing else None
 
 
 def counter_gate(action: object, facts: CallFacts) -> str | None:

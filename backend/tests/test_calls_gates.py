@@ -35,6 +35,8 @@ from app.calls.gates import (
     length_gate,
     low_offer_gate,
     mentions_money,
+    missing_detail_gate,
+    missing_detail_refusal,
     money_gate,
     needless_ping_gate,
     unsaid_name_gate,
@@ -256,6 +258,37 @@ def test_where_python_cant_tell_the_model_decides_as_before() -> None:
     assert low_offer_gate("accept", LOW, CallFacts(), text_only) == REFUSED_LOW_OFFER
 
 
+def test_c4_05_taking_a_fallback_with_no_time_is_refused() -> None:
+    # The 03:54 run: "take the Friday morning fallback" with offer {date: Friday} and no time,
+    # after the business only ever offered Thursday 3pm. The model claimed matches_fallback.
+    score = score_offer(SCORED_BRIEF, {"date": "2026-11-20", "person": "Dr. Rivera"})
+    assert low_offer_gate("take_fallback", FALLBACK, CallFacts(), score) is None  # the hole
+    refusal = missing_detail_gate("take_fallback", CallFacts(), score)
+    assert refusal == missing_detail_refusal(("time",))
+    assert refusal is not None and is_refusal(refusal) and "has no time" in refusal
+    assert missing_detail_gate("accept", CallFacts(), score) == refusal
+    # The user's "yes" to the latest ping lets it through, as for a Low offer (R-01).
+    assert missing_detail_gate("take_fallback", CallFacts(latest_ping_approved=True), score) is None
+
+
+def test_missing_detail_leaves_complete_offers_pings_and_counters_alone() -> None:
+    complete = score_offer(SCORED_BRIEF, {"date": "2026-11-20", "time": "10:00"})
+    no_time = score_offer(SCORED_BRIEF, {"date": "2026-11-20"})
+    assert missing_detail_gate("take_fallback", CallFacts(), complete) is None
+    assert missing_detail_gate("counter", CallFacts(), no_time) is None
+    assert missing_detail_gate("decline", CallFacts(), no_time) is None
+    assert missing_detail_gate("accept", CallFacts(), None) is None  # no offer written down
+    text_only = score_offer({"constraints": [{"text": "Quiet"}]}, {"time": "19:00"})
+    assert missing_detail_gate("accept", CallFacts(), text_only) is None
+
+
+def test_missing_detail_refusal_names_every_field() -> None:
+    refusal = missing_detail_refusal(("date", "time"))
+    assert "has no date and time" in refusal
+    assert "ask them for the date and time first" in refusal
+    assert "party size" in missing_detail_refusal(("party_size",))
+
+
 def test_c4_06_python_refuses_a_ping_about_an_offer_that_fits() -> None:
     # Dr. Patel fits every constraint and misses only a preference: Medium, accept and flag.
     patel = score_offer(SCORED_BRIEF, {"date": "2026-11-19", "time": "14:00", "person": "Patel"})
@@ -466,6 +499,34 @@ def test_the_heard_offer_is_scored_against_the_calls_brief_through_the_webhook(
             tc = f"tc-{uuid.uuid4()}"
             response = await post(client, tool_body(call, [(tc, "report_decision", accept_3pm)]))
             refused = [{"toolCallId": tc, "result": breaks_rule_refusal("Before 3pm")}]
+            assert response.json()["results"] == refused
+            assert not [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_a_fallback_with_no_time_is_refused_through_the_webhook(
+    supabase_env: SupabaseEnv,
+) -> None:
+    # C4-05 (03:54 run) on a live call: "take the Friday morning fallback" with no time.
+    db = supabase_env.db_url
+    call = seed_call(db)
+    with psycopg.connect(db, autocommit=True) as conn:
+        conn.execute(
+            "update public.briefs set brief = %s::jsonb where id = %s",
+            (json.dumps(SCORED_BRIEF), call.brief_id),
+        )
+    take_friday = {
+        **_decision("take_fallback", {**DIMS_LOW, "matches_fallback": True}),
+        "offer": {"date": "2026-11-20", "person": "Dr. Rivera"},
+    }
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            tc = f"tc-{uuid.uuid4()}"
+            response = await post(client, tool_body(call, [(tc, "report_decision", take_friday)]))
+            refused = [{"toolCallId": tc, "result": missing_detail_refusal(("time",))}]
             assert response.json()["results"] == refused
             assert not [p for t, p in await event_rows(db, call) if t == "agent.decision"]
 

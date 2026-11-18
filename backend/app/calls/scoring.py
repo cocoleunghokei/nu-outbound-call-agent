@@ -12,7 +12,9 @@ Every brief item gets one of three results:
 - ``pass``: it has rules, and the offer satisfies every one of them.
 - ``fail``: at least one of its rules is broken by a value the offer states.
 - ``unknown``: it has no rules (text only), a rule has no bound, or the offer doesn't say
-  the value a rule needs. Python has no opinion, and the model's own judgment stands.
+  the value a rule needs. Python has no opinion, and the model's own judgment stands, except
+  that an accept or take_fallback can't rest on a value the offer leaves out: each result
+  lists those values in ``missing`` (``app/calls/gates.py``, ``missing_detail_gate``).
 
 No database, no network, no clock: the offer's date is resolved by the model, and the
 brief's dates are absolute. The model often gets the year wrong (it says "19 November" and
@@ -41,6 +43,8 @@ class ItemResult:
 
     text: str
     check: Check
+    # Offer fields its rules need that the offer doesn't state ("time"), when check is unknown.
+    missing: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,28 @@ class OfferScore:
     def broken_constraint(self) -> str | None:
         """The text of the first constraint the offer breaks, if any."""
         return next((c.text for c in self.constraints if c.check == "fail"), None)
+
+    def missing_to_settle(self, action: str) -> tuple[str, ...]:
+        """The offer fields Python still needs before it can back this action, else ().
+
+        accept rests on the constraints, or on a fallback once a constraint fails;
+        take_fallback rests on the fallbacks. Empty when Python already says the offer fits
+        or matches a fallback, when it says the offer fails everything (the Low-offer gate
+        handles that), or when the unknown comes from text-only items rather than from
+        something the offer left out.
+        """
+        if action not in ("accept", "take_fallback"):
+            return ()
+        if self.fits is True or self.matches_fallback is True:
+            return ()
+        if action == "accept" and self.fits is None:
+            items = self.constraints
+        elif self.matches_fallback is None:
+            items = self.fallbacks
+        else:
+            return ()
+        fields = [f for item in items if item.check == "unknown" for f in item.missing]
+        return tuple(dict.fromkeys(fields))
 
     @property
     def missed_preferences(self) -> tuple[str, ...]:
@@ -151,6 +177,34 @@ def check_rule(rule: Mapping[str, Any], offer: Mapping[str, Any]) -> Check:
     return "unknown"  # a kind this version doesn't know
 
 
+# The offer field each rule kind reads (contracts/brief-rule.v1.json).
+_RULE_FIELD = {"date": "date", "time": "time", "party_size": "party_size", "person": "person"}
+
+
+def missing_fields(item: Mapping[str, Any], offer: Mapping[str, Any]) -> tuple[str, ...]:
+    """The offer fields an item's rules read that the offer doesn't state (or states badly)."""
+    rules = item.get("rules")
+    found: list[str] = []
+    for rule in rules if isinstance(rules, list) else []:
+        if not isinstance(rule, Mapping):
+            continue
+        field = _RULE_FIELD.get(str(rule.get("kind")))
+        if field is not None and field not in found and not _states(field, offer.get(field)):
+            found.append(field)
+    return tuple(found)
+
+
+def _states(field: str, value: object) -> bool:
+    """True when ``value`` is a well-formed value for offer ``field``."""
+    if field == "date":
+        return _text(value, _DATE) is not None
+    if field == "time":
+        return _text(value, _TIME) is not None
+    if field == "party_size":
+        return _count(value) is not None
+    return isinstance(value, str) and bool(_name_tokens(value))
+
+
 def check_item(item: Mapping[str, Any], offer: Mapping[str, Any]) -> Check:
     """A brief item: fail if any rule fails, pass if all pass, else unknown (no rules too)."""
     rules = item.get("rules")
@@ -167,11 +221,14 @@ def check_item(item: Mapping[str, Any], offer: Mapping[str, Any]) -> Check:
 def _items(brief: Mapping[str, Any], key: str, offer: Mapping[str, Any]) -> tuple[ItemResult, ...]:
     raw = brief.get(key)
     items: Sequence[Any] = raw if isinstance(raw, list) else []
-    return tuple(
-        ItemResult(text=str(item.get("text", "")), check=check_item(item, offer))
-        for item in items
-        if isinstance(item, Mapping)
-    )
+    results: list[ItemResult] = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        check = check_item(item, offer)
+        missing = missing_fields(item, offer) if check == "unknown" else ()
+        results.append(ItemResult(text=str(item.get("text", "")), check=check, missing=missing))
+    return tuple(results)
 
 
 def _brief_dates(brief: Mapping[str, Any]) -> list[date]:

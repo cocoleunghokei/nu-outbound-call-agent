@@ -17,6 +17,7 @@ The tool results follow the backend:
 - ``report_outcome`` returns the post-call acknowledgement; ``endCall`` ends the run.
 - The action gates (``app/calls/gates.py``) run first, from the same facts the backend reads:
   an accept or take_fallback after unapproved money, a Low offer accepted without a "yes",
+  an accept or take_fallback whose offer leaves out a value the rules need,
   ``needs_follow_up`` before the user was asked, a card reason over 80 characters, a ping
   about an offer the model scored High, or a staff name the business never said, gets the
   refusal instead and changes nothing.
@@ -40,6 +41,7 @@ from app.calls.gates import (
     give_up_gate,
     length_gate,
     low_offer_gate,
+    missing_detail_gate,
     money_gate,
     needless_ping_gate,
     unsaid_name_gate,
@@ -158,8 +160,10 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         if action in SETTLING_ACTIONS:
             facts = state.facts()
             score = score_tool_call(state.brief, args)
-            refusal = money_gate(str(action), facts) or low_offer_gate(
-                str(action), _dims(args), facts, score
+            refusal = (
+                money_gate(str(action), facts)
+                or low_offer_gate(str(action), _dims(args), facts, score)
+                or missing_detail_gate(str(action), facts, score)
             )
             if refusal is not None:
                 return refusal
