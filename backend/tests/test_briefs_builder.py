@@ -182,6 +182,7 @@ def _set_field(index: int, name: str, value: Any) -> Mutator:
         (_add_field(field("Day")), "R8"),
         (_set_field(3, "question", "Which day"), "R9"),
         (_set_field(3, "question", "Which day? What time?"), "R9"),
+        (_set_field(3, "question", "x" * 200 + "?"), "R9"),
         (_set_field(2, "suggestions", ["x" * 201]), "R9"),
         (_set_field(2, "suggestions", ["1", "2", "3", "4", "5", "6"]), "R9"),
         (_set("default_constraints", [{"text": f"Limit {n}"} for n in range(4)]), "R10"),

@@ -161,6 +161,38 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "call_details": {
+      "type": "array",
+      "description": "Answers the user gave in the pre-call chat for this call's template fields with source 'call' (e.g. patient_status), in template order, so the agent can answer when asked (PC-4). Never profile values. Optional: briefs stored before it existed don't have it.",
+      "items": {
+        "title": "BriefCallDetail",
+        "type": "object",
+        "required": [
+          "key",
+          "question",
+          "value"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "maxLength": 64
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The template's question, e.g. 'Are you a new or existing patient?'"
+          },
+          "value": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      }
     }
   }
 }
