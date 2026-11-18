@@ -302,6 +302,9 @@ export interface OutcomeDetails {
    * Exactly as the business said it, e.g. A1B2
    */
   confirmation_number?: string;
+  /**
+   * The name of the person at the business you spoke with, exactly as they said it, e.g. Marco. Never the business's own name. Leave it out if they gave no name.
+   */
   staff_name?: string;
 }
 

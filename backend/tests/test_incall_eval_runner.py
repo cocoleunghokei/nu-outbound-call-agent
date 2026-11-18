@@ -16,7 +16,8 @@ import httpx
 import pytest
 
 from app.calls import messages
-from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY
+from app.calls.assistant import TEMPERATURE
+from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY, REFUSED_TOO_LONG
 from evals.incall import model as model_module
 from evals.incall.checks import business_dates, business_times, check_run
 from evals.incall.judge_input import render as render_judge
@@ -24,7 +25,7 @@ from evals.incall.model import DeepSeekChat, ModelError, parse_stream
 from evals.incall.play import SERVER_S, measure_turn, play_case
 from evals.incall.records import CheckResult, Event, ModelReply, RunRecord, ToolCall
 from evals.incall.report import combine, load, percentile, render, verdict_line
-from evals.incall.run import run_eval
+from evals.incall.run import parse_args, run_eval
 from evals.incall.setup import END_CALL_TOOL, load_data, model_tools
 
 DATA = load_data()
@@ -313,6 +314,23 @@ def test_the_give_up_gate_makes_the_agent_ask_first() -> None:
     assert v["gates-quiet"] == "fail"
 
 
+def test_the_length_gate_refuses_a_long_reason_and_the_retry_counts() -> None:
+    long = "They offered Thu 4pm only, and nothing earlier on Thursday. You said before 3pm!!"
+    assert len(long) > 80
+    long_ping = ask(reason=long)
+    record, _ = play(
+        "C4-03",
+        [tools(COUNTER, text="That won't work. Anything before 3pm?"), QUIET,
+         tools(long_ping), tools(ask(), text="Let me check with Alex Kim.")],
+    )  # fmt: skip
+    refused = [e for e in record.events if e.kind == "tool_result" and e.text == REFUSED_TOO_LONG]
+    assert [e.step for e in refused] == [2]
+    v = verdicts(record)
+    assert v["D5-len"] == "pass"  # the refused reason never reached the card
+    assert v["C4-03.1"] == "pass"  # the short retry pinged Alex
+    assert v["gates-quiet"] == "fail"
+
+
 def test_tool_call_ids_are_unique_within_a_run_even_if_the_provider_repeats_them() -> None:
     record, _ = play("C4-14", [tools(COUNTER), QUIET, tools(ask())])  # both arrive as "c0"
     ids = [e.call_id for e in record.events if e.kind == "tool_call"]
@@ -579,3 +597,8 @@ def test_verdict_line_prefers_incomplete_over_a_guess() -> None:
         runs=1, overall=1, accuracy=(1, 1), guardrails=1, hard=1, soft=(1, 1), pending=2, latency={}
     )
     assert verdict_line(m)[1] == 3
+
+
+def test_the_runner_defaults_to_the_live_agents_temperature() -> None:
+    assert parse_args([]).temperature == TEMPERATURE
+    assert parse_args(["--temperature", "0.7"]).temperature == 0.7

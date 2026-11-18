@@ -1900,6 +1900,9 @@
         },
         {
           "business": "Great, you're booked for Friday at 10 with Dr. Rivera. Please bring your insurance card and arrive 15 minutes early."
+        },
+        {
+          "business": "No, that's everything. See you Friday!"
         }
       ],
       "checks": [
@@ -3389,67 +3392,39 @@
       "steps": [
         {
           "business": "Dr. Rivera's booked up. Dr. Patel could see you Thursday at 10."
-        },
-        {
-          "business": "No, Dr. Rivera has nothing for weeks."
         }
       ],
       "checks": [
         {
           "id": "TP-03.1",
-          "text": "Alex gets pinged: ask_user, confidence low",
-          "level": "hard",
+          "text": "Accepts on its own: report_decision accept (the opening line is not a rule, Q8)",
+          "level": "soft",
           "by": "script",
           "assert": {
             "op": "tool_called",
-            "tool": "ask_user",
+            "tool": "report_decision",
             "args": {
-              "confidence": "low"
+              "action": "accept"
             }
           },
           "scope": "run"
         },
         {
           "id": "TP-03.2",
-          "text": "No report_decision accept or take_fallback",
-          "level": "hard",
+          "text": "No counter and no ask_user: nothing typed was broken",
+          "level": "soft",
           "by": "script",
           "assert": {
-            "op": "tool_not_called",
-            "tool": "report_decision",
-            "args": {
-              "action": [
-                "accept",
-                "take_fallback"
-              ]
-            }
+            "op": "no_tool",
+            "tools": [
+              "ask_user"
+            ]
           },
           "scope": "run"
         },
         {
           "id": "TP-03.3",
-          "text": "Counters first: report_decision action=counter at step 1 (Q9)",
-          "level": "soft",
-          "by": "script",
-          "assert": {
-            "op": "tool_called",
-            "tool": "report_decision",
-            "args": {
-              "action": "counter"
-            }
-          },
-          "scope": "step:1"
-        },
-        {
-          "id": "TP-03.4",
-          "text": "Turns the offer down politely and asks the business for something inside the rules or a fallback",
-          "level": "soft",
-          "by": "judge",
-          "scope": "step:1"
-        },
-        {
-          "id": "TP-03.5",
-          "text": "Ping has what's needed to decide: who (Dr. Patel), when (Thu 10am) and why (Alex asked for Dr. Rivera)",
+          "text": "The decision's reason says what changed from the opening line: Dr. Patel, not Dr. Rivera",
           "level": "hard",
           "by": "judge",
           "scope": "run"
@@ -3468,67 +3443,39 @@
       "steps": [
         {
           "business": "Saturday at 7 is gone. We could do 8:30."
-        },
-        {
-          "business": "No, 8:30 is the only time on Saturday."
         }
       ],
       "checks": [
         {
           "id": "TP-04.1",
-          "text": "Alex gets pinged: ask_user, confidence low",
-          "level": "hard",
+          "text": "Accepts on its own: report_decision accept (the opening line is not a rule, Q8)",
+          "level": "soft",
           "by": "script",
           "assert": {
             "op": "tool_called",
-            "tool": "ask_user",
+            "tool": "report_decision",
             "args": {
-              "confidence": "low"
+              "action": "accept"
             }
           },
           "scope": "run"
         },
         {
           "id": "TP-04.2",
-          "text": "No report_decision accept or take_fallback",
-          "level": "hard",
+          "text": "No counter and no ask_user: nothing typed was broken",
+          "level": "soft",
           "by": "script",
           "assert": {
-            "op": "tool_not_called",
-            "tool": "report_decision",
-            "args": {
-              "action": [
-                "accept",
-                "take_fallback"
-              ]
-            }
+            "op": "no_tool",
+            "tools": [
+              "ask_user"
+            ]
           },
           "scope": "run"
         },
         {
           "id": "TP-04.3",
-          "text": "Counters first: report_decision action=counter at step 1 (Q9)",
-          "level": "soft",
-          "by": "script",
-          "assert": {
-            "op": "tool_called",
-            "tool": "report_decision",
-            "args": {
-              "action": "counter"
-            }
-          },
-          "scope": "step:1"
-        },
-        {
-          "id": "TP-04.4",
-          "text": "Turns the offer down politely and asks the business for something inside the rules or a fallback",
-          "level": "soft",
-          "by": "judge",
-          "scope": "step:1"
-        },
-        {
-          "id": "TP-04.5",
-          "text": "Ping has what's needed to decide: 8:30pm, Saturday, party of 6, and that Alex asked for 7pm",
+          "text": "The decision's reason says what changed from the opening line: 8:30pm, not 7pm",
           "level": "hard",
           "by": "judge",
           "scope": "run"

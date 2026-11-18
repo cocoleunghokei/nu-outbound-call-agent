@@ -14,16 +14,24 @@ import psycopg
 import pytest
 
 from app.calls.gates import (
+    CARD_TEXT_MAX,
+    REFUSALS,
     REFUSED_GIVE_UP,
     REFUSED_LOW_OFFER,
     REFUSED_MONEY,
+    REFUSED_NEEDLESS_PING,
+    REFUSED_TOO_LONG,
+    REFUSED_UNSAID_NAME,
     CallFacts,
     facts_from_timeline,
     give_up_gate,
     is_approving,
+    length_gate,
     low_offer_gate,
     mentions_money,
     money_gate,
+    needless_ping_gate,
+    unsaid_name_gate,
 )
 from app.postcall.jobs import latest_report
 from tests.calls_helpers import (
@@ -116,6 +124,55 @@ def test_a_low_offer_cannot_be_accepted_without_approval() -> None:
     assert low_offer_gate("accept", None, CallFacts()) is None  # no scores: nothing to check
     # R-01: the user said "Yes, book it" to the latest ping, so accepting 4pm is allowed.
     assert low_offer_gate("accept", LOW, CallFacts(latest_ping_approved=True)) is None
+
+
+def test_card_text_over_80_characters_is_refused() -> None:
+    # Found by the eval (D5-len): reasons of 83 to 99 characters, run after run.
+    fits = "x" * CARD_TEXT_MAX
+    assert CARD_TEXT_MAX == 80
+    assert length_gate({"reason": fits, "missed_preference": fits}) is None
+    assert length_gate({"reason": f"  {fits}  "}) is None  # surrounding spaces don't count
+    assert length_gate({"reason": fits + "x"}) == REFUSED_TOO_LONG
+    assert length_gate({"reason": "Short.", "missed_preference": fits + "x"}) == REFUSED_TOO_LONG
+    assert length_gate({}) is None
+    assert length_gate({"reason": 42}) is None  # not text: the schema check rejects it
+    assert REFUSED_TOO_LONG in REFUSALS  # so the eval drops the refused call from its checks
+
+
+def test_pinging_about_an_offer_scored_high_is_refused() -> None:
+    # Found by the eval (C4-01): "Thursday 2pm with Dr. Rivera fits your request. Confirm?"
+    fits = {**FITS, "needs_ask_first_field": False, "involves_money": False}
+    assert needless_ping_gate("high", fits, None) == REFUSED_NEEDLESS_PING
+    assert REFUSED_NEEDLESS_PING in REFUSALS
+    assert needless_ping_gate("low", fits, None) is None
+    assert needless_ping_gate(None, fits, None) is None
+    # Money or an ask-first field always pings, whatever the score.
+    assert needless_ping_gate("high", {**fits, "involves_money": True}, None) is None
+    assert needless_ping_gate("high", {**fits, "needs_ask_first_field": True}, None) is None
+    assert needless_ping_gate("high", fits, "date_of_birth") is None
+    assert needless_ping_gate("high", None, None) is None  # no scores: nothing to check
+
+
+def test_a_staff_name_the_business_never_said_is_refused() -> None:
+    # Found by the eval (SM-06): staff_name "Luna Trattoria", the restaurant's own name.
+    facts = facts_from_timeline(
+        [("business", "Hi, Luna Trattoria, this is Marco Rossi speaking.")],
+        latest_ping_answer=None,
+        ending=False,
+    )
+    booked = {"outcome": "booked", "business_confirmed": True}
+    assert unsaid_name_gate({**booked, "details": {"staff_name": "Marco Rossi"}}, facts) is None
+    assert unsaid_name_gate({**booked, "details": {"staff_name": "marco"}}, facts) is None
+    assert unsaid_name_gate({**booked, "details": {"staff_name": "Maria"}}, facts) == (
+        REFUSED_UNSAID_NAME
+    )
+    assert unsaid_name_gate(booked, facts) is None  # no name given: nothing to check
+    assert unsaid_name_gate({**booked, "details": {"staff_name": " "}}, facts) is None
+    silent = facts_from_timeline([], latest_ping_answer=None, ending=False)
+    assert unsaid_name_gate({**booked, "details": {"staff_name": "Luna"}}, silent) == (
+        REFUSED_UNSAID_NAME
+    )
+    assert REFUSED_UNSAID_NAME in REFUSALS
 
 
 def test_giving_up_needs_the_user_asked_first() -> None:
@@ -212,5 +269,63 @@ def test_giving_up_before_asking_is_refused_and_never_becomes_the_outcome(
         assert result == REFUSED_GIVE_UP
         async with await psycopg.AsyncConnection.connect(db) as conn:
             assert await latest_report(conn, call.call_id) is None  # never the outcome
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_a_card_reason_over_80_characters_is_refused_and_writes_nothing(
+    supabase_env: SupabaseEnv,
+) -> None:
+    db = supabase_env.db_url
+    call = seed_call(db)
+    long_reason = (
+        "They offered Thursday 4pm only, and Friday morning is booked; you said before 3pm."
+    )
+    assert len(long_reason) > 80
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            decision = {**_decision("counter", DIMS_LOW), "reason": long_reason}
+            tc = f"tc-{uuid.uuid4()}"
+            response = await post(client, tool_body(call, [(tc, "report_decision", decision)]))
+            assert response.json()["results"] == [{"toolCallId": tc, "result": REFUSED_TOO_LONG}]
+            assert not [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+
+            ask_tc, ask = ask_body(call, reason=long_reason)
+            response = await post(client, ask)
+            assert response.json()["results"] == [
+                {"toolCallId": ask_tc, "result": REFUSED_TOO_LONG}
+            ]
+            assert await ping_rows(db, call) == []  # no card reached the user
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_a_ping_about_an_offer_scored_high_is_refused_through_the_webhook(
+    supabase_env: SupabaseEnv,
+) -> None:
+    # Regression: the ingress strips confidence from the tool arguments, so the gate read
+    # nothing and never fired on live calls. It now gets the scores from the context.
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            fits = {**DIMS_LOW, "meets_constraints": True}
+            args = {
+                "question": "They offered Thu 2pm. Book it?",
+                "reason": "They offered Thu 2pm. That fits.",
+                "suggested_replies": ["Yes", "No"],
+                "confidence": "high",
+                "dimensions": fits,
+            }
+            tc = f"tc-{uuid.uuid4()}"
+            response = await post(client, tool_body(call, [(tc, "ask_user", args)]))
+            assert response.json()["results"] == [
+                {"toolCallId": tc, "result": REFUSED_NEEDLESS_PING}
+            ]
+            assert await ping_rows(db, call) == []
 
     asyncio.run(scenario())

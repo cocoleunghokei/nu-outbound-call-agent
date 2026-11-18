@@ -26,7 +26,11 @@ SERVER_MESSAGES = (
 )
 # DeepSeek-V3 (decision 7). Its API key lives in the Vapi dashboard (Integrations), never
 # here. Tool calling on DeepSeek is not documented by Vapi: confirm it in the Vapi session.
-MODEL = {"provider": "deep-seek", "model": "deepseek-chat"}
+# Low and pinned so the agent behaves the same way call after call, and the in-call eval
+# (evals/incall) tests what real calls get. The provider default (1.0) made identical eval
+# runs disagree.
+TEMPERATURE = 0.2
+MODEL = {"provider": "deep-seek", "model": "deepseek-chat", "temperature": TEMPERATURE}
 # Voice and transcriber as used in the probe kit; tune after the Vapi session.
 VOICE = {"provider": "vapi", "voiceId": "Clara"}
 TRANSCRIBER = {"provider": "deepgram", "model": "nova-3", "language": "en-US"}
