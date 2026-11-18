@@ -73,9 +73,13 @@ export function keyFor(session: SaveSession, signature: string, newKey: () => st
   return [key, { ...session, keys: { ...session.keys, [signature]: key } }]
 }
 
-/** True when `POST /calls` failed because Coco's route isn't there yet, not because of the brief. */
+/**
+ * True when `POST /calls` failed because the route isn't deployed, not because of the brief.
+ *
+ * No answer at all (`NETWORK_ERROR`) is not "missing": the request may have reached the
+ * server and a call may be ringing, so it must never say "nothing was dialed".
+ */
 export function isCallRouteMissing(error: ApiError): boolean {
-  if (error.code === NETWORK_ERROR) return true
   // FastAPI's own 404/405 for an unknown route; a real "brief_not_found" is a different code.
   if (error.code === 'not_found' || error.code === 'method_not_allowed' || error.status === 405) return true
   // A 404 without the shared error shape (e.g. from a proxy in front of the API).
@@ -86,6 +90,11 @@ export function isCallRouteMissing(error: ApiError): boolean {
 export function describeError(error: ApiError, step: 'save' | 'start'): string {
   if (error.code === NO_SESSION || error.code === 'unauthenticated' || error.code === 'token_expired') {
     return "You're signed out, so I couldn't save this. Sign in again, then tap Start."
+  }
+  if (error.code === NETWORK_ERROR && step === 'start') {
+    // The call may have started before the answer was lost. Start again reuses the same
+    // Idempotency-Key, so the server returns that call instead of dialing a second time.
+    return "I didn't hear back from the server, so the call may have started. Check your connection, then tap Start again. It won't call twice."
   }
   if (error.code === NETWORK_ERROR) {
     return "I couldn't reach the server. Check your connection, then tap Start again."

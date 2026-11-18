@@ -67,7 +67,6 @@ describe('apiStarter (Start in API mode)', () => {
   it.each([
     ['404 from FastAPI', routeMissing()],
     ['405', new ApiError('method_not_allowed', 'Method Not Allowed', 405, false)],
-    ['no answer', new ApiError(NETWORK_ERROR, 'offline', 0, true)],
   ])('says "saved, not connected" when POST /calls is not there (%s)', async (_label, error) => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     const client = fakeClient({ startCall: vi.fn(async () => Promise.reject(error)) })
@@ -75,6 +74,25 @@ describe('apiStarter (Start in API mode)', () => {
     expect(result).toMatchObject({ kind: 'saved_not_connected', briefId: BRIEF_ID })
     expect(info).toHaveBeenCalledWith(expect.stringContaining('POST /calls'), BRIEF_ID)
     info.mockRestore()
+  })
+
+  // Regression (#59 review): no answer from POST /calls was read as "route not deployed",
+  // so the chat said nothing was dialed while a real call could be ringing; a new Start
+  // then called the business twice.
+  it('says the call may have started when POST /calls gets no answer, and Start again replays it', async () => {
+    const startCall = vi
+      .fn<ApiClient['startCall']>()
+      .mockRejectedValueOnce(new ApiError(NETWORK_ERROR, 'offline', 0, true))
+      .mockImplementation(async () => ({ call_id: 'call-1' }))
+    const client = fakeClient({ startCall })
+    const start = apiStarter(client, keys())
+    const first = await start(contractExampleBrief, emptySession)
+    expect(first.result.kind).toBe('error')
+    if (first.result.kind !== 'error') return
+    expect(first.result.message).toMatch(/may have started/)
+    const second = await start(contractExampleBrief, first.session)
+    expect(second.result).toMatchObject({ kind: 'started', callId: 'call-1' })
+    expect(startCall.mock.calls.map((c) => c[1])).toEqual(['key-2', 'key-2'])
   })
 
   it("surfaces the server's message when saving fails (invalid_phone)", async () => {
@@ -216,8 +234,9 @@ describe('reviewView (server wins)', () => {
 })
 
 describe('isCallRouteMissing and describeError', () => {
-  it('only treats a missing route or no answer as "not connected"', () => {
+  it('only treats a missing route as "not connected", never no answer', () => {
     expect(isCallRouteMissing(routeMissing())).toBe(true)
+    expect(isCallRouteMissing(new ApiError(NETWORK_ERROR, 'x', 0, true))).toBe(false)
     expect(isCallRouteMissing(new ApiError('http_404', 'x', 404, false))).toBe(true)
     expect(isCallRouteMissing(new ApiError('brief_not_found', 'x', 404, false))).toBe(false)
     expect(isCallRouteMissing(new ApiError('invalid_phone', 'x', 422, false))).toBe(false)
