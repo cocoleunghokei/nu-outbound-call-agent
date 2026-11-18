@@ -17,7 +17,8 @@ The tool results follow the backend:
 - ``report_outcome`` returns the post-call acknowledgement; ``endCall`` ends the run.
 - The action gates (``app/calls/gates.py``) run first, from the same facts the backend reads:
   an accept or take_fallback after unapproved money, a Low offer accepted without a "yes",
-  ``needs_follow_up`` before the user was asked, or a card reason over 80 characters, gets the
+  ``needs_follow_up`` before the user was asked, a card reason over 80 characters, a ping
+  about an offer the model scored High, or a staff name the business never said, gets the
   refusal instead and changes nothing.
 
 A run stops early, and is judged as it stands, when the model leaves the script: it ends the
@@ -39,6 +40,8 @@ from app.calls.gates import (
     length_gate,
     low_offer_gate,
     money_gate,
+    needless_ping_gate,
+    unsaid_name_gate,
 )
 from app.postcall.handlers import NOTED as OUTCOME_NOTED
 from evals.incall.model import ChatModel, ModelError
@@ -118,8 +121,8 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         key = args.get("field_requested")
         if isinstance(key, str) and key in data.ask_first_values():
             state.ping = _Ping(messages.field_approval_question(key)[0], "field_approval")
-        elif (too_long := length_gate(args)) is not None:
-            return too_long
+        elif (refusal := length_gate(args) or needless_ping_gate(args)) is not None:
+            return refusal
         else:
             state.ping = _Ping(str(args.get("question", "")).strip(), "decision")
         state.latest_answer = None  # a new question: no answer to it yet
@@ -140,8 +143,10 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         return NOTED
     if name == "report_outcome":
         outcome = args.get("outcome")
-        refusal = give_up_gate(outcome, state.facts()) if isinstance(outcome, str) else None
-        return refusal or OUTCOME_NOTED
+        if not isinstance(outcome, str):
+            return OUTCOME_NOTED
+        facts = state.facts()
+        return give_up_gate(outcome, facts) or unsaid_name_gate(args, facts) or OUTCOME_NOTED
     if name == END_CALL:
         state.ended = True
         return CALL_ENDED_RESULT

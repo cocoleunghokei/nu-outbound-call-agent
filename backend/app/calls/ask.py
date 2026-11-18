@@ -4,8 +4,9 @@ Runs inside the webhook ingress transaction with the call lock held, so everythi
 (the ping, its events, the push and the "still checking" lines) commits together or not at
 all, and Vapi gets its answer in well under the 500 ms budget: no network calls here.
 
-A decision ping whose reason is too long for the card is refused before anything is written
-(``length_gate`` in ``app/calls/gates.py``); the model gets the refusal and asks again.
+A decision ping whose reason is too long for the card, or about an offer the model itself
+scored High, is refused before anything is written (``length_gate`` and
+``needless_ping_gate`` in ``app/calls/gates.py``); the model gets the refusal instead.
 """
 
 import logging
@@ -15,7 +16,7 @@ from typing import Any
 from psycopg import AsyncConnection
 
 from app.calls import messages
-from app.calls.gates import length_gate
+from app.calls.gates import length_gate, needless_ping_gate
 from app.calls.pings import (
     FILLER_EVERY_S,
     PING_WINDOW_MS,
@@ -89,9 +90,11 @@ async def handle_ask_user(conn: AsyncConnection[Any], ctx: ToolCallContext) -> s
     if not question:
         raise ValueError("ask_user needs a question")
     # The card shows the model's reason only for a decision ping; a field approval uses ours.
-    if kind == "decision" and (too_long := length_gate(ctx.arguments)) is not None:
-        logger.info("ask_user refused by the length gate for call %s", ctx.call_id)
-        return too_long
+    if kind == "decision":
+        refusal = length_gate(ctx.arguments) or needless_ping_gate(ctx.arguments)
+        if refusal is not None:
+            logger.info("ask_user refused by a gate for call %s", ctx.call_id)
+            return refusal
 
     newest = await is_newest_question(conn, ctx.call_id, source_ts, ctx.tool_call_id)
     paused = status == "on_hold"

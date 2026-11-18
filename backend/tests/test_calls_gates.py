@@ -19,7 +19,9 @@ from app.calls.gates import (
     REFUSED_GIVE_UP,
     REFUSED_LOW_OFFER,
     REFUSED_MONEY,
+    REFUSED_NEEDLESS_PING,
     REFUSED_TOO_LONG,
+    REFUSED_UNSAID_NAME,
     CallFacts,
     facts_from_timeline,
     give_up_gate,
@@ -28,6 +30,8 @@ from app.calls.gates import (
     low_offer_gate,
     mentions_money,
     money_gate,
+    needless_ping_gate,
+    unsaid_name_gate,
 )
 from app.postcall.jobs import latest_report
 from tests.calls_helpers import (
@@ -133,6 +137,48 @@ def test_card_text_over_80_characters_is_refused() -> None:
     assert length_gate({}) is None
     assert length_gate({"reason": 42}) is None  # not text: the schema check rejects it
     assert REFUSED_TOO_LONG in REFUSALS  # so the eval drops the refused call from its checks
+
+
+def test_pinging_about_an_offer_scored_high_is_refused() -> None:
+    # Found by the eval (C4-01): "Thursday 2pm with Dr. Rivera fits your request. Confirm?"
+    fits = {**FITS, "needs_ask_first_field": False, "involves_money": False}
+    assert needless_ping_gate({"confidence": "high", "dimensions": fits}) == REFUSED_NEEDLESS_PING
+    assert REFUSED_NEEDLESS_PING in REFUSALS
+    assert needless_ping_gate({"confidence": "low", "dimensions": fits}) is None
+    # Money or an ask-first field always pings, whatever the score.
+    money = {**fits, "involves_money": True}
+    assert needless_ping_gate({"confidence": "high", "dimensions": money}) is None
+    field = {**fits, "needs_ask_first_field": True}
+    assert needless_ping_gate({"confidence": "high", "dimensions": field}) is None
+    assert (
+        needless_ping_gate(
+            {"confidence": "high", "dimensions": fits, "field_requested": "date_of_birth"}
+        )
+        is None
+    )
+    assert needless_ping_gate({"confidence": "high"}) is None  # no scores: nothing to check
+
+
+def test_a_staff_name_the_business_never_said_is_refused() -> None:
+    # Found by the eval (SM-06): staff_name "Luna Trattoria", the restaurant's own name.
+    facts = facts_from_timeline(
+        [("business", "Hi, Luna Trattoria, this is Marco Rossi speaking.")],
+        latest_ping_answer=None,
+        ending=False,
+    )
+    booked = {"outcome": "booked", "business_confirmed": True}
+    assert unsaid_name_gate({**booked, "details": {"staff_name": "Marco Rossi"}}, facts) is None
+    assert unsaid_name_gate({**booked, "details": {"staff_name": "marco"}}, facts) is None
+    assert unsaid_name_gate({**booked, "details": {"staff_name": "Maria"}}, facts) == (
+        REFUSED_UNSAID_NAME
+    )
+    assert unsaid_name_gate(booked, facts) is None  # no name given: nothing to check
+    assert unsaid_name_gate({**booked, "details": {"staff_name": " "}}, facts) is None
+    silent = facts_from_timeline([], latest_ping_answer=None, ending=False)
+    assert unsaid_name_gate({**booked, "details": {"staff_name": "Luna"}}, silent) == (
+        REFUSED_UNSAID_NAME
+    )
+    assert REFUSED_UNSAID_NAME in REFUSALS
 
 
 def test_giving_up_needs_the_user_asked_first() -> None:
