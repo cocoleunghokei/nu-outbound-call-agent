@@ -32,7 +32,7 @@ from evals.incall.checks import check_run
 from evals.incall.judge_input import render
 from evals.incall.model import ChatModel, DeepSeekChat
 from evals.incall.play import play_case
-from evals.incall.records import CheckResult, RunRecord
+from evals.incall.records import CheckResult, RunRecord, level_label
 from evals.incall.setup import EvalData, load_data
 
 RESULTS_DIR = Path(__file__).with_name("results")
@@ -101,7 +101,10 @@ async def run_eval(
                 status = "ERROR" if record.error else ("FAIL" if failed else "ok")
                 print(f"{status:5} {record.case_id} run {run}", flush=True)
                 for c in failed:
-                    print(f"      - [{c.level}] {c.check} {c.text}: {c.evidence}", flush=True)
+                    print(
+                        f"      - [{level_label(c.level)}] {c.check} {c.text}: {c.evidence}",
+                        flush=True,
+                    )
     return records, results
 
 

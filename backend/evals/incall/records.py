@@ -104,6 +104,16 @@ class RunRecord:
         )
 
 
+# What people read for a check's level. cases.json and the results files keep "hard" and
+# "soft", so old results still load; every report, page and printout uses these names.
+LEVEL_LABELS = {"hard": "must-pass", "soft": "quality"}
+
+
+def level_label(level: str) -> str:
+    """The label people read: "must-pass" for "hard", "quality" for "soft"."""
+    return LEVEL_LABELS.get(level, level)
+
+
 @dataclass(frozen=True)
 class CheckResult:
     """One check's verdict for one run. ``pending`` means the judge still has to decide."""

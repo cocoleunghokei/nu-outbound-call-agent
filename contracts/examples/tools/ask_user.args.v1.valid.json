@@ -13,5 +13,9 @@
     "matches_fallback": true,
     "answerable_from_brief": true,
     "understood": true
+  },
+  "offer": {
+    "date": "2026-11-19",
+    "time": "16:00"
   }
 }
