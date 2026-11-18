@@ -22,9 +22,11 @@ from app.calls.reconcile import (
     mark_stale_creating,
     resolve_uncertain,
 )
+from app.postcall.handlers import POSTCALL_JOBS
+from app.postcall.jobs import run_due_jobs
 from app.voice.fake import FakeVoicePlatform
 from app.voice.port import CreatedCall, VoiceUncertain
-from tests.calls_helpers import outbox_rows, seed_call
+from tests.calls_helpers import event_rows, outbox_rows, seed_call
 from tests.conftest import FreshCall, SupabaseEnv
 
 pytestmark = pytest.mark.db
@@ -46,7 +48,7 @@ def stuck_call(db_url: str, status: str, attempted_s_ago: float) -> FreshCall:
 
 
 def placed_at_vapi(
-    voice: FakeVoicePlatform, call: FreshCall, *, ended: bool = False
+    voice: FakeVoicePlatform, call: FreshCall, *, ended: bool = False, ended_reason: str = ""
 ) -> CreatedCall:
     """Make the fake platform hold a call tagged with our call_id, as if Vapi had placed it."""
     created = CreatedCall(
@@ -54,6 +56,7 @@ def placed_at_vapi(
         f"https://fake.invalid/control/{call.call_id}",
         None,
         ended=ended,
+        ended_reason=ended_reason,
     )
     voice.calls.append({"metadata": {"call_id": str(call.call_id)}, "created": created})
     return created
@@ -144,7 +147,7 @@ def test_a_call_found_already_ended_is_ended_not_adopted(supabase_env: SupabaseE
     db = supabase_env.db_url
     call = stuck_call(db, "creation_uncertain", 30)
     voice = FakeVoicePlatform()
-    created = placed_at_vapi(voice, call, ended=True)
+    created = placed_at_vapi(voice, call, ended=True, ended_reason="customer-did-not-answer")
 
     assert run(db, lambda pool: resolve_uncertain(pool, voice)) == 1
 
@@ -156,6 +159,16 @@ def test_a_call_found_already_ended_is_ended_not_adopted(supabase_env: SupabaseE
     assert state["events"] == ["ended"]
     assert [o for o in run(db, lambda _: outbox_rows(db, call)) if o["lane"] == "control"] == []
     assert run(db, lambda pool: resolve_uncertain(pool, voice)) == 0  # settled for good
+
+    # Its post-call jobs are queued as the lost report would have, so it gets an outcome
+    # and call.ended instead of showing "processing" forever (#59 review).
+    jobs = [o for o in run(db, lambda _: outbox_rows(db, call)) if o["lane"] == "jobs"]
+    assert sorted(o["kind"] for o in jobs) == sorted(POSTCALL_JOBS)
+    assert jobs[0]["payload"]["ended_reason"] == "customer-did-not-answer"
+    run(db, run_due_jobs)
+    assert call_state(db, call)["outcome"] is not None
+    ended = [p for t, p in run(db, lambda _: event_rows(db, call)) if t == "call.ended"]
+    assert len(ended) == 1
 
 
 def test_an_uncertain_call_is_kept_while_it_could_still_be_ringing(

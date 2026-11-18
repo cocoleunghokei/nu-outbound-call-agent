@@ -13,8 +13,9 @@ is neither ended nor failed counts as "running", so every new Start answers 409)
     later than ``CHECKING_S``, the screen has already shown "failed", so the agent
     apologises and hangs up at once;
   - found but already ended at Vapi (its end webhooks were lost, for example during a
-    redeploy): store the Vapi id and end the call. Adopting it as ``dialing`` would leave
-    it running forever, since only a webhook ends a ``dialing`` call;
+    redeploy): store the Vapi id, end the call and queue the post-call jobs, as the lost
+    end-of-call report would have. Adopting it as ``dialing`` would leave it running
+    forever, since only a webhook ends a ``dialing`` call;
   - not found by ``max_duration_s + GIVE_UP_AFTER_S``: ``failed``. By then any call Vapi
     did place has hit its own ``maxDurationSeconds``, so starting again can't double-dial.
 
@@ -35,6 +36,7 @@ from app.calls.commands import begin_ending
 from app.calls.create import record_not_placed, record_placed
 from app.calls.store import calling_name, set_status
 from app.calls_lock import CallNotFound, end_call_transition, lock_call
+from app.postcall.handlers import POSTCALL_JOBS, queue_job
 from app.voice.port import CreatedCall, VoiceNotSent, VoicePlatform, VoiceRejected, VoiceUncertain
 
 logger = logging.getLogger(__name__)
@@ -143,7 +145,12 @@ async def _adopt(pool: AsyncConnectionPool[Any], call: UncertainCall, created: C
 async def _end_found_call(
     conn: psycopg.AsyncConnection[Any], call_id: UUID, created: CreatedCall
 ) -> str:
-    """Store the Vapi id of a call that already ended at Vapi, then end it here too."""
+    """Store the Vapi id of a call that already ended at Vapi, end it here too, and queue
+    the post-call jobs so it still gets an outcome and ``call.ended``.
+
+    The jobs are queued even if a webhook ended the call first: ``queue_job`` adds each
+    kind at most once per call, so a report that did arrive keeps its own jobs.
+    """
     await lock_call(conn, call_id)
     # The row keeps its link to the billed Vapi call, as in record_placed.
     await conn.execute(
@@ -152,6 +159,10 @@ async def _end_found_call(
     )
     if await end_call_transition(conn, call_id, reason="ended before adoption", source="vapi"):
         logger.warning("call %s: found already ended at the voice platform, ended", call_id)
+    # No report text: the outcome job also reads the stored transcript and report_outcome.
+    payload = {"ended_reason": created.ended_reason, "agent_lines": [], "business_lines": []}
+    for kind in POSTCALL_JOBS:
+        await queue_job(conn, call_id, kind, payload)
     return (await lock_call(conn, call_id)).status
 
 

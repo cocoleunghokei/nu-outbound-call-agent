@@ -268,6 +268,21 @@ def test_find_call_by_app_id_reports_a_call_that_already_ended(
     assert found.ended is ended
 
 
+def test_find_call_by_app_id_keeps_the_end_reason_of_an_ended_call() -> None:
+    wanted = uuid.uuid4()
+    item = {
+        "id": "vapi-9",
+        "metadata": {"call_id": str(wanted)},
+        "status": "ended",
+        "endedReason": " customer-did-not-answer ",
+    }
+    recorder = Recorder(lambda r: httpx.Response(200, json=[item]))
+    since = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
+    found = asyncio.run(vapi(recorder).find_call_by_app_id(wanted, since))
+    assert found is not None
+    assert found.ended_reason == "customer-did-not-answer"
+
+
 def brief(task_vars: dict[str, Any], task_line: str = "Table for {n} please.") -> dict[str, Any]:
     return {"task_line": task_line, "task_vars": task_vars}
 
