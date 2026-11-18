@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { contractExampleBrief } from './contractExample'
+import { SignInFailedError } from '../lib/session'
 import { modeNote, resolveDataMode } from './mode'
 import { emptySession } from './start'
 
@@ -23,6 +24,15 @@ describe('resolveDataMode', () => {
   it('is demo mode when the Supabase client cannot load (variables missing)', async () => {
     const load = async () => Promise.reject(new Error('VITE_SUPABASE_URL is not set'))
     await expect(resolveDataMode('http://localhost:8000', load)).resolves.toMatchObject({ kind: 'demo', reason: 'no_supabase' })
+  })
+
+  // Regression: a failed anonymous sign-in used to look like "Supabase not configured".
+  it('is demo mode with its own reason when the anonymous sign-in fails', async () => {
+    const load = async () => Promise.reject(new SignInFailedError('Anonymous sign-ins are disabled'))
+    const mode = await resolveDataMode('http://localhost:8000', load)
+    expect(mode).toMatchObject({ kind: 'demo', reason: 'sign_in_failed' })
+    expect(modeNote(mode)).toMatchObject({ text: "Demo mode (couldn't sign in)" })
+    expect(modeNote(mode)?.title).toMatch(/Reload to try again/)
   })
 
   it('demo Start sends nothing', async () => {
@@ -55,11 +65,12 @@ describe('resolveDataMode', () => {
 })
 
 describe('modeNote', () => {
-  it('shows a quiet note in demo mode only', async () => {
+  it('explains demo mode, and in API mode says the data stays in this browser', async () => {
     const demo = await resolveDataMode('', tokenSource(null))
     expect(modeNote(demo)).toMatchObject({ text: 'Demo mode (fake data)' })
     expect(modeNote(null)).toBeNull()
     const api = await resolveDataMode('http://localhost:8000', tokenSource('jwt'))
-    expect(modeNote(api)).toBeNull()
+    expect(modeNote(api)).toMatchObject({ text: 'This browser only' })
+    expect(modeNote(api)?.title).toMatch(/stay in this browser until sign-in exists/)
   })
 })
