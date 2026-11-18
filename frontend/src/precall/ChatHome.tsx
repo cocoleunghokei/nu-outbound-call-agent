@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import './ChatHome.css'
 import { ReviewCard } from './ReviewCard'
 import { chatReducer, completedDraft, initialChatState, reviewOf, type ChatAction, type ChatContext } from './chat'
@@ -18,6 +18,10 @@ interface ChatHomeProps {
    * mode). The app opens the live screen from it.
    */
   onCallStarted?: (callId: string | null) => void
+  /** Called when Start needs an email-verified user first (ON-1); the app opens the email step. */
+  onSignInRequired?: () => void
+  /** Rendered over the chat (the email step), inside this screen's styles. */
+  overlay?: ReactNode
 }
 
 /**
@@ -26,7 +30,7 @@ interface ChatHomeProps {
  * the state and sends user actions. Visual design follows Harper's prototype
  * (`public/prototype/`).
  */
-export function ChatHome({ context, starter, modeNote = null, onCallStarted }: ChatHomeProps) {
+export function ChatHome({ context, starter, modeNote = null, onCallStarted, onSignInRequired, overlay }: ChatHomeProps) {
   const [reducer] = useState(() => chatReducer(context))
   const [state, dispatch] = useReducer(reducer, context, initialChatState)
   const [text, setText] = useState('')
@@ -92,6 +96,10 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted }: C
         break
       case 'saved_not_connected':
         dispatch({ type: 'saved_not_connected' })
+        break
+      case 'sign_in_required':
+        dispatch({ type: 'note', text: result.message })
+        onSignInRequired?.()
         break
       case 'blocked':
       case 'error':
@@ -172,6 +180,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted }: C
           </button>
         </div>
       </form>
+      {overlay}
     </section>
   )
 }

@@ -1,10 +1,15 @@
 import { describe, expect, it, vi } from 'vitest'
 import { contractExampleBrief } from './contractExample'
-import { SignInFailedError } from '../lib/session'
-import { modeNote, resolveDataMode } from './mode'
+import { SignInFailedError, type Account } from '../lib/session'
+import { modeNote, resolveDataMode, type LoadTokenSource } from './mode'
 import { emptySession } from './start'
 
-const tokenSource = (token: string | null) => async () => async () => token
+const anonymous: Account = { anonymous: true, email: null }
+const permanent: Account = { anonymous: false, email: 'alex@example.test' }
+
+const tokenSource =
+  (token: string | null, account: Account = anonymous): LoadTokenSource =>
+  async () => ({ getToken: async () => token, account })
 
 describe('resolveDataMode', () => {
   it('is demo mode when VITE_API_URL is empty, without touching Supabase', async () => {
@@ -53,8 +58,8 @@ describe('resolveDataMode', () => {
           )
         : new Response(JSON.stringify({ call_id: 'c1' }), { status: 201 }),
     )
-    const mode = await resolveDataMode('http://localhost:8000/', tokenSource('jwt-abc'), fetchMock)
-    expect(mode.kind).toBe('api')
+    const mode = await resolveDataMode('http://localhost:8000/', tokenSource('jwt-abc', permanent), fetchMock)
+    expect(mode).toMatchObject({ kind: 'api', account: permanent })
     const { result } = await mode.starter(contractExampleBrief, emptySession)
     expect(result).toMatchObject({ kind: 'started', callId: 'c1' })
     expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(['http://localhost:8000/briefs', 'http://localhost:8000/calls'])
@@ -62,15 +67,39 @@ describe('resolveDataMode', () => {
     expect(headers.Authorization).toBe('Bearer jwt-abc')
     expect(headers['Idempotency-Key']).toMatch(/^[0-9a-f-]{36}$/)
   })
+
+  // The browser's own check is only a shortcut; the server is the one that refuses.
+  it("in API mode with an anonymous session, the server's 403 becomes sign_in_required", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input) =>
+      String(input).endsWith('/briefs')
+        ? new Response(
+            JSON.stringify({ brief_id: 'b1', brief: contractExampleBrief, missing_fields: [], opening_line: 'Hi', created_at: 'now' }),
+            { status: 201 },
+          )
+        : new Response(
+            JSON.stringify({ error: { code: 'sign_in_required', message: 'Add your email before placing a call', retryable: false } }),
+            { status: 403 },
+          ),
+    )
+    const mode = await resolveDataMode('http://localhost:8000', tokenSource('jwt-anon', anonymous), fetchMock)
+    expect(mode).toMatchObject({ kind: 'api', account: anonymous })
+    const { result } = await mode.starter(contractExampleBrief, emptySession)
+    expect(result).toMatchObject({ kind: 'sign_in_required', message: /Add your email/ })
+  })
 })
 
 describe('modeNote', () => {
-  it('explains demo mode, and in API mode says the data stays in this browser', async () => {
+  it('explains demo mode; in API mode says whose data this is', async () => {
     const demo = await resolveDataMode('', tokenSource(null))
     expect(modeNote(demo)).toMatchObject({ text: 'Demo mode (fake data)' })
     expect(modeNote(null)).toBeNull()
-    const api = await resolveDataMode('http://localhost:8000', tokenSource('jwt'))
-    expect(modeNote(api)).toMatchObject({ text: 'This browser only' })
-    expect(modeNote(api)?.title).toMatch(/stay in this browser until sign-in exists/)
+
+    const guest = await resolveDataMode('http://localhost:8000', tokenSource('jwt', anonymous))
+    expect(modeNote(guest)).toMatchObject({ text: 'This browser only' })
+    expect(modeNote(guest)?.title).toMatch(/Add your email when you place a call/)
+
+    const signedIn = await resolveDataMode('http://localhost:8000', tokenSource('jwt', permanent))
+    expect(modeNote(signedIn)).toMatchObject({ text: 'alex@example.test' })
+    expect(modeNote(signedIn)?.title).toMatch(/follow this email/)
   })
 })

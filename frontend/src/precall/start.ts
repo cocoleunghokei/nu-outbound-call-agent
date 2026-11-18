@@ -49,11 +49,25 @@ export type StartResult =
   | { kind: 'saved_not_connected'; server: ServerCheck; briefId: string }
   /** Saved, but the server says something is still missing. Start stays blocked. */
   | { kind: 'blocked'; server: ServerCheck; message: string }
+  /**
+   * The session is anonymous and placing a call needs an email (ON-1). The screen opens the
+   * email step; the saved brief and the call's Idempotency-Key are kept for the next Start.
+   */
+  | { kind: 'sign_in_required'; server: ServerCheck | null; message: string }
   /** Something went wrong; `message` is plain words for the chat. */
   | { kind: 'error'; server: ServerCheck | null; message: string; error: ApiError }
 
 /** Runs Start for one brief. Returns the result and the updated session; never throws. */
 export type Starter = (brief: Brief, session: SaveSession) => Promise<{ result: StartResult; session: SaveSession }>
+
+/** `POST /calls` answered 403: the token belongs to an anonymous session. */
+export const SIGN_IN_REQUIRED = 'sign_in_required'
+export const SIGN_IN_REQUIRED_MESSAGE = 'Add your email to place this call, then tap Start again.'
+
+/** The result for Start tapped while the session is anonymous; the screen opens the email step. */
+export function signInRequired(server: ServerCheck | null = null): StartResult {
+  return { kind: 'sign_in_required', server, message: SIGN_IN_REQUIRED_MESSAGE }
+}
 
 /** `POST /calls` answered 201 with `status: "failed"`: the call provably never rang. */
 export const CALL_NOT_PLACED = 'call_not_placed'
@@ -91,6 +105,7 @@ export function describeError(error: ApiError, step: 'save' | 'start'): string {
   if (error.code === NO_SESSION || error.code === 'unauthenticated' || error.code === 'token_expired') {
     return "You're signed out, so I couldn't save this. Sign in again, then tap Start."
   }
+  if (error.code === SIGN_IN_REQUIRED) return SIGN_IN_REQUIRED_MESSAGE
   if (step === 'start' && (error.code === NETWORK_ERROR || error.status >= 500)) {
     // No answer or a server failure: the call may have started before the answer was lost.
     // Start again reuses the same Idempotency-Key, so the server returns that call instead
@@ -168,6 +183,8 @@ export function apiStarter(client: ApiClient, newKey: () => string = () => crypt
       return { result: { kind: 'started', server, callId: typeof call.call_id === 'string' ? call.call_id : null }, session }
     } catch (err) {
       const error = asApiError(err)
+      // The server stored nothing for the key, so the next Start replays it as a new attempt.
+      if (error.code === SIGN_IN_REQUIRED) return { result: signInRequired(server), session }
       if (isCallRouteMissing(error)) {
         console.info('brief saved; POST /calls is not available yet', saved.brief_id)
         return { result: { kind: 'saved_not_connected', server, briefId: saved.brief_id }, session }

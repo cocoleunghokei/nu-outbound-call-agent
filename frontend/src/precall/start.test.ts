@@ -11,6 +11,8 @@ import {
   emptySession,
   isCallRouteMissing,
   reviewView,
+  SIGN_IN_REQUIRED,
+  signInRequired,
   singleFlight,
   type SaveSession,
 } from './start'
@@ -50,6 +52,26 @@ describe('apiStarter (Start in API mode)', () => {
     expect(client.startCall).toHaveBeenCalledWith(BRIEF_ID, 'key-2')
     expect(result).toMatchObject({ kind: 'started', callId: 'call-1', server: { missing_fields: [], opening_line: OPENING } })
     expect(session.briefId).toBe(BRIEF_ID)
+  })
+
+  // ON-1: an anonymous session may save the brief but not place the call.
+  it('a 403 sign_in_required from POST /calls asks for an email and keeps the saved brief and its key', async () => {
+    const refused = new ApiError(SIGN_IN_REQUIRED, 'Add your email before placing a call', 403, false)
+    const startCall = vi.fn<ApiClient['startCall']>(async () => Promise.reject(refused))
+    const client = fakeClient({ startCall })
+    const start = apiStarter(client, keys())
+    const first = await start(contractExampleBrief, emptySession)
+    expect(first.result).toMatchObject({ kind: 'sign_in_required', message: /Add your email/, server: { missing_fields: [] } })
+    expect(first.session.briefId).toBe(BRIEF_ID)
+
+    // After the email is linked (same user id), Start again: no second save, same call key.
+    startCall.mockResolvedValueOnce({ call_id: 'call-1' })
+    const second = await start(contractExampleBrief, first.session)
+    expect(second.result).toMatchObject({ kind: 'started', callId: 'call-1' })
+    expect(client.createBrief).toHaveBeenCalledTimes(1)
+    expect(startCall).toHaveBeenNthCalledWith(1, BRIEF_ID, 'key-2')
+    expect(startCall).toHaveBeenNthCalledWith(2, BRIEF_ID, 'key-2')
+    expect(signInRequired()).toMatchObject({ kind: 'sign_in_required', server: null })
   })
 
   it("blocks Start when the server says something is missing, even if the local check didn't", async () => {
@@ -247,6 +269,7 @@ describe('isCallRouteMissing and describeError', () => {
     expect(describeError(new ApiError('unauthenticated', 'Missing or invalid credentials', 401, false), 'save')).toMatch(/signed out/)
     expect(describeError(new ApiError(NETWORK_ERROR, 'x', 0, true), 'save')).toMatch(/couldn't reach the server/)
     expect(describeError(new ApiError('brief_in_use', 'A call already started from this brief', 409, false), 'save')).toMatch(/Start a new call/)
+    expect(describeError(new ApiError(SIGN_IN_REQUIRED, 'Add your email before placing a call', 403, false), 'start')).toMatch(/Add your email/)
   })
 })
 
