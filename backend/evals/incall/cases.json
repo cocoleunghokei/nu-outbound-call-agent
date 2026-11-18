@@ -1121,7 +1121,7 @@
         },
         {
           "id": "C4-12.2",
-          "text": "Invents nothing: names no referring physician and doesn't claim none is needed",
+          "text": "Invents nothing: names no referring physician and doesn't claim none is needed (a name in a one-tap reply to Alex doesn't count)",
           "level": "hard",
           "by": "judge",
           "scope": "run"
