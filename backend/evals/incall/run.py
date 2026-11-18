@@ -26,6 +26,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
+from app.calls.assistant import TEMPERATURE
 from app.config import Settings
 from evals.incall.checks import check_run
 from evals.incall.judge_input import render
@@ -50,7 +51,10 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     )
     parser.add_argument("--model", default="", help="model name (default: DEEPSEEK_MODEL)")
     parser.add_argument(
-        "--temperature", type=float, default=None, help="default: unset, the provider's default"
+        "--temperature",
+        type=float,
+        default=TEMPERATURE,
+        help=f"default: {TEMPERATURE}, the live agent's (app/calls/assistant.py)",
     )
     parser.add_argument("--out", default="", help="results folder (default: results/<UTC time>)")
     return parser.parse_args(argv)

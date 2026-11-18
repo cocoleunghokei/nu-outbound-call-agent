@@ -16,6 +16,7 @@ import httpx
 import pytest
 
 from app.calls import messages
+from app.calls.assistant import TEMPERATURE
 from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY
 from evals.incall import model as model_module
 from evals.incall.checks import business_dates, business_times, check_run
@@ -24,7 +25,7 @@ from evals.incall.model import DeepSeekChat, ModelError, parse_stream
 from evals.incall.play import SERVER_S, measure_turn, play_case
 from evals.incall.records import CheckResult, Event, ModelReply, RunRecord, ToolCall
 from evals.incall.report import combine, load, percentile, render, verdict_line
-from evals.incall.run import run_eval
+from evals.incall.run import parse_args, run_eval
 from evals.incall.setup import END_CALL_TOOL, load_data, model_tools
 
 DATA = load_data()
@@ -579,3 +580,8 @@ def test_verdict_line_prefers_incomplete_over_a_guess() -> None:
         runs=1, overall=1, accuracy=(1, 1), guardrails=1, hard=1, soft=(1, 1), pending=2, latency={}
     )
     assert verdict_line(m)[1] == 3
+
+
+def test_the_runner_defaults_to_the_live_agents_temperature() -> None:
+    assert parse_args([]).temperature == TEMPERATURE
+    assert parse_args(["--temperature", "0.7"]).temperature == 0.7

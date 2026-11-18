@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from app.calls.assistant import build_assistant_config
+from app.calls.assistant import TEMPERATURE, build_assistant_config
 from app.calls.prompt import GUARDRAIL_RULES, build_system_prompt, opening_request
 from app.contracts.generated import Brief
 from app.voice.fake import FakeVoicePlatform
@@ -205,6 +205,13 @@ def test_config_is_transcribed_never_recorded_and_passes_the_port_checks() -> No
     prepared = prepare_assistant(built, SNAPSHOT)
     names = [t.get("function", {}).get("name") or t["type"] for t in prepared["model"]["tools"]]
     assert names == ["ask_user", "report_decision", "report_outcome", "endCall"]
+
+
+def test_config_pins_a_low_temperature_that_survives_the_port() -> None:
+    built = config()
+    assert built["model"]["temperature"] == TEMPERATURE
+    assert 0 <= TEMPERATURE <= 0.3
+    assert prepare_assistant(built, SNAPSHOT)["model"]["temperature"] == TEMPERATURE
 
 
 def test_config_points_vapi_at_our_webhook_with_the_secret() -> None:

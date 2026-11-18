@@ -36,8 +36,8 @@ them, so an early mistake carries forward as it would on a real call. If the mod
 script (for example, it hangs up at turn 1), the run stops there and is judged as it stands.
 
 **Temperature:** the runner sends the same temperature (how random the model's word choice is)
-as the live call. Today `backend/app/calls/assistant.py` doesn't set one, so live calls get
-Vapi's default. Pin a value there, so the eval and real calls behave the same.
+as the live call: `TEMPERATURE` in `backend/app/calls/assistant.py` (0.2). Change it there and
+both follow.
 
 **Rare failures:** 3 runs reliably catch a problem that happens about 1 time in 3. They won't
 reliably catch one that happens 1 time in 50. If a Hard case needs that confidence, raise its run
