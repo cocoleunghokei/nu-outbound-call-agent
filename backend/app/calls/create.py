@@ -160,9 +160,9 @@ async def prepare_call(
 ) -> PreparedCall:
     """Step 1, in the caller's transaction: check the brief and insert the ``creating`` call.
 
-    Raises ApiError 404 ``brief_not_found``, 422 ``invalid_brief``, ``invalid_phone`` or
-    ``brief_not_ready``, 409 ``call_in_progress`` or 503 ``calls_not_configured``; then
-    nothing is written.
+    Raises ApiError 404 ``brief_not_found``, 422 ``invalid_brief``, ``invalid_phone``,
+    ``destination_not_allowed`` or ``brief_not_ready``, 409 ``call_in_progress`` or 503
+    ``calls_not_configured``; then nothing is written.
     """
     server_url, webhook_secret = _server_url(settings)
     # Locked so a PATCH /briefs can't change the brief between this check and the dial.
@@ -178,6 +178,15 @@ async def prepare_call(
     phone = check_phone(brief.phone_e164)
     if phone.e164 is None:
         raise ApiError("invalid_phone", 422, phone.message, False)
+    allowlist = settings.call_destination_allowlist
+    if allowlist and phone.e164 not in allowlist:
+        # Stopgap while anonymous sessions can reach POST /calls and no per-user caps exist.
+        raise ApiError(
+            "destination_not_allowed",
+            422,
+            "This server only calls its test numbers for now, so it can't dial that one",
+            False,
+        )
     snapshot = await load_snapshot(conn, user_id)
     readiness = check_readiness(stored.brief, snapshot)
     if not readiness.ready:
