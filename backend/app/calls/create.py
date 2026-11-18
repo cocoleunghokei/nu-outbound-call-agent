@@ -32,7 +32,7 @@ from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
 
-from app.auth import current_permanent_user
+from app.auth import current_user
 from app.briefs.phone import check_phone
 from app.briefs.readiness import check_readiness
 from app.briefs.store import get_brief, load_snapshot
@@ -353,7 +353,7 @@ async def place_call(
 async def create_call(
     body: CreateCallCommand,
     request: Request,
-    user_id: Annotated[uuid.UUID, Depends(current_permanent_user)],
+    user_id: Annotated[uuid.UUID, Depends(current_user)],
     key: Annotated[uuid.UUID, Depends(idempotency_key)],
     pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
     voice: Annotated[VoicePlatform, Depends(get_call_voice)],
@@ -361,11 +361,11 @@ async def create_call(
     """Start the brief as a call. Returns ``201 {"call_id", "status"}``.
 
     ``status`` is ``dialing`` when Vapi accepted the call, ``failed`` when it provably wasn't
-    placed, and ``creation_uncertain`` when we can't tell yet. Errors before a call exists:
-    403 ``sign_in_required`` (an anonymous session; the browser links an email first, and
-    nothing is stored for the key), 404 ``brief_not_found``, 422 ``invalid_brief`` /
-    ``invalid_phone`` / ``brief_not_ready`` / ``unsafe_assistant_config``,
-    409 ``call_in_progress``, 503 ``calls_not_configured``.
+    placed, and ``creation_uncertain`` when we can't tell yet. Any signed-in user may call,
+    anonymous sessions included (ON-1 interim); what gates the call is the brief's readiness
+    against the real profile. Errors before a call exists: 404 ``brief_not_found``,
+    422 ``invalid_brief`` / ``invalid_phone`` / ``brief_not_ready`` /
+    ``unsafe_assistant_config``, 409 ``call_in_progress``, 503 ``calls_not_configured``.
     """
     settings: Settings = request.app.state.settings
     async with pool.connection() as conn, conn.transaction():

@@ -362,25 +362,46 @@ def anonymous_user(env: SupabaseEnv) -> SignedUpUser:
     return SignedUpUser(user_id=uuid.UUID(body["user"]["id"]), access_token=body["access_token"])
 
 
-def test_an_anonymous_session_can_save_a_brief_but_not_place_a_call(
+def test_an_anonymous_session_with_a_ready_profile_places_a_call(
     client: TestClient, supabase_env: SupabaseEnv, voice: FakeVoicePlatform
 ) -> None:
-    """ON-1: the chat and brief saving work anonymously; Start needs an email-verified user.
+    """ON-1 interim: the browser only has anonymous sessions, and they may place calls.
 
-    The 403 comes from the dependency, before the idempotency claim, so the same key works
-    once the browser has linked an email to this user (the id does not change).
+    The profile the browser writes on first visit (calling name, phone, email) is what
+    makes the brief ready; nothing about the session kind is checked.
     """
     anonymous = anonymous_user(supabase_env)
-    brief_id = ready_brief(client, supabase_env, anonymous)  # the save stores its own key
-    keys_before = idempotency_rows(supabase_env, anonymous)
+    brief_id = ready_brief(client, supabase_env, anonymous)
 
-    refused = start(client, anonymous, brief_id, uuid.uuid4())
+    response = start(client, anonymous, brief_id)
 
-    assert refused.status_code == 403, refused.text
-    assert refused.json()["error"]["code"] == "sign_in_required"
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == "dialing"
+    assert len(voice.calls) == 1
+    assert calls_for_brief(supabase_env, brief_id) == 1
+    assert call_row(supabase_env, response.json()["call_id"])["user_id"] == anonymous.user_id
+
+
+def test_an_anonymous_session_without_a_calling_name_gets_brief_not_ready(
+    client: TestClient, supabase_env: SupabaseEnv, voice: FakeVoicePlatform
+) -> None:
+    """The readiness check is the gate for the session kind the browser uses."""
+    anonymous = anonymous_user(supabase_env)
+    set_profile(supabase_env, anonymous.user_id, ALEX)
+    brief_id = str(create(client, anonymous)["brief_id"])
+    with psycopg.connect(supabase_env.db_url, autocommit=True) as conn:
+        conn.execute(
+            "delete from public.profile_fields where user_id = %s and key = 'calling_name'",
+            (anonymous.user_id,),
+        )
+
+    response = start(client, anonymous, brief_id)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "brief_not_ready"
+    assert "calling_name" in response.json()["error"]["message"]
     assert calls_for_brief(supabase_env, brief_id) == 0
     assert voice.calls == []
-    assert idempotency_rows(supabase_env, anonymous) == keys_before  # nothing stored for Start
 
 
 def test_real_calls_need_the_public_webhook_url(
