@@ -1,7 +1,8 @@
 """Supabase JWT verification: asymmetric keys via a cached JWKS, HS256 via the legacy secret.
 
 Two dependencies for routes: ``current_user`` (any signed-in user, anonymous sessions
-included) and ``current_permanent_user`` (an email-verified user; anonymous answers 403).
+included; every route uses it today) and ``current_permanent_user`` (an email-verified
+user; anonymous answers 403), kept for when email sign-in lands.
 """
 
 import asyncio
@@ -172,9 +173,10 @@ async def current_permanent_user(
 ) -> uuid.UUID:
     """FastAPI dependency: the signed-in user's id, refusing anonymous sessions.
 
-    For actions that need an email-verified user, such as placing a call. An anonymous
-    session answers ``403 sign_in_required``; the browser then asks for the user's email,
-    links it to the same user (the id does not change) and retries.
+    For actions that will need an email-verified user once email sign-in exists. No route
+    uses it today: the browser only has anonymous sessions, and ``POST /calls`` relies on
+    the brief's readiness against the profile instead. An anonymous session answers
+    ``403 sign_in_required``.
     """
     if claims.get("is_anonymous") is True:
         raise ApiError("sign_in_required", 403, "Add your email before placing a call", False)
