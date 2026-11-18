@@ -2217,9 +2217,6 @@
         },
         {
           "business": "Great, you're booked for Friday at 10 with Dr. Rivera. Please bring your insurance card and arrive 15 minutes early."
-        },
-        {
-          "business": "No, that's everything. See you Friday!"
         }
       ],
       "checks": [
@@ -2304,7 +2301,7 @@
           "scope": "run"
         }
       ],
-      "note": "No timeout step: once report_decision supersedes the ping, the backend never sends one (Q2). The last line adds things Alex must do (PO-2): they belong in open_items."
+      "note": "No timeout step: once report_decision supersedes the ping, the backend never sends one (Q2). The last line adds things Alex must do (PO-2): they belong in open_items. It is also where the script ends: the agent may say goodbye and hang up after it (Q12, revised: waiting for the business's goodbye is parked)."
     },
     {
       "id": "T-02",
