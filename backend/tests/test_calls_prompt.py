@@ -148,6 +148,20 @@ def test_tools_are_called_before_speaking() -> None:
     assert "You speak right after its result" in prompt
 
 
+def test_tool_first_rule_is_near_the_top_with_an_example() -> None:
+    # Found by the eval (03:30 run): DeepSeek still spoke without a tool call in C4-01, C4-04,
+    # C4-05 and C4-16, once saying yes to an offer that broke the rules, which no gate can see.
+    # The rule sat deep in <deciding>; it now opens the prompt and has a worked example.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    flat = prompt.replace("\n", " ")
+    rule = flat.index("The most important rule: when the business makes an offer")
+    assert rule < flat.index("<brief>")
+    assert "<tool_first_example>" in prompt
+    assert "</tool_first_example>" in prompt
+    assert flat.index("</tool_first_example>") < flat.index("<deciding>")
+    assert "Never use its names, times or wording." in flat
+
+
 def test_missing_info_and_unclear_speech_ping_instead_of_asking_again() -> None:
     # Found by the eval: after "we need a referral" it asked the clinic again (C4-12), and it
     # asked a garbled caller to repeat again and again (C4-13), never pinging Alex. Asking
