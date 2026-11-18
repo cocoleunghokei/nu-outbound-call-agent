@@ -112,6 +112,16 @@ def system_text(data: EvalData, step: dict[str, Any], ping: _Ping | None) -> str
     return messages.field_declined_message(name, question, label)
 
 
+def _needless_ping(args: dict[str, Any]) -> str | None:
+    """``needless_ping_gate`` as the live ingress calls it: scores passed separately."""
+    dims = args.get("dimensions")
+    return needless_ping_gate(
+        args.get("confidence"),
+        dims if isinstance(dims, dict) else None,
+        args.get("field_requested"),
+    )
+
+
 def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] | None) -> str:
     """What the backend returns for one tool call, updating the run's ping state."""
     if state.ended:
@@ -121,7 +131,7 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         key = args.get("field_requested")
         if isinstance(key, str) and key in data.ask_first_values():
             state.ping = _Ping(messages.field_approval_question(key)[0], "field_approval")
-        elif (refusal := length_gate(args) or needless_ping_gate(args)) is not None:
+        elif (refusal := length_gate(args) or _needless_ping(args)) is not None:
             return refusal
         else:
             state.ping = _Ping(str(args.get("question", "")).strip(), "decision")

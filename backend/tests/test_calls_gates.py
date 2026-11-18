@@ -142,21 +142,15 @@ def test_card_text_over_80_characters_is_refused() -> None:
 def test_pinging_about_an_offer_scored_high_is_refused() -> None:
     # Found by the eval (C4-01): "Thursday 2pm with Dr. Rivera fits your request. Confirm?"
     fits = {**FITS, "needs_ask_first_field": False, "involves_money": False}
-    assert needless_ping_gate({"confidence": "high", "dimensions": fits}) == REFUSED_NEEDLESS_PING
+    assert needless_ping_gate("high", fits, None) == REFUSED_NEEDLESS_PING
     assert REFUSED_NEEDLESS_PING in REFUSALS
-    assert needless_ping_gate({"confidence": "low", "dimensions": fits}) is None
+    assert needless_ping_gate("low", fits, None) is None
+    assert needless_ping_gate(None, fits, None) is None
     # Money or an ask-first field always pings, whatever the score.
-    money = {**fits, "involves_money": True}
-    assert needless_ping_gate({"confidence": "high", "dimensions": money}) is None
-    field = {**fits, "needs_ask_first_field": True}
-    assert needless_ping_gate({"confidence": "high", "dimensions": field}) is None
-    assert (
-        needless_ping_gate(
-            {"confidence": "high", "dimensions": fits, "field_requested": "date_of_birth"}
-        )
-        is None
-    )
-    assert needless_ping_gate({"confidence": "high"}) is None  # no scores: nothing to check
+    assert needless_ping_gate("high", {**fits, "involves_money": True}, None) is None
+    assert needless_ping_gate("high", {**fits, "needs_ask_first_field": True}, None) is None
+    assert needless_ping_gate("high", fits, "date_of_birth") is None
+    assert needless_ping_gate("high", None, None) is None  # no scores: nothing to check
 
 
 def test_a_staff_name_the_business_never_said_is_refused() -> None:
@@ -304,5 +298,34 @@ def test_a_card_reason_over_80_characters_is_refused_and_writes_nothing(
                 {"toolCallId": ask_tc, "result": REFUSED_TOO_LONG}
             ]
             assert await ping_rows(db, call) == []  # no card reached the user
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_a_ping_about_an_offer_scored_high_is_refused_through_the_webhook(
+    supabase_env: SupabaseEnv,
+) -> None:
+    # Regression: the ingress strips confidence from the tool arguments, so the gate read
+    # nothing and never fired on live calls. It now gets the scores from the context.
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            fits = {**DIMS_LOW, "meets_constraints": True}
+            args = {
+                "question": "They offered Thu 2pm. Book it?",
+                "reason": "They offered Thu 2pm. That fits.",
+                "suggested_replies": ["Yes", "No"],
+                "confidence": "high",
+                "dimensions": fits,
+            }
+            tc = f"tc-{uuid.uuid4()}"
+            response = await post(client, tool_body(call, [(tc, "ask_user", args)]))
+            assert response.json()["results"] == [
+                {"toolCallId": tc, "result": REFUSED_NEEDLESS_PING}
+            ]
+            assert await ping_rows(db, call) == []
 
     asyncio.run(scenario())

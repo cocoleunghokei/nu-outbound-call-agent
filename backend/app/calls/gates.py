@@ -151,14 +151,17 @@ def length_gate(arguments: Mapping[str, Any]) -> str | None:
     return None
 
 
-def needless_ping_gate(arguments: Mapping[str, Any]) -> str | None:
+def needless_ping_gate(
+    confidence: object, dimensions: Mapping[str, Any] | None, field_requested: object
+) -> str | None:
     """The refusal for asking the user about an offer the model itself scored High, else None.
 
-    Only when neither DC-4 gate applies: an ask-first field or money always pings.
+    Only when neither DC-4 gate applies: an ask-first field or money always pings. Takes the
+    scores explicitly, because the live ingress strips them from the tool arguments (DC-5).
     """
-    if arguments.get("confidence") != "high" or arguments.get("field_requested"):
+    if confidence != "high" or field_requested:
         return None
-    dims = arguments.get("dimensions")
+    dims = dimensions
     if not isinstance(dims, Mapping):
         return None
     if dims.get("needs_ask_first_field") is False and dims.get("involves_money") is False:
