@@ -17,7 +17,13 @@ import pytest
 
 from app.calls import messages
 from app.calls.assistant import TEMPERATURE
-from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY, is_refusal
+from app.calls.gates import (
+    REFUSED_GIVE_UP,
+    REFUSED_LOW_OFFER,
+    REFUSED_MONEY,
+    REFUSED_NEEDLESS_COUNTER,
+    is_refusal,
+)
 from evals.incall import model as model_module
 from evals.incall.checks import business_dates, business_times, check_run
 from evals.incall.judge_input import render as render_judge
@@ -668,3 +674,20 @@ def test_r09_an_accept_covered_by_the_instruction_is_not_refused() -> None:
     # Without the flag, Python's rule still refuses it.
     record, _ = play("R-09", [QUIET, tools(decision("accept", offer=four_pm))])
     assert [e for e in record.events if e.kind == "tool_result" and is_refusal(e.text)]
+
+
+def test_g11_an_accept_after_youre_all_set_is_told_to_report_the_outcome() -> None:
+    # Eval 1539Z (G-11): "You're all set for Thursday at 2." -> accept, and no report_outcome.
+    record, _ = play("G-11", [tools(decision("accept", offer=THU_2PM)), QUIET])
+    [result] = [e.text for e in record.events if e.kind == "tool_result"]
+    assert result == messages.already_booked_result(False)
+    assert "call report_outcome now" in result
+
+
+def test_tp04_a_counter_when_nothing_typed_is_broken_is_refused() -> None:
+    # Eval 1539Z (TP-04, brief B_bare): it countered 8:30pm because the opening line said 7pm.
+    counter = decision("counter", "low", offer={"time": "20:30", "party_size": 6})
+    record, _ = play("TP-04", [tools(counter), tools(decision("accept"))])
+    results = [e.text for e in record.events if e.kind == "tool_result"]
+    assert results[0] == REFUSED_NEEDLESS_COUNTER
+    assert verdicts(record)["TP-04.1"] == "pass"  # the accept after the refusal counts

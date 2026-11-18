@@ -15,17 +15,20 @@ from typing import Any
 import psycopg
 import pytest
 
+from app.calls import messages
 from app.calls.gates import (
     REFUSALS,
     REFUSED_GIVE_UP,
     REFUSED_LOW_OFFER,
     REFUSED_MONEY,
+    REFUSED_NEEDLESS_COUNTER,
     REFUSED_NEEDLESS_PING,
     REFUSED_NOT_A_FALLBACK,
     REFUSED_SECOND_COUNTER,
     REFUSED_UNSAID_NAME,
     CallFacts,
     breaks_rule_refusal,
+    business_said_booked,
     counter_gate,
     facts_from_timeline,
     give_up_gate,
@@ -37,6 +40,7 @@ from app.calls.gates import (
     missing_detail_gate,
     missing_detail_refusal,
     money_gate,
+    needless_counter_gate,
     needless_ping_gate,
     unsaid_name_gate,
 )
@@ -314,6 +318,52 @@ def test_an_instruction_event_counts_in_the_facts() -> None:
     )
     assert facts.instructed and not facts.user_was_asked and not facts.latest_ping_approved
     assert not facts_from_timeline([], latest_ping_answer=None, ending=False).instructed
+
+
+def test_a_counter_on_an_offer_that_meets_every_typed_rule_is_refused() -> None:
+    # Eval 1539Z: TP-03 and TP-04 (no typed rules) countered "Dr. Patel" and "8:30pm" because
+    # the opening line asked for Dr. Rivera and 7pm. The opening line is not a rule (Q8).
+    no_rules = score_offer({"constraints": [], "fallbacks": []}, {"time": "20:30"})
+    assert no_rules.fits is True
+    assert needless_counter_gate(GATE_DIMS, no_rules) == REFUSED_NEEDLESS_COUNTER
+    fits = score_offer(SCORED_BRIEF, {"date": "2026-11-19", "time": "14:00", "person": "Patel"})
+    assert needless_counter_gate(GATE_DIMS, fits) == REFUSED_NEEDLESS_COUNTER  # C4-06: Medium
+    assert is_refusal(REFUSED_NEEDLESS_COUNTER) and REFUSED_NEEDLESS_COUNTER in REFUSALS
+
+
+def test_a_counter_stays_allowed_where_python_cant_tell_or_money_is_involved() -> None:
+    low = score_offer(SCORED_BRIEF, {"date": "2026-11-19", "time": "16:00"})
+    no_date = score_offer(SCORED_BRIEF, {"time": "14:00"})
+    text_only = score_offer({"constraints": [{"text": "Quiet"}]}, {"time": "19:00"})
+    assert needless_counter_gate(GATE_DIMS, low) is None  # breaks "before 3pm": counter away
+    assert needless_counter_gate(GATE_DIMS, no_date) is None  # unknown
+    assert needless_counter_gate(GATE_DIMS, text_only) is None  # unknown
+    assert needless_counter_gate(GATE_DIMS, None) is None  # no offer written down
+    fits = score_offer(SCORED_BRIEF, {"date": "2026-11-19", "time": "14:00"})
+    assert needless_counter_gate({"involves_money": True}, fits) is None
+    assert needless_counter_gate({"needs_ask_first_field": True}, fits) is None
+
+
+@pytest.mark.parametrize(
+    ("latest", "booked"),
+    [
+        ("You're all set for Thursday at 2.", True),
+        ("Great, you're booked for Friday at 10 with Dr. Rivera.", True),
+        ("You are confirmed for Saturday at 7.", True),
+        ("Okay, see you Thursday!", True),
+        ("That's booked under Alex Kim.", True),
+        ("Saturday 7pm works.", False),
+        ("We have Thursday at 2pm.", False),
+        ("Are you all set with the paperwork?", False),
+    ],
+)
+def test_business_said_booked_reads_only_the_latest_line(latest: str, booked: bool) -> None:
+    facts = facts_from_timeline(
+        [("business", "You're booked? Let me check."), ("business", latest)],
+        latest_ping_answer=None,
+        ending=False,
+    )
+    assert business_said_booked(facts) is booked
 
 
 def test_c4_06_python_refuses_a_ping_about_an_offer_that_fits() -> None:
@@ -603,6 +653,28 @@ def test_an_accept_covered_by_the_users_instruction_goes_through_the_webhook(
                 tool_body(call, [(tc2, "report_decision", accept_4pm)], timestamp=1794081690000),
             )
             assert not is_refusal(after.json()["results"][0]["result"])
+            decisions = [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+            assert [d["action"] for d in decisions] == ["accept"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_an_accept_after_youre_all_set_says_to_report_the_outcome(
+    supabase_env: SupabaseEnv,
+) -> None:
+    # G-11 (eval 1539Z) on a live call: the accept is logged, and the result says to report.
+    db = supabase_env.db_url
+    call = seed_call(db)
+    accept = {**_decision("accept", {**DIMS_LOW, "meets_constraints": True}), "confidence": "high"}
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            await post(client, transcript_body(call, "You're all set for Thursday at 2."))
+            tc = f"tc-{uuid.uuid4()}"
+            response = await post(client, tool_body(call, [(tc, "report_decision", accept)]))
+            nudge = [{"toolCallId": tc, "result": messages.already_booked_result(False)}]
+            assert response.json()["results"] == nudge
             decisions = [p for t, p in await event_rows(db, call) if t == "agent.decision"]
             assert [d["action"] for d in decisions] == ["accept"]
 

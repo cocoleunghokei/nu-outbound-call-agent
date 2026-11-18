@@ -36,12 +36,14 @@ from app.calls.decisions import NOTED
 from app.calls.gates import (
     SETTLING_ACTIONS,
     CallFacts,
+    business_said_booked,
     counter_gate,
     facts_from_timeline,
     give_up_gate,
     low_offer_gate,
     missing_detail_gate,
     money_gate,
+    needless_counter_gate,
     needless_ping_gate,
     unsaid_name_gate,
 )
@@ -151,8 +153,12 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
     if name == "report_decision":
         action = args.get("action")
         if action == "counter":
-            if (second := counter_gate(action, state.facts())) is not None:
-                return second
+            score = score_tool_call(state.brief, args)
+            refused = counter_gate(action, state.facts()) or needless_counter_gate(
+                _dims(args), score
+            )
+            if refused is not None:
+                return refused
             state.timeline.append(("countered", ""))  # agent.decision, as the backend logs it
         if action in SETTLING_ACTIONS:
             facts = state.facts()
@@ -165,8 +171,12 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
             )
             if refusal is not None:
                 return refusal
-            if state.ping is not None and state.ping.kind == "decision":
+            withdrawn = state.ping is not None and state.ping.kind == "decision"
+            if withdrawn:
                 state.ping = None
+            if business_said_booked(facts):
+                return messages.already_booked_result(withdrawn)
+            if withdrawn:
                 return messages.question_withdrawn_result()
         return NOTED
     if name == "report_outcome":

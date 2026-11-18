@@ -29,12 +29,14 @@ from psycopg import AsyncConnection
 from app.calls import messages
 from app.calls.gates import (
     SETTLING_ACTIONS,
+    business_said_booked,
     counter_gate,
     load_brief,
     load_facts,
     low_offer_gate,
     missing_detail_gate,
     money_gate,
+    needless_counter_gate,
 )
 from app.calls.pings import close_ping, open_ping_for_update
 from app.calls.scoring import score_tool_call
@@ -54,13 +56,14 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
     An accept or take_fallback that a gate refuses is not logged; the refusal is returned.
     """
     action = ctx.arguments.get("action")
+    facts = await load_facts(conn, ctx.call_id)
     if action == "counter":
-        second = counter_gate(action, await load_facts(conn, ctx.call_id))
-        if second is not None:
-            logger.info("report_decision refused by the counter gate for call %s", ctx.call_id)
-            return second
+        score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)
+        refusal = counter_gate(action, facts) or needless_counter_gate(ctx.dimensions, score)
+        if refusal is not None:
+            logger.info("report_decision refused by a counter gate for call %s", ctx.call_id)
+            return refusal
     if action in SETTLING_ACTIONS:
-        facts = await load_facts(conn, ctx.call_id)
         score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)
         covered = ctx.arguments.get("covered_by_instruction")
         refusal = (
@@ -85,9 +88,12 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
         occurred_at=ctx.source_ts or datetime.now(UTC),
         dedup_key=f"decision:{ctx.tool_call_id}",
     )
-    if payload.get("action") in SETTLING_ACTIONS and await _withdraw_open_question(conn, ctx):
-        return messages.question_withdrawn_result()
-    return NOTED
+    if payload.get("action") not in SETTLING_ACTIONS:
+        return NOTED
+    withdrawn = await _withdraw_open_question(conn, ctx)
+    if business_said_booked(facts):
+        return messages.already_booked_result(withdrawn)
+    return messages.question_withdrawn_result() if withdrawn else NOTED
 
 
 async def _withdraw_open_question(conn: AsyncConnection[Any], ctx: ToolCallContext) -> bool:

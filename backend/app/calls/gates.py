@@ -21,6 +21,11 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
   instruction during the call ("4pm is fine too", R-09): the typed rules are older than that
   message, and Python can't read free text. Only with both: the flag alone, before any
   instruction, changes nothing. The money gate never steps aside for an instruction.
+- **Needless counter** (``needless_counter_gate``): ``report_decision`` counter is refused
+  when Python finds the offer meets every typed rule (a brief with none at all fits, Q8):
+  there is nothing to counter, so the agent should accept and say what changed (TP-03 and
+  TP-04 countered "Dr. Patel" and "8:30pm" because the opening line said otherwise). Never
+  for money or an ask-first field, and never where Python can't tell.
 - **Missing detail** (``missing_detail_gate``): accept or take_fallback is refused when the
   brief has a rule Python could check, but the offer the model wrote down leaves out the
   value it needs (C4-05: "take the Friday morning fallback" with no time, which the business
@@ -112,6 +117,18 @@ REFUSED_NOT_A_FALLBACK = (
     "Not done: the offer you heard matches none of the user's fallbacks. Do not take it as a "
     "fallback. Counter once, or call ask_user."
 )
+REFUSED_NEEDLESS_COUNTER = (
+    "Not done: the offer meets every rule the user typed, so there is nothing to counter. Accept "
+    "it yourself with report_decision action accept. If it differs from what you first asked "
+    "for, or misses a preference, say what changed in the reason or missed_preference."
+)
+# "You're all set", "you're booked", "see you Thursday": the business says it is done (G-11).
+BOOKED_WORDS = re.compile(
+    r"\byou(?:'re| are) (?:all )?(?:set|booked|confirmed)\b"
+    r"|\b(?:it's|it is|that's|that is|you're|you are) (?:all )?booked\b"
+    r"|\bsee you\b",
+    re.IGNORECASE,
+)
 REFUSED_SECOND_COUNTER = (
     "Not done: you already countered once. Do not ask the business for anything else. Call "
     "ask_user now with what they offered and what the user asked for."
@@ -137,6 +154,7 @@ REFUSALS = (
     REFUSED_UNSAID_NAME,
     REFUSED_NOT_A_FALLBACK,
     REFUSED_SECOND_COUNTER,
+    REFUSED_NEEDLESS_COUNTER,
 )
 
 
@@ -280,6 +298,28 @@ def missing_detail_gate(
         return None
     missing = score.missing_to_settle(action)
     return missing_detail_refusal(missing) if missing else None
+
+
+def needless_counter_gate(
+    dimensions: Mapping[str, Any] | None, score: OfferScore | None
+) -> str | None:
+    """The refusal for countering an offer Python finds meets every typed rule, else None.
+
+    Only where Python can tell (``score.fits`` is True), and never when the model says money
+    or an ask-first field is involved: those go to ask_user, not to an accept.
+    """
+    if score is None or score.fits is not True:
+        return None
+    dims: Mapping[str, Any] = dimensions or {}
+    if dims.get("involves_money") is True or dims.get("needs_ask_first_field") is True:
+        return None
+    return REFUSED_NEEDLESS_COUNTER
+
+
+def business_said_booked(facts: CallFacts) -> bool:
+    """True when the business's latest line says it is booked ("You're all set")."""
+    latest = facts.business_said.rsplit("\n", 1)[-1]
+    return BOOKED_WORDS.search(latest) is not None
 
 
 def counter_gate(action: object, facts: CallFacts) -> str | None:
