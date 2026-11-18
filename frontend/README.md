@@ -29,8 +29,8 @@ Open http://localhost:5173.
 
 ## Demo mode and API mode
 
-- **Demo mode** (default): `VITE_API_URL` is empty, Supabase isn't configured, or nobody is signed in. The pre-call flow runs on fake data, Start only logs the brief, and the top bar shows a small "Demo mode (fake data)" note.
-- **API mode**: `VITE_API_URL` is set (e.g. `http://localhost:8000`) and a Supabase session exists at page load. Start saves the brief to FastAPI and hands it to `POST /calls`, then opens `/live?call=<call_id>` from its answer (demo mode opens `/live`, the demo call). The profile and templates are still the fake ones until those APIs exist; the server checks the brief against the real profile, and its answer wins.
+- **Demo mode** (default): `VITE_API_URL` is empty, Supabase isn't configured, or the anonymous sign-in fails. The pre-call flow runs on fake data, Start only logs the brief, and the top bar shows a small "Demo mode" note that says why.
+- **API mode**: `VITE_API_URL` is set (e.g. `http://localhost:8000`) and the browser has a Supabase session. There is no sign-in screen yet (ON-1), so `src/lib/session.ts` signs the browser in anonymously on first use (the hosted project and `supabase/config.toml` need anonymous sign-ins enabled); the profile and calls then belong to this browser until an email is linked later, and the top bar says "This browser only". `src/precall/useDataMode.ts` re-picks the mode whenever the signed-in user changes. Start saves the brief to FastAPI and hands it to `POST /calls`, then opens `/live?call=<call_id>` from its answer (demo mode opens `/live`, the demo call). The profile and templates are still the fake ones until those APIs exist; the server checks the brief against the real profile, and its answer wins.
 - Any `accessToken` setup for Supabase is for Realtime subscriptions only; FastAPI calls get the token from `accessToken()` in `src/lib/accessToken.ts` (one shared helper over `supabase.auth.getSession()`) and send it as a Bearer header themselves. The Supabase client is loaded lazily, so demo mode works without the Supabase variables.
 
 ## Checks
