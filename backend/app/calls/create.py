@@ -32,7 +32,7 @@ from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
 
-from app.auth import current_user
+from app.auth import current_permanent_user
 from app.briefs.phone import check_phone
 from app.briefs.readiness import check_readiness
 from app.briefs.store import get_brief, load_snapshot
@@ -180,7 +180,8 @@ async def prepare_call(
         raise ApiError("invalid_phone", 422, phone.message, False)
     allowlist = settings.call_destination_allowlist
     if allowlist and phone.e164 not in allowlist:
-        # Stopgap while anonymous sessions can reach POST /calls and no per-user caps exist.
+        # Stopgap while the per-user call caps (DC-15) don't exist: the anon key is public, so
+        # anyone can create an email-verified account and reach this route.
         raise ApiError(
             "destination_not_allowed",
             422,
@@ -352,7 +353,7 @@ async def place_call(
 async def create_call(
     body: CreateCallCommand,
     request: Request,
-    user_id: Annotated[uuid.UUID, Depends(current_user)],
+    user_id: Annotated[uuid.UUID, Depends(current_permanent_user)],
     key: Annotated[uuid.UUID, Depends(idempotency_key)],
     pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
     voice: Annotated[VoicePlatform, Depends(get_call_voice)],
@@ -361,8 +362,10 @@ async def create_call(
 
     ``status`` is ``dialing`` when Vapi accepted the call, ``failed`` when it provably wasn't
     placed, and ``creation_uncertain`` when we can't tell yet. Errors before a call exists:
-    404 ``brief_not_found``, 422 ``invalid_brief`` / ``invalid_phone`` / ``brief_not_ready`` /
-    ``unsafe_assistant_config``, 409 ``call_in_progress``, 503 ``calls_not_configured``.
+    403 ``sign_in_required`` (an anonymous session; the browser links an email first, and
+    nothing is stored for the key), 404 ``brief_not_found``, 422 ``invalid_brief`` /
+    ``invalid_phone`` / ``brief_not_ready`` / ``unsafe_assistant_config``,
+    409 ``call_in_progress``, 503 ``calls_not_configured``.
     """
     settings: Settings = request.app.state.settings
     async with pool.connection() as conn, conn.transaction():

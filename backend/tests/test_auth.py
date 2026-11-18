@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth import JwksCache, current_user
+from app.auth import JwksCache, current_permanent_user, current_user
 from app.config import Settings
 from app.idempotency import idempotency_key
 from app.main import create_app
@@ -54,6 +54,12 @@ def make_client(jwks_cache: JwksCache | None = None) -> TestClient:
     @app.post("/needs-key")
     async def needs_key(key: Annotated[uuid.UUID, Depends(idempotency_key)]) -> dict[str, str]:
         return {"key": str(key)}
+
+    @app.get("/whoami-permanent")
+    async def whoami_permanent(
+        user_id: Annotated[uuid.UUID, Depends(current_permanent_user)],
+    ) -> dict[str, str]:
+        return {"user_id": str(user_id)}
 
     return TestClient(app)
 
@@ -232,6 +238,45 @@ def test_hs256_rejected_when_no_secret_configured() -> None:
         return {"user_id": str(user_id)}
 
     assert_unauthenticated(TestClient(app).get("/whoami", headers=bearer(make_token())))
+
+
+def test_anonymous_token_is_a_user_but_not_a_permanent_user() -> None:
+    """``current_user`` accepts an anonymous session (GET /me, briefs); ``current_permanent_user``
+    refuses it with 403 ``sign_in_required`` so the browser asks for an email first."""
+    client = make_client()
+    anonymous = make_token(is_anonymous=True)
+
+    ok = client.get("/whoami", headers=bearer(anonymous))
+    assert ok.status_code == 200
+    assert ok.json() == {"user_id": str(USER_ID)}
+
+    refused = client.get("/whoami-permanent", headers=bearer(anonymous))
+    assert refused.status_code == 403
+    assert refused.json() == {
+        "error": {
+            "code": "sign_in_required",
+            "message": "Add your email before placing a call",
+            "retryable": False,
+        }
+    }
+
+
+@pytest.mark.parametrize("claim", [False, None])
+def test_permanent_user_accepted_with_or_without_the_anonymous_claim(claim: bool | None) -> None:
+    # Tokens from before the claim existed, and permanent users' tokens (``is_anonymous: false``).
+    client = make_client()
+    response = client.get("/whoami-permanent", headers=bearer(make_token(is_anonymous=claim)))
+    assert response.status_code == 200
+    assert response.json() == {"user_id": str(USER_ID)}
+
+
+def test_permanent_user_still_needs_a_valid_token() -> None:
+    client = make_client()
+    assert_unauthenticated(client.get("/whoami-permanent"))
+    assert_unauthenticated(
+        client.get("/whoami-permanent", headers=bearer(make_token(exp=int(time.time()) - 1))),
+        "token_expired",
+    )
 
 
 def test_missing_idempotency_key_400() -> None:
