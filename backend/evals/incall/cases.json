@@ -2954,7 +2954,7 @@
       "id": "R-09",
       "area": "DC-8/10",
       "brief": "A",
-      "pass_type": "soft",
+      "pass_type": "hard",
       "lenses": [
         "accuracy"
       ],
@@ -2972,7 +2972,7 @@
         {
           "id": "R-09.1",
           "text": "report_decision accept, confidence high",
-          "level": "soft",
+          "level": "hard",
           "by": "script",
           "assert": {
             "op": "tool_called",
