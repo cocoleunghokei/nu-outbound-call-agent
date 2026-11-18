@@ -39,9 +39,9 @@ Open http://localhost:5173.
 
 ## Following a real call
 
-The live-call page plays the fake call unless all three are set: `VITE_LIVE_CALL_SOURCE=real`, `VITE_API_URL` (the backend, e.g. `http://localhost:8000`), and `?call=<call id>` in the address. You also need to be signed in to Supabase in the browser. To try it locally: `supabase start`, run the backend with `make -C backend seed-dev` and `uv run uvicorn app.main:app`, open `http://localhost:5173/live?call=<CALL_ID>`, then `make -C backend replay CALL_ID=<CALL_ID>`.
+The live-call page follows a real call when `VITE_API_URL` (the backend, e.g. `http://localhost:8000`) is set and `?call=<call id>` is in the address; otherwise it plays the fake call. `VITE_LIVE_CALL_SOURCE` is an opt-out: set it to `fake` to keep the scripted call with an API URL configured (`real` or unset means real). You also need to be signed in to Supabase in the browser. To try it locally: `supabase start`, run the backend with `make -C backend seed-dev` and `uv run uvicorn app.main:app`, open `http://localhost:5173/live?call=<CALL_ID>`, then `make -C backend replay CALL_ID=<CALL_ID>`.
 
-The history screen (`/history`) shows fake calls unless `VITE_HISTORY_SOURCE=real` and `VITE_API_URL` are set; then it lists the signed-in user's calls from `GET /calls` and opens each with `GET /calls/{call_id}/result` (code in `src/postcall/`). `?open=<call id>` opens one call's result directly. Opening a call adds a browser history entry, so Back returns to the list (`src/postcall/openCallUrl.ts`). The call-ended notification opens `/history?open=<call id>`.
+The history screen (`/history`) lists real calls whenever `VITE_API_URL` is set (`VITE_HISTORY_SOURCE=fake` opts out; `real` or unset means real) and shows fake calls otherwise; with the backend it lists the signed-in user's calls from `GET /calls` and opens each with `GET /calls/{call_id}/result` (code in `src/postcall/`). `?open=<call id>` opens one call's result directly. Opening a call adds a browser history entry, so Back returns to the list (`src/postcall/openCallUrl.ts`). The call-ended notification opens `/history?open=<call id>`.
 
 ## Patterns
 
