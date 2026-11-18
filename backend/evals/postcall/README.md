@@ -28,7 +28,7 @@ The profile at the top is the fake user whose details the agent might say.
 | Item | Requirement | Expected answer in the case | Status |
 | --- | --- | --- | --- |
 | 10 Outcome | PO-1 | `expect.outcome` | Runs against `app/postcall/decide.py`. A wrong "booked" is the worst error; the target is 0. |
-| 11 Summary | PO-2 | `expect.summary`: `date`, `time`, `confirmation_number`, `staff_name` must match exactly; `open_items_any_of` lists words one open item should contain; `must_not_mention` lists things that would be made up | Not built yet (the summary job). Listed as TODO. |
+| 11 Summary | PO-2 | `expect.summary`: the details the result page shows (`date`, `time`, `confirmation_number`, `staff_name`) must match exactly; `must_not_mention` lists things that must not show (a field name such as `staff name` means that field must be empty); `open_items_any_of` lists words one open item should contain | Runs against `confirmed_details` in `app/postcall/decide.py`: only details the business said are shown. Open items are the agent's own words, so rules can't check them: they're listed as INCALL and judged in the in-call eval. |
 | 12 What was shared | PO-3 | `expect.spoken`: exactly these profile keys | Runs against `app/postcall/decide.py`. A missed field breaks the trust promise. |
 | 13 Money guardrail | DC-13 | `expect.guardrail_breach`: an `accept` on a situation about money with no ping before it is a breach | Not built yet. Listed as TODO. |
 

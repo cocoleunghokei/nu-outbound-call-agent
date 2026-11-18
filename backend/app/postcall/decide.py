@@ -303,23 +303,86 @@ def has_confirmation_evidence(
     agreed_time = parse_time(details.time) if details.time else None
     if number is None and (agreed_day is None or agreed_time is None):
         return False
+    for text in evidence_clauses(business_lines):
+        if number is not None and says_confirmation_number(text, number):
+            return True
+        if agreed_day is not None and agreed_time is not None:
+            if mentions_time(text, agreed_time) and (
+                mentions_date(text, agreed_day) or mentions_weekday(text, agreed_day, call_days)
+            ):
+                return True
+    return False
+
+
+def evidence_clauses(business_lines: list[str]) -> list[str]:
+    """The business's clauses that can count as evidence, lowercased, in call order.
+
+    Left out: questions ("October 24 at 7:30?"), and every clause of a line that refuses or of
+    any line before a later refusal ("So October 24 at 7:30." then "No, that doesn't work.").
+    When in doubt, a clause doesn't count.
+    """
     split_lines = [clauses(line) for line in business_lines]
     refuses = [any(is_refusal(part) for part in parts) for parts in split_lines]
+    kept: list[str] = []
     for index, parts in enumerate(split_lines):
         if any(refuses[index:]):
-            continue  # a refusal in this line or a later one: when in doubt, needs_follow_up
-        for part in parts:
-            if is_question(part):
-                continue
-            text = _fold(part)
-            if number is not None and says_confirmation_number(text, number):
-                return True
-            if agreed_day is not None and agreed_time is not None:
-                if mentions_time(text, agreed_time) and (
-                    mentions_date(text, agreed_day) or mentions_weekday(text, agreed_day, call_days)
-                ):
-                    return True
-    return False
+            continue
+        kept.extend(_fold(part) for part in parts if not is_question(part))
+    return kept
+
+
+def confirmed_details(
+    details: OutcomeDetails | None,
+    business_lines: list[str],
+    *,
+    call_days: Collection[date] = (),
+) -> OutcomeDetails:
+    """Only the details the business itself said (PO-2), each checked on its own.
+
+    ``has_confirmation_evidence`` needs one proof that the result happened; this decides which
+    details may be shown as agreed. Each must be well-formed and said in a clause from
+    ``evidence_clauses``: the date (``mentions_date`` or ``mentions_weekday``), the time, the
+    confirmation number next to a cue, and the staff name as whole words (a title such as
+    "Dr." may be left out). The date and the time may be said in different clauses. Anything
+    else is dropped, so a detail the agent made up never shows as confirmed.
+    """
+    if details is None:
+        return OutcomeDetails()
+    texts = evidence_clauses(business_lines)
+    agreed_day = valid_iso_date(details.date)
+    agreed_time = parse_time(details.time) if details.time else None
+    number = valid_confirmation_number(details.confirmation_number)
+    return OutcomeDetails(
+        date=details.date
+        if agreed_day is not None
+        and any(
+            mentions_date(t, agreed_day) or mentions_weekday(t, agreed_day, call_days)
+            for t in texts
+        )
+        else None,
+        time=details.time
+        if agreed_time is not None and any(mentions_time(t, agreed_time) for t in texts)
+        else None,
+        confirmation_number=details.confirmation_number
+        if number is not None and any(says_confirmation_number(t, number) for t in texts)
+        else None,
+        staff_name=details.staff_name
+        if details.staff_name and any(says_staff_name(t, details.staff_name) for t in texts)
+        else None,
+    )
+
+
+_TITLES = r"(?:dr|doctor|mr|mrs|ms|miss|nurse)\.?"
+
+
+def says_staff_name(text: str, name: str) -> bool:
+    """True if ``text`` (one lowercased clause) says ``name`` as whole words, ignoring case.
+    A leading title may be left out on either side: "Dr. Rivera" matches "Rivera" and
+    "Doctor Rivera". A name shorter than two letters never matches."""
+    bare = re.sub(rf"^{_TITLES}\s+", "", _fold(name).strip())
+    if len(re.sub(r"[^a-z]", "", bare)) < 2:
+        return False
+    return _contains_token(text, bare)
 
 
 def parse_time(value: str | None) -> tuple[int, int] | None:

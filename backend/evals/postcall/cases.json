@@ -1,5 +1,5 @@
 {
-  "_note": "Post-call eval cases (items 10-13 of the AI evaluation scope). Fake data only. Each case is one ended call: the agent's report_outcome (or null), when the call happened (called_at, UTC, optional), Vapi's end reason, the transcript, and the agent's decisions and pings in call order. 'expect' is the right answer. Items 10 (outcome) and 12 (spoken fields) run against app/postcall/decide.py. Items 11 (summary) and 13 (money guardrail) are not built yet: their expectations are recorded so the evaluator and the future code can use them.",
+  "_note": "Post-call eval cases (items 10-13 of the AI evaluation scope). Fake data only. Each case is one ended call: the agent's report_outcome (or null), when the call happened (called_at, UTC, optional), Vapi's end reason, the transcript, and the agent's decisions and pings in call order. 'expect' is the right answer. Items 10 (outcome) and 12 (spoken fields) run against app/postcall/decide.py. Item 11 (summary) runs against confirmed_details in app/postcall/decide.py; its open-item expectations are judged in the in-call eval. Item 13 (money guardrail) is not built yet: its expectations are recorded so the evaluator and the future code can use them.",
   "profile": [
     {
       "key": "full_name",
@@ -297,7 +297,7 @@
     },
     {
       "id": "confirmation_number",
-      "about": "The confirmation number alone is enough evidence.",
+      "about": "The confirmation number alone is enough evidence for Booked. The agent's date and time were never said on the call, so the summary doesn't show them.",
       "report": {
         "outcome": "booked",
         "business_confirmed": true,
@@ -324,9 +324,11 @@
           "calling_name"
         ],
         "summary": {
-          "date": "2026-11-12",
-          "time": "19:00",
-          "confirmation_number": "TB-1234"
+          "confirmation_number": "TB-1234",
+          "must_not_mention": [
+            "date",
+            "time"
+          ]
         }
       }
     },
@@ -1010,6 +1012,45 @@
         "spoken": [
           "calling_name"
         ]
+      }
+    },
+    {
+      "id": "summary_invented_details",
+      "about": "The business confirms the date and time, so the call is Booked. The agent also reports a staff name and a confirmation number that nobody said: the summary must not show them.",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-10-24",
+          "time": "19:30",
+          "staff_name": "Marco",
+          "confirmation_number": "4417"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a table for 2 at 7:30 on Saturday, October 24th?"
+        ],
+        [
+          "business",
+          "You're all set for 7:30 on October 24th."
+        ]
+      ],
+      "expect": {
+        "outcome": "booked",
+        "spoken": [
+          "calling_name"
+        ],
+        "summary": {
+          "date": "2026-10-24",
+          "time": "19:30",
+          "must_not_mention": [
+            "staff name",
+            "confirmation number"
+          ]
+        }
       }
     },
     {
