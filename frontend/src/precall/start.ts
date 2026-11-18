@@ -95,15 +95,28 @@ export function isCallRouteMissing(error: ApiError): boolean {
   return error.status === 404 && error.code.startsWith('http_')
 }
 
+/**
+ * A 5xx the server answered on purpose: its own error code and `retryable: false`. The
+ * server decided before dialing, so nothing started. A proxy error (`http_502`) or a
+ * retryable failure (`database_unavailable`) says nothing about whether a call was placed.
+ */
+export function isDefiniteRefusal(error: ApiError): boolean {
+  return error.status >= 500 && !error.code.startsWith('http_') && !error.retryable
+}
+
 /** Plain-words chat message for an API error. Uses the server's own message where it is already plain. */
 export function describeError(error: ApiError, step: 'save' | 'start'): string {
   if (error.code === NO_SESSION || error.code === 'unauthenticated' || error.code === 'token_expired') {
     return "You're signed out, so I couldn't save this. Sign in again, then tap Start."
   }
-  if (step === 'start' && (error.code === NETWORK_ERROR || error.status >= 500)) {
-    // No answer or a server failure: the call may have started before the answer was lost.
-    // Start again reuses the same Idempotency-Key, so the server returns that call instead
-    // of dialing a second time.
+  if (step === 'start' && error.code === 'calls_not_configured') {
+    // The server refused on purpose before dialing: the voice platform isn't wired up there.
+    return "Calling isn't switched on for this server yet, so nothing was dialed. Your plan is saved; ask whoever runs the server, then tap Start again."
+  }
+  if (step === 'start' && (error.code === NETWORK_ERROR || (error.status >= 500 && !isDefiniteRefusal(error)))) {
+    // No answer or an unexplained server failure: the call may have started before the
+    // answer was lost. Start again reuses the same Idempotency-Key, so the server returns
+    // that call instead of dialing a second time.
     return "I didn't hear back from the server, so the call may have started. Check your connection, then tap Start again. It won't call twice."
   }
   if (error.code === NETWORK_ERROR) {
