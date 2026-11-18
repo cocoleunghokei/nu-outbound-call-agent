@@ -17,7 +17,7 @@ import pytest
 
 from app.calls import messages
 from app.calls.assistant import TEMPERATURE
-from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY
+from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY, REFUSED_TOO_LONG
 from evals.incall import model as model_module
 from evals.incall.checks import business_dates, business_times, check_run
 from evals.incall.judge_input import render as render_judge
@@ -311,6 +311,23 @@ def test_the_give_up_gate_makes_the_agent_ask_first() -> None:
     assert REFUSED_GIVE_UP in results
     v = verdicts(record)
     assert v["C4-14.1"] == "pass"  # the user got pinged after the refusal
+    assert v["gates-quiet"] == "fail"
+
+
+def test_the_length_gate_refuses_a_long_reason_and_the_retry_counts() -> None:
+    long = "They offered Thu 4pm only, and nothing earlier on Thursday. You said before 3pm!!"
+    assert len(long) > 80
+    long_ping = ask(reason=long)
+    record, _ = play(
+        "C4-03",
+        [tools(COUNTER, text="That won't work. Anything before 3pm?"), QUIET,
+         tools(long_ping), tools(ask(), text="Let me check with Alex Kim.")],
+    )  # fmt: skip
+    refused = [e for e in record.events if e.kind == "tool_result" and e.text == REFUSED_TOO_LONG]
+    assert [e.step for e in refused] == [2]
+    v = verdicts(record)
+    assert v["D5-len"] == "pass"  # the refused reason never reached the card
+    assert v["C4-03.1"] == "pass"  # the short retry pinged Alex
     assert v["gates-quiet"] == "fail"
 
 

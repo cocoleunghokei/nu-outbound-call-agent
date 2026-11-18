@@ -12,7 +12,8 @@ Only a ``decision`` ping is closed: an Ask-me-first approval stays open, because
 offer doesn't answer "may I share your date of birth?". A decision older than the ping (a
 late webhook) closes nothing.
 
-Before anything is logged, the money and Low-offer gates (``app/calls/gates.py``) may refuse
+Before anything is logged, the length gate refuses a reason or missed preference too long for
+the card, and the money and Low-offer gates (``app/calls/gates.py``) may refuse
 an accept or take_fallback: the agent then gets the refusal as its tool result, nothing is
 logged, and the open question stays open.
 """
@@ -24,7 +25,13 @@ from typing import Any
 from psycopg import AsyncConnection
 
 from app.calls import messages
-from app.calls.gates import SETTLING_ACTIONS, load_facts, low_offer_gate, money_gate
+from app.calls.gates import (
+    SETTLING_ACTIONS,
+    length_gate,
+    load_facts,
+    low_offer_gate,
+    money_gate,
+)
 from app.calls.pings import close_ping, open_ping_for_update
 from app.calls.store import set_status
 from app.events import append_event
@@ -41,6 +48,10 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
 
     An accept or take_fallback that a gate refuses is not logged; the refusal is returned.
     """
+    too_long = length_gate(ctx.arguments)
+    if too_long is not None:
+        logger.info("report_decision refused by the length gate for call %s", ctx.call_id)
+        return too_long
     action = ctx.arguments.get("action")
     if action in SETTLING_ACTIONS:
         facts = await load_facts(conn, ctx.call_id)

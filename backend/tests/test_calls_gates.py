@@ -14,13 +14,17 @@ import psycopg
 import pytest
 
 from app.calls.gates import (
+    CARD_TEXT_MAX,
+    REFUSALS,
     REFUSED_GIVE_UP,
     REFUSED_LOW_OFFER,
     REFUSED_MONEY,
+    REFUSED_TOO_LONG,
     CallFacts,
     facts_from_timeline,
     give_up_gate,
     is_approving,
+    length_gate,
     low_offer_gate,
     mentions_money,
     money_gate,
@@ -118,6 +122,19 @@ def test_a_low_offer_cannot_be_accepted_without_approval() -> None:
     assert low_offer_gate("accept", LOW, CallFacts(latest_ping_approved=True)) is None
 
 
+def test_card_text_over_80_characters_is_refused() -> None:
+    # Found by the eval (D5-len): reasons of 83 to 99 characters, run after run.
+    fits = "x" * CARD_TEXT_MAX
+    assert CARD_TEXT_MAX == 80
+    assert length_gate({"reason": fits, "missed_preference": fits}) is None
+    assert length_gate({"reason": f"  {fits}  "}) is None  # surrounding spaces don't count
+    assert length_gate({"reason": fits + "x"}) == REFUSED_TOO_LONG
+    assert length_gate({"reason": "Short.", "missed_preference": fits + "x"}) == REFUSED_TOO_LONG
+    assert length_gate({}) is None
+    assert length_gate({"reason": 42}) is None  # not text: the schema check rejects it
+    assert REFUSED_TOO_LONG in REFUSALS  # so the eval drops the refused call from its checks
+
+
 def test_giving_up_needs_the_user_asked_first() -> None:
     assert give_up_gate("needs_follow_up", CallFacts()) == REFUSED_GIVE_UP
     assert give_up_gate("needs_follow_up", CallFacts(user_was_asked=True)) is None
@@ -212,5 +229,34 @@ def test_giving_up_before_asking_is_refused_and_never_becomes_the_outcome(
         assert result == REFUSED_GIVE_UP
         async with await psycopg.AsyncConnection.connect(db) as conn:
             assert await latest_report(conn, call.call_id) is None  # never the outcome
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_a_card_reason_over_80_characters_is_refused_and_writes_nothing(
+    supabase_env: SupabaseEnv,
+) -> None:
+    db = supabase_env.db_url
+    call = seed_call(db)
+    long_reason = (
+        "They offered Thursday 4pm only, and Friday morning is booked; you said before 3pm."
+    )
+    assert len(long_reason) > 80
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            decision = {**_decision("counter", DIMS_LOW), "reason": long_reason}
+            tc = f"tc-{uuid.uuid4()}"
+            response = await post(client, tool_body(call, [(tc, "report_decision", decision)]))
+            assert response.json()["results"] == [{"toolCallId": tc, "result": REFUSED_TOO_LONG}]
+            assert not [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+
+            ask_tc, ask = ask_body(call, reason=long_reason)
+            response = await post(client, ask)
+            assert response.json()["results"] == [
+                {"toolCallId": ask_tc, "result": REFUSED_TOO_LONG}
+            ]
+            assert await ping_rows(db, call) == []  # no card reached the user
 
     asyncio.run(scenario())

@@ -16,8 +16,9 @@ The tool results follow the backend:
   ``question_withdrawn_result``; otherwise "Noted." (``app/calls/decisions.py``).
 - ``report_outcome`` returns the post-call acknowledgement; ``endCall`` ends the run.
 - The action gates (``app/calls/gates.py``) run first, from the same facts the backend reads:
-  an accept or take_fallback after unapproved money, a Low offer accepted without a "yes", or
-  ``needs_follow_up`` before the user was asked, gets the refusal instead and changes nothing.
+  an accept or take_fallback after unapproved money, a Low offer accepted without a "yes",
+  ``needs_follow_up`` before the user was asked, or a card reason over 80 characters, gets the
+  refusal instead and changes nothing.
 
 A run stops early, and is judged as it stands, when the model leaves the script: it ends the
 call, or a reply or timeout step arrives with no open ping to answer.
@@ -35,6 +36,7 @@ from app.calls.gates import (
     CallFacts,
     facts_from_timeline,
     give_up_gate,
+    length_gate,
     low_offer_gate,
     money_gate,
 )
@@ -116,11 +118,15 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         key = args.get("field_requested")
         if isinstance(key, str) and key in data.ask_first_values():
             state.ping = _Ping(messages.field_approval_question(key)[0], "field_approval")
+        elif (too_long := length_gate(args)) is not None:
+            return too_long
         else:
             state.ping = _Ping(str(args.get("question", "")).strip(), "decision")
         state.latest_answer = None  # a new question: no answer to it yet
         return messages.ask_user_result(data.calling_name)
     if name == "report_decision":
+        if (too_long := length_gate(args)) is not None:
+            return too_long
         action = args.get("action")
         if action in SETTLING_ACTIONS:
             facts = state.facts()

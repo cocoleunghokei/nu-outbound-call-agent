@@ -11,6 +11,10 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
 - **Low offer** (``low_offer_gate``): accept is refused when the model's own ``dimensions``
   say a hard constraint is broken and no fallback matches, unless the user's answer to the
   latest ping was a "yes". take_fallback is refused when neither check passes.
+- **Too long** (``length_gate``): ``ask_user`` (a decision ping) and ``report_decision`` are
+  refused when ``reason`` or ``missed_preference`` is over ``CARD_TEXT_MAX`` characters, the
+  length the user can read on the card at a glance (DC-5). Models can't count characters, so
+  the prompt alone kept missing it (D5-len in the in-call eval).
 - **Give up** (``give_up_gate``): ``report_outcome`` with ``needs_follow_up`` is refused when
   the user was never asked (no ping answered or expired) and the user didn't press End. The
   agent must ask before it gives up.
@@ -41,6 +45,9 @@ APPROVING_REPLY = re.compile(
     re.IGNORECASE,
 )
 SETTLING_ACTIONS = frozenset({"accept", "take_fallback"})
+# DC-5: a reason the user reads in about 2 seconds. The schemas allow 200; this is the policy.
+CARD_TEXT_MAX = 80
+CARD_TEXT_FIELDS = ("reason", "missed_preference")
 
 REFUSED_MONEY = (
     "Not done: the business mentioned money (a deposit, fee, card hold or charge) and the user "
@@ -55,7 +62,12 @@ REFUSED_GIVE_UP = (
     "Not done: you have not asked the user yet. Do not end the call. Call ask_user with what "
     "they offered and what the user asked for, then wait for the answer."
 )
-REFUSALS = (REFUSED_MONEY, REFUSED_LOW_OFFER, REFUSED_GIVE_UP)
+REFUSED_TOO_LONG = (
+    f"Not done: reason and missed_preference must each be {CARD_TEXT_MAX} characters or fewer, "
+    "so the user can read the card at a glance. Call the same tool again right away with "
+    "shorter wording: one idea, plain words. Say nothing to the business about this."
+)
+REFUSALS = (REFUSED_MONEY, REFUSED_LOW_OFFER, REFUSED_GIVE_UP, REFUSED_TOO_LONG)
 
 
 @dataclass(frozen=True)
@@ -103,6 +115,15 @@ def low_offer_gate(
         return REFUSED_LOW_OFFER
     if action == "take_fallback" and meets is False and matches is False:
         return REFUSED_LOW_OFFER
+    return None
+
+
+def length_gate(arguments: Mapping[str, Any]) -> str | None:
+    """The refusal for a ``reason`` or ``missed_preference`` too long for the card, else None."""
+    for key in CARD_TEXT_FIELDS:
+        value = arguments.get(key)
+        if isinstance(value, str) and len(value.strip()) > CARD_TEXT_MAX:
+            return REFUSED_TOO_LONG
     return None
 
 
