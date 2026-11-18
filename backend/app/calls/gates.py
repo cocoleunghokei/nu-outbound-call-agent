@@ -27,6 +27,10 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
   ``details.staff_name`` is a name the business never said (SM-06 put the restaurant's own
   name there). Dates, times and confirmation numbers are checked after the call instead
   (``app/postcall/decide.py``).
+- **Second counter** (``counter_gate``): ``report_decision`` counter is refused when the
+  agent already countered and the user hasn't answered a ping since (Q9: counter once, then
+  ask). C4-05 countered twice instead of pinging. After the user answers ("ask for Friday
+  instead"), the agent may counter again.
 - **Give up** (``give_up_gate``): ``report_outcome`` with ``needs_follow_up`` is refused when
   the user was never asked (no ping answered or expired) and the user didn't press End. The
   agent must ask before it gives up.
@@ -111,6 +115,10 @@ REFUSED_NOT_A_FALLBACK = (
     "Not done: the offer you heard matches none of the user's fallbacks. Do not take it as a "
     "fallback. Counter once, or call ask_user."
 )
+REFUSED_SECOND_COUNTER = (
+    "Not done: you already countered once. Do not ask the business for anything else. Call "
+    "ask_user now with what they offered and what the user asked for."
+)
 REFUSALS = (
     REFUSED_MONEY,
     REFUSED_LOW_OFFER,
@@ -119,6 +127,7 @@ REFUSALS = (
     REFUSED_NEEDLESS_PING,
     REFUSED_UNSAID_NAME,
     REFUSED_NOT_A_FALLBACK,
+    REFUSED_SECOND_COUNTER,
 )
 
 
@@ -129,6 +138,8 @@ class CallFacts:
     ``money_since_yes``: the business mentioned money after the user's last approving reply
     (or ever, if there was none). ``latest_ping_approved``: the most recent ping was answered
     with an approving reply. ``user_was_asked``: some ping was answered or expired.
+    ``countered_since_answer``: the agent recorded a counter after the user's last answer to
+    a decision ping (or ever, if there was none).
     ``ending``: the user pressed End (or the pause cap fired). ``business_said``: every
     business transcript line so far, joined and casefolded.
     """
@@ -136,6 +147,7 @@ class CallFacts:
     money_since_yes: bool = False
     latest_ping_approved: bool = False
     user_was_asked: bool = False
+    countered_since_answer: bool = False
     ending: bool = False
     business_said: str = ""
 
@@ -243,6 +255,13 @@ def unsaid_name_gate(arguments: Mapping[str, Any], facts: CallFacts) -> str | No
     return REFUSED_UNSAID_NAME
 
 
+def counter_gate(action: object, facts: CallFacts) -> str | None:
+    """The refusal for a second counter before the user has answered a ping, else None."""
+    if action == "counter" and facts.countered_since_answer:
+        return REFUSED_SECOND_COUNTER
+    return None
+
+
 def give_up_gate(outcome: str, facts: CallFacts) -> str | None:
     """The refusal for ending as needs_follow_up without ever asking the user, else None."""
     if outcome == "needs_follow_up" and not facts.user_was_asked and not facts.ending:
@@ -255,22 +274,27 @@ def facts_from_timeline(
 ) -> CallFacts:
     """``CallFacts`` from the call's events in order, as ``(kind, text)``.
 
-    Kinds: ``business`` (a business transcript line), ``answered`` (a decision ping answered,
-    with the reply text), ``field_answered`` (an Ask-me-first approval answered: it counts as
-    asking, never as approving money) and ``expired`` (a ping that timed out).
+    Kinds: ``business`` (a business transcript line), ``countered`` (the agent recorded a
+    counter), ``answered`` (a decision ping answered, with the reply text),
+    ``field_answered`` (an Ask-me-first approval answered: it counts as asking, never as
+    approving money or as an answer to a counter) and ``expired`` (a ping that timed out).
     ``latest_ping_answer`` is the reply to the most recent ping if it was a decision ping and
     was answered, else None.
     """
     money_since_yes = False
     asked = False
+    countered = False
     said: list[str] = []
     for kind, text in timeline:
         if kind == "business":
             said.append(text.casefold())
         if kind == "business" and mentions_money(text):
             money_since_yes = True
+        elif kind == "countered":
+            countered = True
         elif kind == "answered":
             asked = True
+            countered = False
             if is_approving(text):
                 money_since_yes = False
         elif kind in ("expired", "field_answered"):
@@ -279,6 +303,7 @@ def facts_from_timeline(
         money_since_yes=money_since_yes,
         latest_ping_approved=latest_ping_answer is not None and is_approving(latest_ping_answer),
         user_was_asked=asked,
+        countered_since_answer=countered,
         ending=ending,
         business_said="\n".join(said),
     )
@@ -303,7 +328,8 @@ async def load_facts(conn: AsyncConnection[Any], call_id: UUID) -> CallFacts:
             "select e.type, e.payload, p.kind from public.call_events e"
             " left join public.pings p on p.ping_id::text = e.payload->>'ping_id'"
             " where e.call_id = %s and (e.type = 'ping.resolved'"
-            "  or (e.type = 'transcript.final' and e.payload->>'role' = 'business'))"
+            "  or (e.type = 'transcript.final' and e.payload->>'role' = 'business')"
+            "  or (e.type = 'agent.decision' and e.payload->>'action' = 'counter'))"
             " order by e.seq",
             (call_id,),
         )
@@ -314,6 +340,8 @@ async def load_facts(conn: AsyncConnection[Any], call_id: UUID) -> CallFacts:
             continue
         if event_type == "transcript.final":
             timeline.append(("business", str(payload.get("text") or "")))
+        elif event_type == "agent.decision":
+            timeline.append(("countered", ""))
         elif payload.get("state") == "answered":
             kind = "answered" if ping_kind == "decision" else "field_answered"
             timeline.append((kind, str(payload.get("reply_text") or "")))

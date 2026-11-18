@@ -35,6 +35,7 @@ from app.calls.decisions import NOTED
 from app.calls.gates import (
     SETTLING_ACTIONS,
     CallFacts,
+    counter_gate,
     facts_from_timeline,
     give_up_gate,
     length_gate,
@@ -150,6 +151,10 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         if (too_long := length_gate(args)) is not None:
             return too_long
         action = args.get("action")
+        if action == "counter":
+            if (second := counter_gate(action, state.facts())) is not None:
+                return second
+            state.timeline.append(("countered", ""))  # agent.decision, as the backend logs it
         if action in SETTLING_ACTIONS:
             facts = state.facts()
             score = score_tool_call(state.brief, args)

@@ -11,6 +11,7 @@ import pytest
 from app.calls.scoring import (
     check_item,
     check_rule,
+    fix_offer_year,
     same_person,
     score_offer,
     score_tool_call,
@@ -220,3 +221,42 @@ def test_score_tool_call_needs_a_brief_and_an_offer() -> None:
     assert score_tool_call(BRIEF_A, {"offer": "3pm"}) is None
     score = score_tool_call(BRIEF_A, offer)
     assert score is not None and score.fits is False
+
+
+# --- the year the model guessed --------------------------------------------------------------
+# Eval run 2026-11-18T0303Z: the brief never said the year, the model wrote 2025-11-19, and the
+# gates refused a correct accept of Thursday 2pm (C4-01, C4-02, C4-15, C4-17, T-01).
+
+
+def test_a_wrong_year_is_moved_to_the_briefs_year() -> None:
+    offer = {"date": "2025-11-19", "time": "14:00", "person": "Dr. Rivera"}
+    assert fix_offer_year(BRIEF_A, offer)["date"] == "2026-11-19"
+    assert score_offer(BRIEF_A, offer).fits is True
+
+
+def test_a_wrong_year_still_matches_the_fallback() -> None:
+    score = score_offer(BRIEF_A, {"date": "2025-11-20", "time": "10:00"})
+    assert score.matches_fallback is True
+
+
+def test_a_wrong_year_does_not_hide_a_broken_rule() -> None:
+    score = score_offer(BRIEF_A, {"date": "2025-11-19", "time": "15:00"})
+    assert score.broken_constraint == "Before 3pm"
+
+
+def test_a_date_across_new_year_goes_to_the_next_january() -> None:
+    brief = {
+        "constraints": [{"text": "On 30 December", "rules": [{"kind": "date", "on": "2026-12-30"}]}]
+    }
+    assert fix_offer_year(brief, {"date": "2026-01-02"})["date"] == "2027-01-02"
+
+
+def test_the_year_is_left_alone_when_the_brief_names_no_date() -> None:
+    brief = {"constraints": [{"text": "Before 3pm", "rules": [BEFORE_3PM]}]}
+    offer = {"date": "2025-11-19"}
+    assert fix_offer_year(brief, offer) is offer
+
+
+def test_a_malformed_offer_date_is_left_alone() -> None:
+    offer = {"date": "Thursday"}
+    assert fix_offer_year(BRIEF_A, offer) is offer

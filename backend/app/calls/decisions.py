@@ -29,6 +29,7 @@ from psycopg import AsyncConnection
 from app.calls import messages
 from app.calls.gates import (
     SETTLING_ACTIONS,
+    counter_gate,
     length_gate,
     load_brief,
     load_facts,
@@ -57,6 +58,11 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
         logger.info("report_decision refused by the length gate for call %s", ctx.call_id)
         return too_long
     action = ctx.arguments.get("action")
+    if action == "counter":
+        second = counter_gate(action, await load_facts(conn, ctx.call_id))
+        if second is not None:
+            logger.info("report_decision refused by the counter gate for call %s", ctx.call_id)
+            return second
     if action in SETTLING_ACTIONS:
         facts = await load_facts(conn, ctx.call_id)
         score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)

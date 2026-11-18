@@ -14,14 +14,17 @@ Every brief item gets one of three results:
 - ``unknown``: it has no rules (text only), a rule has no bound, or the offer doesn't say
   the value a rule needs. Python has no opinion, and the model's own judgment stands.
 
-No database, no network, no clock: the offer's date is already resolved by the model, and
-the brief's dates are absolute. Malformed values count as unknown rather than raising,
-because a scoring bug must never block a call.
+No database, no network, no clock: the offer's date is resolved by the model, and the
+brief's dates are absolute. The model often gets the year wrong (it says "19 November" and
+the model guesses a past year), so before scoring, ``fix_offer_year`` moves the offer's date
+to the year that puts it closest to the brief's own dates. Malformed values count as
+unknown rather than raising, because a scoring bug must never block a call.
 """
 
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Any, Literal
 
 Check = Literal["pass", "fail", "unknown"]
@@ -171,8 +174,63 @@ def _items(brief: Mapping[str, Any], key: str, offer: Mapping[str, Any]) -> tupl
     )
 
 
+def _brief_dates(brief: Mapping[str, Any]) -> list[date]:
+    """Every date a rule in ``brief`` names (on, earliest, latest)."""
+    found: list[date] = []
+    for key in ("constraints", "preferences", "fallbacks"):
+        items = brief.get(key)
+        for item in items if isinstance(items, list) else []:
+            rules = item.get("rules") if isinstance(item, Mapping) else None
+            for rule in rules if isinstance(rules, list) else []:
+                if not isinstance(rule, Mapping) or rule.get("kind") != "date":
+                    continue
+                for bound in ("on", "earliest", "latest"):
+                    day = _iso_date(rule.get(bound))
+                    if day is not None:
+                        found.append(day)
+    return found
+
+
+def _iso_date(value: object) -> date | None:
+    text = _text(value, _DATE)
+    if text is None:
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+def fix_offer_year(brief: Mapping[str, Any], offer: Mapping[str, Any]) -> Mapping[str, Any]:
+    """``offer`` with its date moved to the year closest to the brief's dates.
+
+    The month and day are what the business said; the year is the model's guess. "19 November"
+    in a call about 2026-11-19 is 2026-11-19, even if the model wrote 2025. Across a new year,
+    "2 January" in a call about 30 December is the next January. Returns ``offer`` unchanged
+    when the brief names no dates or the offer has no well-formed date.
+    """
+    said = _iso_date(offer.get("date"))
+    anchors = _brief_dates(brief)
+    if said is None or not anchors:
+        return offer
+    anchor = min(anchors)
+    candidates = []
+    for year in (anchor.year - 1, anchor.year, anchor.year + 1):
+        try:
+            candidates.append(said.replace(year=year))
+        except ValueError:  # 29 February in a year that has none
+            continue
+    if not candidates:
+        return offer
+    best = min(candidates, key=lambda day: abs((day - anchor).days))
+    if best == said:
+        return offer
+    return {**offer, "date": best.isoformat()}
+
+
 def score_offer(brief: Mapping[str, Any], offer: Mapping[str, Any]) -> OfferScore:
     """Check every constraint, preference and fallback of ``brief`` (brief.v1 JSON)."""
+    offer = fix_offer_year(brief, offer)
     return OfferScore(
         constraints=_items(brief, "constraints", offer),
         preferences=_items(brief, "preferences", offer),

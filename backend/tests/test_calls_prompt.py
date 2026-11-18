@@ -9,6 +9,7 @@ import pytest
 from app.calls.assistant import TEMPERATURE, build_assistant_config
 from app.calls.prompt import GUARDRAIL_RULES, build_system_prompt, opening_request
 from app.contracts.generated import Brief
+from app.postcall.handlers import NOTED as OUTCOME_NOTED
 from app.voice.fake import FakeVoicePlatform
 from app.voice.port import prepare_assistant
 from app.voice.prompt_safety import AskFirstInPrompt, MissingVar, Snapshot
@@ -172,7 +173,9 @@ def test_it_confirms_and_waits_for_goodbye_before_hanging_up() -> None:
     assert "read back only what they haven't said" in prompt
     assert "Call report_outcome once, before your goodbye." in prompt
     assert "End the call only after the business says goodbye" in prompt
-    assert 'a clear wrap-up ("You\'re all set", "Anything else?")' in prompt
+    # T-01 (eval 0319Z): it hung up after "You're booked", before the business's goodbye (Q12).
+    assert '"You\'re booked" or "You\'re all set" is not a goodbye' in prompt
+    assert "clear wrap-up" not in prompt
     assert "You may end without waiting only when the business hangs up" in prompt
 
 
@@ -377,3 +380,28 @@ def test_a_better_offer_while_waiting_is_taken_right_away() -> None:
     assert "If the business speaks without a new offer, say only" in prompt
     assert "take it right away and call report_decision: that withdraws your question" in prompt
     assert "If it is still Low, call ask_user again" in prompt
+
+
+def test_prompt_spells_out_the_briefs_dates_with_the_year() -> None:
+    # Without the year the model wrote 2025 and the gates refused correct offers (eval 0303Z).
+    brief = make_brief(
+        constraints=[
+            {"text": "On Thursday 19 November", "rules": [{"kind": "date", "on": "2026-11-19"}]},
+            {"text": "Before 3pm", "rules": [{"kind": "time", "latest": "14:59"}]},
+        ],
+        fallbacks=[{"text": "Fri 20 Nov", "rules": [{"kind": "date", "on": "2026-11-20"}]}],
+    )
+    prompt = build_system_prompt(brief, SNAPSHOT)
+    assert (
+        "<dates>\n- Thursday 19 November 2026 (2026-11-19)\n"
+        "- Friday 20 November 2026 (2026-11-20)\n</dates>" in prompt
+    )
+
+
+def test_prompt_dates_say_none_without_date_rules() -> None:
+    assert "<dates>\n- (none)\n</dates>" in build_system_prompt(make_brief(), SNAPSHOT)
+
+
+def test_the_outcome_result_says_to_wait_for_the_business_goodbye() -> None:
+    # T-01 (eval 0319Z): "You can say goodbye and end the call" made it hang up at once (Q12).
+    assert "end the call only after the business says goodbye" in OUTCOME_NOTED

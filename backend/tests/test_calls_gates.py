@@ -22,10 +22,12 @@ from app.calls.gates import (
     REFUSED_MONEY,
     REFUSED_NEEDLESS_PING,
     REFUSED_NOT_A_FALLBACK,
+    REFUSED_SECOND_COUNTER,
     REFUSED_TOO_LONG,
     REFUSED_UNSAID_NAME,
     CallFacts,
     breaks_rule_refusal,
+    counter_gate,
     facts_from_timeline,
     give_up_gate,
     is_approving,
@@ -107,6 +109,27 @@ def test_money_needs_a_yes_after_it_was_mentioned() -> None:
         ending=False,
     )
     assert money_gate("accept", new_money) == REFUSED_MONEY  # PI-09: a yes covers one amount
+
+
+def test_only_one_counter_before_the_user_answers() -> None:
+    # C4-05 run 2 (eval 0319Z): it countered for earlier Thursday, then again for Friday
+    # morning, instead of pinging Alex after the first counter (Q9).
+    def facts(*timeline: tuple[str, str]) -> CallFacts:
+        return facts_from_timeline(list(timeline), latest_ping_answer=None, ending=False)
+
+    assert counter_gate("counter", facts()) is None  # the first counter
+    once = facts(("business", "We have Thursday at 3pm."), ("countered", ""))
+    assert counter_gate("counter", once) == REFUSED_SECOND_COUNTER
+    assert counter_gate("accept", once) is None  # only a counter is gated
+    # Alex answered ("ask for Friday instead"): one more counter is allowed.
+    assert counter_gate("counter", facts(("countered", ""), ("answered", "Ask for Friday"))) is None
+    assert (
+        counter_gate("counter", facts(("countered", ""), ("answered", "Ask"), ("countered", "")))
+        == REFUSED_SECOND_COUNTER
+    )
+    # Neither a field approval nor a timeout answers the counter.
+    assert counter_gate("counter", facts(("countered", ""), ("field_answered", "Share it")))
+    assert counter_gate("counter", facts(("countered", ""), ("expired", "")))
 
 
 def test_a_field_approval_never_approves_money() -> None:
@@ -445,5 +468,37 @@ def test_the_heard_offer_is_scored_against_the_calls_brief_through_the_webhook(
             refused = [{"toolCallId": tc, "result": breaks_rule_refusal("Before 3pm")}]
             assert response.json()["results"] == refused
             assert not [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_a_second_counter_is_refused_and_not_logged(supabase_env: SupabaseEnv) -> None:
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            await post(client, transcript_body(call, "We have Thursday at 3pm exactly."))
+            tc = f"tc-{uuid.uuid4()}"
+            first = await post(
+                client, tool_body(call, [(tc, "report_decision", _decision("counter", DIMS_LOW))])
+            )
+            assert first.json()["results"] == [{"toolCallId": tc, "result": "Noted."}]
+            await post(client, transcript_body(call, "No, 3pm is the earliest we have."))
+            tc2 = f"tc-{uuid.uuid4()}"
+            second = await post(
+                client,
+                tool_body(
+                    call,
+                    [(tc2, "report_decision", _decision("counter", DIMS_LOW))],
+                    timestamp=1794081690000,
+                ),
+            )
+            assert second.json()["results"] == [
+                {"toolCallId": tc2, "result": REFUSED_SECOND_COUNTER}
+            ]
+            decisions = [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+            assert [d["action"] for d in decisions] == ["counter"]
 
     asyncio.run(scenario())
