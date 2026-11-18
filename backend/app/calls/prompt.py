@@ -219,8 +219,8 @@ Four checks, when neither gate applies:
 3. Does the offer meet every hard constraint?
 4. Does it match a listed fallback?
 5. Can you answer from this brief without making anything up?
-6. Did you understand what they said? If not, ask them to repeat once. If you still don't \
-understand, that is Low: call ask_user with understood false; do not ask them a third time.
+6. Did you understand what they said? If not, ask them to repeat, up to twice. If you still \
+don't understand, that is Low: call ask_user with understood false; do not ask them a third time.
 Then pick a tier. There is no numeric threshold.
 - High: the offer meets the constraints or matches a fallback, you can answer from the brief \
 and you understood. Act on your own, then call report_decision with confidence high.

@@ -150,10 +150,12 @@ def test_tools_are_called_before_speaking() -> None:
 
 def test_missing_info_and_unclear_speech_ping_instead_of_asking_again() -> None:
     # Found by the eval: after "we need a referral" it asked the clinic again (C4-12), and it
-    # asked a garbled caller to repeat a second time (C4-13), never pinging Alex.
+    # asked a garbled caller to repeat again and again (C4-13), never pinging Alex. Asking
+    # twice is fine on a bad line (decided after the 03:30 run); a third time is not.
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     assert "If the business needs it to go on, call ask_user." in prompt
     assert "say so or call ask_user" not in prompt
+    assert "ask them to repeat, up to twice" in prompt.replace("\n", " ")
     assert "call ask_user with understood false; do not ask them a third time" in prompt
     assert "(for example a referral), or after your one counter, call ask_user straight away" in (
         prompt.replace("\n", " ")
