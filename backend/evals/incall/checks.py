@@ -142,15 +142,15 @@ def evaluate(
         hits = _calls(events, test["tool"], test.get("args"))
         if not hits:
             return True, ""
-        hit = events[hits[0]]
+        call = events[hits[0]]
         asks = [
             e
             for e in model_events(record)
-            if e.kind == "tool_call" and e.tool == "ask_user" and e.step <= hit.step
+            if e.kind == "tool_call" and e.tool == "ask_user" and e.step <= call.step
         ]
         question = str(get_path(asks[-1].args, "question") or "") if asks else ""
         named = _first_match([question], test["asked_any"]) if question else None
-        return (True, f"the question named it: {named}") if named else (False, _short(hit))
+        return (True, f"the question named it: {named}") if named else (False, _short(call))
     if op == "says":
         hit = _first_match(_speech(events), test["any"])
         return (True, hit) if hit else (False, " / ".join(_speech(events)) or "said nothing")

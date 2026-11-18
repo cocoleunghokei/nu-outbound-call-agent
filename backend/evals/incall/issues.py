@@ -152,12 +152,36 @@ def _inline(text: str) -> str:
     return re.sub(r"`(.+?)`", r"<code>\1</code>", escaped)
 
 
+def _cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _table_html(rows: list[str]) -> str:
+    """A pipe table: the first row is the header, a ``| --- |`` row is skipped."""
+    body = [r for r in rows if not re.fullmatch(r"\|?[\s:|-]+\|?", r.strip())]
+    if not body:
+        return ""
+    head = "".join(f"<th>{_inline(c)}</th>" for c in _cells(body[0]))
+    cells = (
+        "<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in _cells(r)) + "</tr>" for r in body[1:]
+    )
+    return f'<div class="scroll"><table><tr>{head}</tr>{"".join(cells)}</table></div>'
+
+
 def notes_html(notes: str) -> str:
-    """A small Markdown subset as HTML: headings, bullets, paragraphs, **bold**, `code`."""
+    """A small Markdown subset as HTML: headings, bullets, pipe tables, paragraphs, **bold**,
+    `code`."""
     out: list[str] = []
     in_list = False
-    for raw in notes.strip().splitlines():
+    table: list[str] = []
+    for raw in [*notes.strip().splitlines(), ""]:
         line = raw.rstrip()
+        if line.lstrip().startswith("|"):
+            table.append(line)
+            continue
+        if table:
+            out.append(_table_html(table))
+            table = []
         bullet = re.match(r"^\s*[-*]\s+(.*)$", line)
         if bullet:
             if not in_list:

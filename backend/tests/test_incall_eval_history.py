@@ -161,5 +161,30 @@ def test_every_committed_note_names_a_results_folder() -> None:
     from evals.incall.issues import NOTES_DIR
 
     for path in NOTES_DIR.glob("*.md"):
-        if path.name != "README.md":
+        if path.name not in ("README.md", "ISSUES.md"):
             assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{4}Z\.md", path.name), path.name
+
+
+def test_notes_markdown_renders_a_pipe_table() -> None:
+    from evals.incall.issues import notes_html
+
+    out = notes_html("| Issue | Fix |\n| --- | --- |\n| **No tool call** | `rule` <b> |\nAfter.")
+    assert "<th>Issue</th><th>Fix</th>" in out
+    assert "<td><b>No tool call</b></td><td><code>rule</code> &lt;b&gt;</td>" in out
+    assert "---" not in out and out.endswith("<p>After.</p>")
+
+
+def test_the_page_opens_with_the_issues_summary(tmp_path: Path) -> None:
+    summary = tmp_path / "ISSUES.md"
+    summary.write_text("## Biggest issues and fixes\n| Issue | Fix |\n| --- | --- |\n| A | B |")
+    page = render_page([], GENERATED, summary_path=summary)
+    assert '<section class="summary"><h4>Biggest issues and fixes</h4>' in page
+    assert "<td>A</td><td>B</td>" in page
+    assert '<section class="summary">' not in render_page([], GENERATED, tmp_path / "none.md")
+
+
+def test_the_committed_issues_summary_renders() -> None:
+    from evals.incall.history import SUMMARY_FILE, summary_section
+
+    section = summary_section(SUMMARY_FILE)
+    assert "<th>Issue</th>" in section and "No tool call" in section

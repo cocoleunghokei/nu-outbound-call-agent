@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from evals.incall.issues import find_issues, issues_html, notes_for
+from evals.incall.issues import NOTES_DIR, find_issues, issues_html, notes_for, notes_html
 from evals.incall.records import CheckResult, RunRecord
 from evals.incall.report import TARGETS_S, TURN_LABELS, Metrics, Results, cost, load, metrics
 from evals.incall.run import RESULTS_DIR
@@ -340,10 +340,26 @@ code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12px;wor
 table.trend td,table.trend th{white-space:nowrap}
 h4{margin:12px 0 4px;font-size:14px}ul.issues{padding-left:18px;font-size:14px}
 ul.issues li{margin:6px 0}.lvl.soft{color:var(--wait)}
+section.summary{background:var(--card);border:1px solid var(--line);border-radius:10px;
+padding:4px 14px 12px;margin:10px 0}section.summary h4{font-size:16px}
+section.summary td{font-size:13px}
 """
 
 
-def render_page(evals: Sequence[Eval], generated: datetime) -> str:
+# The team's running summary of the biggest issues and their fixes, kept in git.
+SUMMARY_FILE = NOTES_DIR / "ISSUES.md"
+
+
+def summary_section(path: Path = SUMMARY_FILE) -> str:
+    """The "Biggest issues and fixes" summary from notes/ISSUES.md, or nothing if it's missing."""
+    if not path.exists():
+        return ""
+    return f'<section class="summary">{notes_html(path.read_text(encoding="utf-8"))}</section>'
+
+
+def render_page(
+    evals: Sequence[Eval], generated: datetime, summary_path: Path = SUMMARY_FILE
+) -> str:
     """The whole history page."""
     by_day: dict[str, list[Eval]] = defaultdict(list)
     for ev in evals:
@@ -374,7 +390,7 @@ def render_page(evals: Sequence[Eval], generated: datetime) -> str:
         f'<p class="muted">{len(evals)} eval run(s). '
         f"Generated {e(generated.strftime('%Y-%m-%d %H:%M UTC'))} "
         "by <code>make eval-incall-history</code>. Scoring rules: JUDGE.md.</p>"
-        f"{body}</main></body></html>\n"
+        f"{summary_section(summary_path)}{body}</main></body></html>\n"
     )
 
 
