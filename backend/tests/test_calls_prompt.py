@@ -287,14 +287,20 @@ def test_an_ask_first_value_typed_into_the_brief_blocks_the_call() -> None:
 # --- Q2 and Q8 (backend/evals/incall/CASES.md) ----------------------------------------------
 
 
-def test_prompt_quotes_what_the_opening_line_asked_for_as_a_hard_constraint() -> None:
+def test_the_opening_line_is_quoted_but_sets_no_priority() -> None:
+    # Q8, revised: only the typed lists say what is a must or a nice to have. The opening line
+    # used to count as a hard constraint, which overruled "With Dr. Rivera" typed as a
+    # preference (C4-06).
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     assert (
         "<first_sentence_asked_for>I'd like to reschedule an appointment with Dr. Lee."
         "</first_sentence_asked_for>"
     ) in prompt
-    assert "What your first sentence asked for" in prompt and "is also a hard constraint" in prompt
-    assert "it wins, because it is the range Alex accepts" in prompt
+    assert "is also a hard constraint" not in prompt
+    assert "It is not a rule: it never makes anything a must or a nice to have." in (
+        prompt.replace("\n", " ")
+    )
+    assert "say what changed in the reason" in prompt.replace("\n", " ")
 
 
 def test_opening_request_resolves_share_freely_field_refs() -> None:

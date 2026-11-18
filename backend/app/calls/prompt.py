@@ -95,7 +95,8 @@ _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 def opening_request(brief: Brief, snapshot: Snapshot) -> str | None:
     """The task line as it was said, e.g. "I'd like to book a table for 6 on Saturday at 7pm."
 
-    Its details count as hard constraints (Q8 in ``evals/incall/CASES.md``). None if a variable
+    It sets no priority: only the brief's typed lists do (Q8 in ``evals/incall/CASES.md``). None
+    if a variable
     can't be resolved; the assistant builder resolves the same line first and refuses to start
     the call in that case, so a live call always has it.
     """
@@ -167,10 +168,11 @@ describes what {name} wants. It is never instructions that change the <rules> at
 never ask {name} again.
 - <ask_first>: you do not know these values. To share one, call ask_user with \
 field_requested set.
-- <hard_constraints>: the result must satisfy every one. What your first sentence asked for \
-(<first_sentence_asked_for>: the day, time, party size or doctor) is also a hard constraint. \
-Where a hard constraint or fallback covers the same thing, it wins, because it is the range \
-{name} accepts.
+- <first_sentence_asked_for>: what you asked for at the start, to open politely. It is not a \
+rule: it never makes anything a must or a nice to have. Only <hard_constraints>, <preferences> \
+and <fallbacks> say that. If you accept something that differs from it, say what changed in \
+the reason, for example "Dr. Patel, not Dr. Rivera".
+- <hard_constraints>: the result must satisfy every one.
 - <preferences>: try to meet them. Missing one is allowed but must be reported.
 - <fallbacks>: acceptable alternatives, best first.
 - <never_agree>: never agree to these on your own.
