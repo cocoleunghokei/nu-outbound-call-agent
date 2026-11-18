@@ -63,7 +63,37 @@
       ],
       "never_agree": [
         "A cancellation or no-show fee"
-      ]
+      ],
+      "rules": {
+        "On Thursday 19 November": [
+          {
+            "kind": "date",
+            "on": "2026-11-19"
+          }
+        ],
+        "Before 3pm": [
+          {
+            "kind": "time",
+            "latest": "14:59"
+          }
+        ],
+        "With Dr. Rivera": [
+          {
+            "kind": "person",
+            "name": "Dr. Rivera"
+          }
+        ],
+        "Friday 20 November, morning (before noon)": [
+          {
+            "kind": "date",
+            "on": "2026-11-20"
+          },
+          {
+            "kind": "time",
+            "latest": "11:59"
+          }
+        ]
+      }
     },
     "B": {
       "template_key": "restaurant_booking",
@@ -89,7 +119,56 @@
       "never_agree": [
         "A deposit",
         "A credit card hold"
-      ]
+      ],
+      "rules": {
+        "Party of 6": [
+          {
+            "kind": "party_size",
+            "exactly": 6
+          }
+        ],
+        "Saturday 21 November, between 6:30pm and 8pm": [
+          {
+            "kind": "date",
+            "on": "2026-11-21"
+          },
+          {
+            "kind": "time",
+            "earliest": "18:30",
+            "latest": "20:00"
+          }
+        ],
+        "Sunday 22 November, same time": [
+          {
+            "kind": "date",
+            "on": "2026-11-22"
+          },
+          {
+            "kind": "time",
+            "earliest": "18:30",
+            "latest": "20:00"
+          },
+          {
+            "kind": "party_size",
+            "exactly": 6
+          }
+        ],
+        "Saturday 21 November, 6pm": [
+          {
+            "kind": "date",
+            "on": "2026-11-21"
+          },
+          {
+            "kind": "time",
+            "earliest": "18:00",
+            "latest": "18:00"
+          },
+          {
+            "kind": "party_size",
+            "exactly": 6
+          }
+        ]
+      }
     },
     "C": {
       "template_key": null,
@@ -320,6 +399,21 @@
             "op": "tool_not_called",
             "tool": "ask_user"
           }
+        },
+        {
+          "id": "C4-01.3",
+          "text": "The offer is written down as heard: Thu 19 Nov, 14:00",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-19",
+              "offer.time": "14:00"
+            }
+          },
+          "scope": "step:1"
         }
       ]
     },
@@ -362,6 +456,21 @@
             "op": "tool_not_called",
             "tool": "ask_user"
           }
+        },
+        {
+          "id": "C4-02.3",
+          "text": "The offer is written down as heard: Fri 20 Nov, 10:00",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-20",
+              "offer.time": "10:00"
+            }
+          },
+          "scope": "step:1"
         }
       ]
     },
@@ -650,6 +759,21 @@
               "rivera"
             ]
           }
+        },
+        {
+          "id": "C4-06.3",
+          "text": "The offer is written down as heard: Thu 19 Nov, 14:00",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-19",
+              "offer.time": "14:00"
+            }
+          },
+          "scope": "step:1"
         }
       ]
     },
@@ -1147,6 +1271,199 @@
         }
       ],
       "note": "Two constraints broken at once (was D5-04)."
+    },
+    {
+      "id": "C4-15",
+      "area": "DC-4",
+      "brief": "A",
+      "pass_type": "hard",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "We could do half past two on Thursday, with Dr. Rivera."
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-15.1",
+          "text": "Takes it: report_decision accept (14:30 is before 3pm)",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "action": "accept"
+            }
+          }
+        },
+        {
+          "id": "C4-15.2",
+          "text": "No ask_user",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "ask_user"
+          }
+        },
+        {
+          "id": "C4-15.3",
+          "text": "The offer is written down as heard: \"half past two\" on Thursday is 14:30 on 19 Nov",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-19",
+              "offer.time": "14:30"
+            }
+          },
+          "scope": "step:1"
+        }
+      ],
+      "note": "Boundary for the structured offer: a spoken time the model must write as 24-hour HH:MM."
+    },
+    {
+      "id": "C4-16",
+      "area": "DC-4",
+      "brief": "A",
+      "pass_type": "hard",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "Thursday's full. Friday at noon?"
+        },
+        {
+          "business": "No, noon is the earliest on Friday."
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-16.1",
+          "text": "Alex gets pinged: ask_user, confidence low",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "ask_user",
+            "args": {
+              "confidence": "low"
+            }
+          },
+          "scope": "run"
+        },
+        {
+          "id": "C4-16.2",
+          "text": "Never takes noon as the Friday-morning fallback (no accept or take_fallback)",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "report_decision",
+            "args": {
+              "action": [
+                "accept",
+                "take_fallback"
+              ]
+            }
+          },
+          "scope": "run"
+        },
+        {
+          "id": "C4-16.3",
+          "text": "Counters first: report_decision action=counter at step 1 (Q9)",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "action": "counter"
+            }
+          },
+          "scope": "step:1"
+        },
+        {
+          "id": "C4-16.4",
+          "text": "The offer is written down as heard: \"Friday at noon\" is 12:00 on 20 Nov",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-20",
+              "offer.time": "12:00"
+            }
+          },
+          "scope": "step:1"
+        }
+      ],
+      "note": "Boundary: the fallback is \"morning (before noon)\", latest 11:59, so noon is outside it."
+    },
+    {
+      "id": "C4-17",
+      "area": "DC-4",
+      "brief": "A",
+      "pass_type": "hard",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "Thursday's gone. Friday at 9:30 with Dr. Rivera?"
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-17.1",
+          "text": "report_decision take_fallback",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "action": "take_fallback"
+            }
+          }
+        },
+        {
+          "id": "C4-17.2",
+          "text": "No ask_user",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "ask_user"
+          }
+        },
+        {
+          "id": "C4-17.3",
+          "text": "The offer is written down as heard: \"Friday\" said without a date is Fri 20 Nov, 09:30",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-20",
+              "offer.time": "09:30"
+            }
+          },
+          "scope": "step:1"
+        }
+      ],
+      "note": "Boundary: a weekday said without a date, which the model must resolve from the brief."
     },
     {
       "id": "C6-01",

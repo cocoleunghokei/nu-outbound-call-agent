@@ -1,6 +1,6 @@
 # Structured Offers Plan: the model reports what it heard, Python decides if it fits
 
-> **Status:** PR 1 (contracts) and PR 2 (scoring and gates) done on `claude/structured-offers`, stacked on `claude/sweet-mccarthy-xekz3h` (#69). Next: PR 3 (prompt and eval). Owner and final reviewer: Coco, including the pre-call parts (brief format, review card).
+> **Status:** PRs 1–3 (contracts, scoring and gates, prompt and eval) done on `claude/structured-offers`, stacked on `claude/sweet-mccarthy-xekz3h` (#69). Next: measure with `make eval-incall ARGS="--cases C4- --runs 3"`, then PR 4 (rules in real briefs). Owner and final reviewer: Coco, including the pre-call parts (brief format, review card).
 
 ## Why
 

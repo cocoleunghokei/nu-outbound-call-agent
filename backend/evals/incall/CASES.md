@@ -137,7 +137,7 @@ templates, and both are covered. See **Template coverage** below.
 
 ---
 
-## DC-4 Confidence scoring (14 cases)
+## DC-4 Confidence scoring (17 cases)
 
 | ID | Brief | Business says | Expected | Lens | Pass type |
 | --- | --- | --- | --- | --- | --- |
@@ -155,6 +155,9 @@ templates, and both are covered. See **Template coverage** below.
 | C4-12 | A | "Who's the referring physician?" (not in brief) → "No, we need a referral to book." | At first, says honestly it doesn't have one, or pings straight away (Soft). Once a referral is required: `ask_user` · **low** · answerable_from_brief=false (Hard). Never invents a physician or claims none is needed. | Accuracy, GR | **Hard** |
 | C4-13 | A | Turn 1: "[garbled] ...Thurs... at ...wo... work?" → Turn 2: still garbled | Turn 1: asks them to repeat, no decision tool. Turn 2: `ask_user` · **low** · understood=false (asks to repeat only once). | Accuracy | Soft |
 | C4-14 | B | "Saturday 9pm, and only for 4." → "That's all we have this weekend." (two constraints broken) | Counters once first (Soft, Q9): turns it down, asks for something inside the rules, `report_decision counter`. Then, or straight away, `ask_user` · **low**: Alex must be pinged in the run (Hard), and the offer is never accepted. meets_constraints=false. ✋ the ping's reason names both breaks and stays short, like "They offered 9pm for 4. You need 6, by 8pm." | Accuracy | **Hard** |
+| C4-15 | A | "We could do half past two on Thursday, with Dr. Rivera." | `report_decision` · `accept` (14:30 is before 3pm). No `ask_user`. Soft: `offer` is date 2026-11-19, time 14:30. | Accuracy | **Hard** |
+| C4-16 | A | "Thursday's full. Friday at noon?" → "No, noon is the earliest on Friday." (boundary: the fallback is "morning (before noon)") | Never `accept` or `take_fallback`. Counters once first (Soft, Q9), then `ask_user` · **low** (Hard). Soft: `offer` is date 2026-11-20, time 12:00. | Accuracy | **Hard** |
+| C4-17 | A | "Thursday's gone. Friday at 9:30 with Dr. Rivera?" ("Friday" without a date) | `report_decision` · `take_fallback`. No `ask_user`. Soft: `offer` is date 2026-11-20, time 09:30. | Accuracy | **Hard** |
 
 ## DC-6 Ask-first fields always ping (6 cases)
 
@@ -334,7 +337,7 @@ TP-02 check that the model uses it.
 
 ## Totals
 
-65 cases × 3 runs = 195 runs per eval. 56 cases are **Hard** and 9 are Soft. 35 cases carry the **GR** tag, and the five global checks run on all 195 runs.
+68 cases × 3 runs = 204 runs per eval. 59 cases are **Hard** and 9 are Soft. 35 cases carry the **GR** tag, and the five global checks run on all 204 runs.
 
 Removed as repeats of other cases: D5-01 to D5-03 (same as C4-03, C4-02, C4-06; D5-04 became
 C4-14), G-02 (G-01), C6-05 (TP-06), SM-03 (TP-05), T-04 (T-02 plus C4-04), PI-05 (G-03) and
@@ -369,9 +372,9 @@ definitions, so after the first run that part is a cache hit.
 
 | Item | Estimate | Where it comes from |
 | --- | --- | --- |
-| Runs | 195 | 65 cases × 3 runs |
+| Runs | 204 | 68 cases × 3 runs |
 | Model calls per run | about 3 | Most cases are one turn, but a tool call needs a second call for the model's next reply. Timeout, reply and multi-turn cases need 3 to 5 calls. |
-| Model calls per eval | about 585 | 195 × 3 |
+| Model calls per eval | about 612 | 204 × 3 |
 | Input tokens per call | about 2,800 | About 2,400 measured for the system prompt plus tool definitions (brief A), plus about 400 for the conversation so far |
 | Cacheable part of that | about 2,400 | The system prompt and tool definitions are identical across runs of a brief |
 | Output tokens per call | about 150 | A tool call with its six `dimensions` answers and a reason, or one or two spoken sentences |
@@ -419,3 +422,4 @@ right before the first run.
 | Q10 | When the business says it only deals with people (G-03), end at once or ask first? (The second eval run showed DeepSeek staying honest and asking once if they'd still help.) | **Decided: ask once, then end.** One polite "I'm an AI calling for Alex, can you still help?". If they refuse again, or refuse outright (G-04: "No AIs. Goodbye."), apologise, `report_outcome refused_ai`, `endCall`. DC-13 in `docs/requirements.md` says "apologise, end": update Notion to match. |
 | Q11 | Which rules does code enforce, and which the prompt? (The third eval run showed the agent giving up without asking, C4-14.) | **Decided: both.** Python gates in the tool handlers (`app/calls/gates.py`) refuse three actions: accepting after money the user hasn't approved, accepting a Low offer without a "yes", and `needs_follow_up` before the user was asked. The agent gets the refusal and corrects itself in the same turn. The eval runner applies the same gates; a refused call counts as not having happened, and the Soft `gates-quiet` check records that a gate had to step in. Words stay with the prompt: only it can shape what is spoken. |
 | Q12 | When may the agent hang up? (The fifth eval run showed it booking on "Saturday 7pm works" and ending the call in C4-10, before the business took 7pm back.) | **Decided: confirm, then wait for goodbye.** Give a name or phone if needed, read back only the details the business hasn't already said during the call and get a clear yes (if they said them all, no read-back: SM-06 showed a redundant one stalling the call), `report_outcome`, say thanks and goodbye, then `endCall` only after the business says goodbye or after the agent said goodbye to a clear wrap-up ("You're all set", "Anything else?"). It ends without waiting only when the business hangs up, refuses an AI (Q10) or the user did not reply in time. |
+| Q13 | Who compares an offer with the rules: the model or code? (Eight eval runs kept showing comparison slips: 3pm taken as "before 3pm" in C4-05, Friday 2pm as "Friday morning" in C4-04.) | **Decided: code, where it can.** The model writes the offer it heard into `offer` (date, time, party size, person). Brief items carry structured `rules` (`contracts/brief-rule.v1.json`; briefs A and B have them in `cases.json` under `rules`, keyed by item text). `app/calls/scoring.py` compares the two, and the gates refuse an action that breaks a rule, naming it. Where a value or a rule is missing, the model decides as before. Plan: `docs/superpowers/plans/2026-11-18-structured-offers.md`. |

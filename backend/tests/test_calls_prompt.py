@@ -131,9 +131,8 @@ def test_every_action_is_logged_and_checking_always_pings() -> None:
     # Found by the in-call eval: it countered or accepted without report_decision, and said
     # "Let me check with Alex" without calling ask_user, so the user was never pinged.
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
-    assert "call report_decision.\nHow to call a tool: call it first, before you say anything." in (
-        prompt
-    )
+    assert "share a field), call report_decision." in prompt.replace("\n", " ")
+    assert "How to call a tool: call it first, before you say anything." in prompt
     assert "Never say the words of an action" in prompt
     assert "Never say you are checking with Alex unless you called ask_user first." in prompt
     assert "under 80 characters" in prompt
@@ -175,6 +174,15 @@ def test_it_confirms_and_waits_for_goodbye_before_hanging_up() -> None:
     assert "End the call only after the business says goodbye" in prompt
     assert 'a clear wrap-up ("You\'re all set", "Anything else?")' in prompt
     assert "You may end without waiting only when the business hangs up" in prompt
+
+
+def test_the_agent_writes_down_the_offer_it_heard() -> None:
+    # Q13 (CASES.md): code compares the offer with the rules, so the model only records it.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
+    assert "also fill offer with what the business offered, written as data" in prompt
+    assert 'time as 24-hour HH:MM ("half past two" is 14:30, noon is 12:00)' in prompt
+    assert "leave out anything you are unsure of" in prompt
+    assert "refuses an action that breaks one, naming the rule" in prompt
 
 
 def test_inventing_includes_saying_a_detail_does_not_exist() -> None:

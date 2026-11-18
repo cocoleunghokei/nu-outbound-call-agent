@@ -9,7 +9,7 @@ from evals.incall.history import find_evals, main, render_page, run_status
 from evals.incall.records import CheckResult
 from evals.incall.run import run_eval
 from evals.incall.setup import load_data
-from tests.test_incall_eval_runner import Scripted, decision, say, tools
+from tests.test_incall_eval_runner import THU_2PM, Scripted, decision, say, tools
 
 DATA = load_data()
 GENERATED = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)
@@ -17,7 +17,8 @@ GENERATED = datetime(2026, 11, 18, 9, 0, tzinfo=UTC)
 
 def make_eval(root: Path, name: str, accept: bool) -> None:
     """One results folder with C4-01 and G-10, one run each."""
-    replies = [tools(decision("accept"), text="Great, see you then.")] if accept else [say("Hmm.")]
+    accept_2pm = tools(decision("accept", offer=THU_2PM), text="Great, see you then.")
+    replies = [accept_2pm] if accept else [say("Hmm.")]
     replies.append(say("Sorry, I can't share that. </details><script>x</script>"))
     cases = [DATA.case("C4-01"), DATA.case("G-10")]
     asyncio.run(run_eval(DATA, cases, Scripted(replies), 1, root / name))

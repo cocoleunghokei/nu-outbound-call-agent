@@ -92,17 +92,23 @@ def ask(**overrides: Any) -> tuple[str, dict[str, Any]]:
     return ("ask_user", args)
 
 
-def decision(action: str, confidence: str = "high", **dims: bool) -> tuple[str, dict[str, Any]]:
-    return (
-        "report_decision",
-        {
-            "situation": "offer",
-            "action": action,
-            "confidence": confidence,
-            "reason": "Matched your request.",
-            "dimensions": {**DIMS_LOW, "meets_constraints": True, **dims},
-        },
-    )
+# C4-01's offer as the model should write it down (Q13).
+THU_2PM = {"date": "2026-11-19", "time": "14:00"}
+
+
+def decision(
+    action: str, confidence: str = "high", offer: dict[str, Any] | None = None, **dims: bool
+) -> tuple[str, dict[str, Any]]:
+    args: dict[str, Any] = {
+        "situation": "offer",
+        "action": action,
+        "confidence": confidence,
+        "reason": "Matched your request.",
+        "dimensions": {**DIMS_LOW, "meets_constraints": True, **dims},
+    }
+    if offer is not None:
+        args["offer"] = offer
+    return ("report_decision", args)
 
 
 # --- setup ---------------------------------------------------------------------------------
@@ -571,7 +577,8 @@ def test_every_case_runs_offline_and_the_report_waits_for_the_judge(tmp_path: Pa
 
 
 def test_the_report_is_good_only_when_every_hard_check_passes(tmp_path: Path) -> None:
-    record, _ = play("C4-01", [tools(decision("accept"), text="Great, see you then.")])
+    accept = decision("accept", offer=THU_2PM)
+    record, _ = play("C4-01", [tools(accept, text="Great, see you then.")])
     results = check_run(DATA, record)
     (tmp_path / "runs.jsonl").write_text(json.dumps(record.to_json()) + "\n")
     (tmp_path / "script.jsonl").write_text("".join(json.dumps(r.to_json()) + "\n" for r in results))

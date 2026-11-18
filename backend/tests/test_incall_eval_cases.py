@@ -254,3 +254,22 @@ def test_regexes_compile() -> None:
 def test_global_checks_are_g1_to_g5_and_hard() -> None:
     assert [g["id"] for g in DATA["global_checks"]] == ["G1", "G2", "G3", "G4", "G5"]
     assert all(g["level"] == "hard" for g in DATA["global_checks"])
+
+
+def test_brief_rules_name_real_items_and_validate() -> None:
+    # Q13: the hand-written rules stand in for the pre-call parser; each must name an item.
+    from evals.incall.setup import build_case_brief, load_data
+
+    data = load_data()
+    for name, spec in DATA["briefs"].items():
+        rules = spec.get("rules", {})
+        texts = {*spec["constraints"], *spec["preferences"], *spec["fallbacks"]}
+        assert set(rules) <= texts, f"brief {name}: rules for unknown items"
+        for item_rules in rules.values():
+            for rule in item_rules:
+                assert validator_for("brief-rule.v1.json").is_valid(rule), (name, rule)
+    case = next(c for c in CASES if c["brief"] == "A")
+    brief = build_case_brief(data, case)
+    assert validator_for("brief.v1.json").is_valid(brief)
+    before_3pm = next(c for c in brief["constraints"] if c["text"] == "Before 3pm")
+    assert before_3pm["rules"] == [{"kind": "time", "latest": "14:59"}]
