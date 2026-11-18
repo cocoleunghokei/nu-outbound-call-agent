@@ -371,16 +371,16 @@ def test_an_anonymous_session_can_save_a_brief_but_not_place_a_call(
     once the browser has linked an email to this user (the id does not change).
     """
     anonymous = anonymous_user(supabase_env)
-    brief_id = ready_brief(client, supabase_env, anonymous)
-    key = uuid.uuid4()
+    brief_id = ready_brief(client, supabase_env, anonymous)  # the save stores its own key
+    keys_before = idempotency_rows(supabase_env, anonymous)
 
-    refused = start(client, anonymous, brief_id, key)
+    refused = start(client, anonymous, brief_id, uuid.uuid4())
 
     assert refused.status_code == 403, refused.text
     assert refused.json()["error"]["code"] == "sign_in_required"
     assert calls_for_brief(supabase_env, brief_id) == 0
     assert voice.calls == []
-    assert idempotency_rows(supabase_env, anonymous) == 0
+    assert idempotency_rows(supabase_env, anonymous) == keys_before  # nothing stored for Start
 
 
 def test_real_calls_need_the_public_webhook_url(
