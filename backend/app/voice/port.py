@@ -13,11 +13,18 @@ from app.voice.tools import tool_definitions
 
 @dataclass
 class CreatedCall:
-    """What the platform returned for a placed call. The URLs are capabilities: never log them."""
+    """What the platform returned for a placed call. The URLs are capabilities: never log them.
+
+    ``ended`` is True when the platform says the call is already over (a lookup after an
+    uncertain creation can find a call whose end webhooks were lost); ``ended_reason`` is
+    then the platform's reason, as the end-of-call report would carry it.
+    """
 
     vapi_call_id: str
     control_url: str | None = field(repr=False)
     listen_url: str | None = field(repr=False)
+    ended: bool = False
+    ended_reason: str = ""
 
 
 class UnsafeAssistantConfig(ApiError):

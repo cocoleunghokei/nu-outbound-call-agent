@@ -49,11 +49,29 @@ export type StartResult =
   | { kind: 'saved_not_connected'; server: ServerCheck; briefId: string }
   /** Saved, but the server says something is still missing. Start stays blocked. */
   | { kind: 'blocked'; server: ServerCheck; message: string }
+  /**
+   * The session is anonymous and placing a call needs an email (ON-1). The screen opens the
+   * email step; the saved brief and the call's Idempotency-Key are kept for the next Start.
+   */
+  | { kind: 'sign_in_required'; server: ServerCheck | null; message: string }
   /** Something went wrong; `message` is plain words for the chat. */
   | { kind: 'error'; server: ServerCheck | null; message: string; error: ApiError }
 
 /** Runs Start for one brief. Returns the result and the updated session; never throws. */
 export type Starter = (brief: Brief, session: SaveSession) => Promise<{ result: StartResult; session: SaveSession }>
+
+/** `POST /calls` answered 403: the token belongs to an anonymous session. */
+export const SIGN_IN_REQUIRED = 'sign_in_required'
+export const SIGN_IN_REQUIRED_MESSAGE = 'Add your email to place this call, then tap Start again.'
+
+/** The result for Start tapped while the session is anonymous; the screen opens the email step. */
+export function signInRequired(server: ServerCheck | null = null): StartResult {
+  return { kind: 'sign_in_required', server, message: SIGN_IN_REQUIRED_MESSAGE }
+}
+
+/** `POST /calls` answered 201 with `status: "failed"`: the call provably never rang. */
+export const CALL_NOT_PLACED = 'call_not_placed'
+const CALL_NOT_PLACED_MESSAGE = "The call didn't go through, so nobody was called. Tap Start to try again."
 
 /** Demo mode: no network. Logs the brief, as the app did before Step 11. */
 export const demoStarter: Starter = async (brief, session) => {
@@ -69,9 +87,13 @@ export function keyFor(session: SaveSession, signature: string, newKey: () => st
   return [key, { ...session, keys: { ...session.keys, [signature]: key } }]
 }
 
-/** True when `POST /calls` failed because Coco's route isn't there yet, not because of the brief. */
+/**
+ * True when `POST /calls` failed because the route isn't deployed, not because of the brief.
+ *
+ * No answer at all (`NETWORK_ERROR`) is not "missing": the request may have reached the
+ * server and a call may be ringing, so it must never say "nothing was dialed".
+ */
 export function isCallRouteMissing(error: ApiError): boolean {
-  if (error.code === NETWORK_ERROR) return true
   // FastAPI's own 404/405 for an unknown route; a real "brief_not_found" is a different code.
   if (error.code === 'not_found' || error.code === 'method_not_allowed' || error.status === 405) return true
   // A 404 without the shared error shape (e.g. from a proxy in front of the API).
@@ -82,6 +104,13 @@ export function isCallRouteMissing(error: ApiError): boolean {
 export function describeError(error: ApiError, step: 'save' | 'start'): string {
   if (error.code === NO_SESSION || error.code === 'unauthenticated' || error.code === 'token_expired') {
     return "You're signed out, so I couldn't save this. Sign in again, then tap Start."
+  }
+  if (error.code === SIGN_IN_REQUIRED) return SIGN_IN_REQUIRED_MESSAGE
+  if (step === 'start' && (error.code === NETWORK_ERROR || error.status >= 500)) {
+    // No answer or a server failure: the call may have started before the answer was lost.
+    // Start again reuses the same Idempotency-Key, so the server returns that call instead
+    // of dialing a second time.
+    return "I didn't hear back from the server, so the call may have started. Check your connection, then tap Start again. It won't call twice."
   }
   if (error.code === NETWORK_ERROR) {
     return "I couldn't reach the server. Check your connection, then tap Start again."
@@ -138,13 +167,24 @@ export function apiStarter(client: ApiClient, newKey: () => string = () => crypt
     }
 
     // 3. Hand the brief to Coco's call controller.
-    const [key, withKey] = keyFor(session, `POST /calls ${saved.brief_id}`, newKey)
+    const signature = `POST /calls ${saved.brief_id}`
+    const [key, withKey] = keyFor(session, signature, newKey)
     session = withKey
     try {
       const call = await client.startCall(saved.brief_id, key)
+      if (call.status === 'failed') {
+        // 201, but the phone service refused the call. Forget the key: a replay of it would
+        // return this same failed call, and the next tap on Start should try a new one.
+        const keys = { ...session.keys }
+        delete keys[signature]
+        const error = new ApiError(CALL_NOT_PLACED, CALL_NOT_PLACED_MESSAGE, 201, true)
+        return { result: { kind: 'error', server, message: CALL_NOT_PLACED_MESSAGE, error }, session: { ...session, keys } }
+      }
       return { result: { kind: 'started', server, callId: typeof call.call_id === 'string' ? call.call_id : null }, session }
     } catch (err) {
       const error = asApiError(err)
+      // The server stored nothing for the key, so the next Start replays it as a new attempt.
+      if (error.code === SIGN_IN_REQUIRED) return { result: signInRequired(server), session }
       if (isCallRouteMissing(error)) {
         console.info('brief saved; POST /calls is not available yet', saved.brief_id)
         return { result: { kind: 'saved_not_connected', server, briefId: saved.brief_id }, session }

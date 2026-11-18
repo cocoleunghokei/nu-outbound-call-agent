@@ -14,10 +14,10 @@ Plugs into the app through ``register(reg)``, which ``create_app`` finds automat
 - ``control_worker`` worker and ``recover_outbox`` startup hook: deliver queued replies,
   timeouts and "still checking" lines to the live call (``app/calls/outbox.py``).
 
-Call creation, the opening line and the agent prompt come in the next PR.
+- ``POST /calls``: start a reviewed brief as a real call (``app/calls/create.py``).
 """
 
-from app.calls import commands, reply
+from app.calls import commands, create, reply
 from app.calls.ask import handle_ask_user
 from app.calls.decisions import handle_report_decision
 from app.calls.outbox import control_worker, recover_outbox
@@ -33,6 +33,7 @@ def register(reg: Registries) -> None:
     reg.tools.register_tool_handler("report_decision", handle_report_decision)
     reg.events.register_event_handler("status-update", handle_status_update)
     reg.events.register_event_handler("speech-update", handle_speech_update)
+    reg.add_router(create.router)
     reg.add_router(reply.router)
     reg.add_router(commands.router)
     reg.on_startup(recover_outbox)

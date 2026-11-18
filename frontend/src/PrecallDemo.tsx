@@ -1,35 +1,40 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { ChatHome } from './precall/ChatHome'
+import { EmailStep } from './precall/EmailStep'
 import { fakeProfile, fakeTemplates } from './precall/fakeBriefs'
-import { modeNote, resolveDataMode, type DataMode } from './precall/mode'
-import type { Starter } from './precall/start'
+import { modeNote } from './precall/mode'
+import { signInRequired, type Starter } from './precall/start'
+import { useDataMode } from './precall/useDataMode'
 
-// Picked once at startup: API mode needs VITE_API_URL and a signed-in session,
-// otherwise demo mode (fake data, Start only logs the brief). See precall/mode.ts.
-const dataMode: Promise<DataMode> = resolveDataMode(import.meta.env.VITE_API_URL)
-
-// Start waits for the mode, in case it is tapped before the session check ends.
-const starter: Starter = async (brief, session) => (await dataMode).starter(brief, session)
-
-// Temporary: shows the pre-call chat home until the app layout and routing exist.
+// API mode needs VITE_API_URL and a Supabase session; the session is created anonymously on
+// first use, and the mode is re-picked whenever the signed-in user changes. See precall/mode.ts.
+// Placing a call needs an email-verified user (ON-1): Start while anonymous opens the email
+// step instead, and the backend's 403 `sign_in_required` does the same if the mode is stale.
 // The profile and templates are still fake in both modes (no profile or templates API yet).
 export function PrecallDemo({ onCallStarted }: { onCallStarted: (callId: string | null) => void }) {
-  const [mode, setMode] = useState<DataMode | null>(null)
+  const { mode, starter } = useDataMode(import.meta.env.VITE_API_URL)
+  const [askEmail, setAskEmail] = useState(false)
 
-  useEffect(() => {
-    let live = true
-    void dataMode.then((m) => live && setMode(m))
-    return () => {
-      live = false
-    }
-  }, [])
+  const anonymous = mode?.kind === 'api' && mode.account.anonymous
+  const gatedStarter = useCallback<Starter>(
+    async (brief, session) => {
+      if (anonymous) {
+        setAskEmail(true)
+        return { result: signInRequired(), session }
+      }
+      return starter(brief, session)
+    },
+    [anonymous, starter],
+  )
 
   return (
     <ChatHome
       context={{ profile: fakeProfile, templates: fakeTemplates }}
-      starter={starter}
+      starter={gatedStarter}
       onCallStarted={onCallStarted}
+      onSignInRequired={() => setAskEmail(true)}
       modeNote={modeNote(mode)}
+      overlay={askEmail && mode?.kind === 'api' && <EmailStep account={mode.account} onClose={() => setAskEmail(false)} />}
     />
   )
 }
