@@ -6,7 +6,7 @@
  * and a malformed row or field is dropped instead of crashing the screen.
  * The backend's shapes are in backend/app/postcall/history.py.
  */
-import { apiBase, isCallId } from '../live-call/backend'
+import { apiBase, isCallId, realSourceAllowed } from '../live-call/backend'
 import type { CallHistoryItem } from '../history/types'
 import type { TranscriptLine } from '../result/transcript'
 import type { AgentDecision, CallResult, OutcomeDetails, SharedField } from '../result/types'
@@ -15,12 +15,12 @@ import type { AgentDecision, CallResult, OutcomeDetails, SharedField } from '../
 export type HistorySource = { kind: 'fake' } | { kind: 'real'; apiBase: string }
 
 /**
- * Real data only when `VITE_HISTORY_SOURCE=real` and `VITE_API_URL` is a valid
- * origin. Anything else shows the fake calls, so the live site keeps working
- * while the backend isn't deployed.
+ * Real data when `VITE_API_URL` is a valid origin and `VITE_HISTORY_SOURCE` isn't set to
+ * something other than `real` (see `realSourceAllowed`). Anything else shows the fake
+ * calls, so the live site keeps working while the backend isn't deployed.
  */
 export function historySource(source: string | undefined, apiUrl: string | undefined): HistorySource {
-  if (source?.trim() !== 'real') return { kind: 'fake' }
+  if (!realSourceAllowed(source)) return { kind: 'fake' }
   const base = apiBase(apiUrl)
   return base ? { kind: 'real', apiBase: base } : { kind: 'fake' }
 }
