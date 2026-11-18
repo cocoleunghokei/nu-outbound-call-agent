@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ensureSession, type SessionAuth } from './session'
+import { ensureSession, type SessionAuth, type SessionUser } from './session'
 
-const session = (id: string) => ({ user: { id } })
+const session = (user: SessionUser) => ({ user })
 
 function fakeAuth(current: ReturnType<typeof session> | null, signIn: SessionAuth['signInAnonymously']): SessionAuth {
   return { getSession: async () => ({ data: { session: current } }), signInAnonymously: signIn }
@@ -10,13 +10,34 @@ function fakeAuth(current: ReturnType<typeof session> | null, signIn: SessionAut
 describe('ensureSession', () => {
   it('keeps an existing session and does not sign in again', async () => {
     const signIn = vi.fn<SessionAuth['signInAnonymously']>()
-    await expect(ensureSession(fakeAuth(session('user-a'), signIn))).resolves.toEqual({ kind: 'session', userId: 'user-a' })
+    const existing = fakeAuth(session({ id: 'user-a', is_anonymous: false, email: 'alex@example.test' }), signIn)
+    await expect(ensureSession(existing)).resolves.toEqual({
+      kind: 'session',
+      userId: 'user-a',
+      account: { anonymous: false, email: 'alex@example.test' },
+    })
     expect(signIn).not.toHaveBeenCalled()
   })
 
+  it('reports an existing anonymous session as anonymous', async () => {
+    const signIn = vi.fn<SessionAuth['signInAnonymously']>()
+    const anonymous = fakeAuth(session({ id: 'anon-1', is_anonymous: true, email: '' }), signIn)
+    await expect(ensureSession(anonymous)).resolves.toMatchObject({ userId: 'anon-1', account: { anonymous: true, email: null } })
+    // A token from before the claim existed is a permanent user.
+    const legacy = fakeAuth(session({ id: 'user-b' }), signIn)
+    await expect(ensureSession(legacy)).resolves.toMatchObject({ account: { anonymous: false, email: null } })
+  })
+
   it('signs in anonymously when there is no session', async () => {
-    const signIn = vi.fn<SessionAuth['signInAnonymously']>(async () => ({ data: { session: session('anon-1') }, error: null }))
-    await expect(ensureSession(fakeAuth(null, signIn))).resolves.toEqual({ kind: 'session', userId: 'anon-1' })
+    const signIn = vi.fn<SessionAuth['signInAnonymously']>(async () => ({
+      data: { session: session({ id: 'anon-1', is_anonymous: true }) },
+      error: null,
+    }))
+    await expect(ensureSession(fakeAuth(null, signIn))).resolves.toEqual({
+      kind: 'session',
+      userId: 'anon-1',
+      account: { anonymous: true, email: null },
+    })
     expect(signIn).toHaveBeenCalledOnce()
   })
 

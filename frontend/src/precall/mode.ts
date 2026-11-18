@@ -2,50 +2,56 @@
  * Demo mode or API mode (plan Step 11).
  *
  * API mode needs both a FastAPI URL (`VITE_API_URL`) and a Supabase session. There is no
- * sign-in screen yet (ON-1, P1), so the app signs the browser in anonymously on first use
- * (`lib/session.ts`): the profile and calls then belong to this browser until an email is
- * linked later. Without a URL, without Supabase, or when that sign-in fails, the app runs
- * fully on fake data, as before, and Start only logs the brief.
+ * sign-in screen, so the app signs the browser in anonymously on first use
+ * (`lib/session.ts`): the chat and saved briefs then belong to this browser. Placing a call
+ * needs an email-verified user, which `EmailStep.tsx` adds when Start is tapped (ON-1).
+ * Without a URL, without Supabase, or when the anonymous sign-in fails, the app runs fully
+ * on fake data, as before, and Start only logs the brief.
  *
  * The Supabase client is loaded lazily, only when `VITE_API_URL` is set, so demo mode works
  * even without the Supabase variables (`lib/supabase.ts` throws at import when they are
  * missing).
  */
 import { accessToken } from '../lib/accessToken'
-import { ensureSession, SignInFailedError } from '../lib/session'
+import { ensureSession, SignInFailedError, type Account } from '../lib/session'
 import { createApiClient, normaliseBaseUrl } from './api'
 import { apiStarter, demoStarter, type Starter } from './start'
 
 export type DemoReason = 'no_api_url' | 'no_supabase' | 'sign_in_failed' | 'no_session'
 
-export type DataMode = { kind: 'demo'; reason: DemoReason; starter: Starter } | { kind: 'api'; starter: Starter }
+export type DataMode =
+  | { kind: 'demo'; reason: DemoReason; starter: Starter }
+  | { kind: 'api'; account: Account; starter: Starter }
 
 /** Returns the current access token, or null when signed out. */
 export type TokenSource = () => Promise<string | null>
 
 /**
- * Makes sure a session exists, then returns its token source. Rejects with
- * `SignInFailedError` when the anonymous sign-in fails, and with anything else when
- * Supabase isn't configured.
+ * Makes sure a session exists, then returns its token source and whose session it is.
+ * Rejects with `SignInFailedError` when the anonymous sign-in fails, and with anything
+ * else when Supabase isn't configured.
  */
-export type LoadTokenSource = () => Promise<TokenSource>
+export type LoadTokenSource = () => Promise<{ getToken: TokenSource; account: Account }>
 
 /** The token source backed by the shared client in `lib/supabase.ts` (never a second client). */
 export const loadSupabaseTokenSource: LoadTokenSource = async () => {
   const { supabase } = await import('../lib/supabase') // rejects here when Supabase isn't configured
   const result = await ensureSession(supabase.auth)
   if (result.kind === 'failed') throw new SignInFailedError(result.message)
-  return accessToken
+  return { getToken: accessToken, account: result.account }
 }
 
-/** Small top-bar note: why the app is in demo mode, or, in API mode, where the data lives. */
+/** Small top-bar note: why the app is in demo mode, or, in API mode, whose data this is. */
 export function modeNote(mode: DataMode | null): { text: string; title: string } | null {
   if (!mode) return null
   if (mode.kind === 'api') {
-    return {
-      text: 'This browser only',
-      title: 'Your profile and calls stay in this browser until sign-in exists.',
+    if (mode.account.anonymous || !mode.account.email) {
+      return {
+        text: 'This browser only',
+        title: 'Your profile and calls stay in this browser. Add your email when you place a call to keep them.',
+      }
     }
+    return { text: mode.account.email, title: 'Signed in. Your profile and calls follow this email.' }
   }
   const why: Record<DemoReason, string> = {
     no_api_url: 'VITE_API_URL is not set, so nothing is saved and no call is placed.',
@@ -67,8 +73,9 @@ export async function resolveDataMode(
   if (!baseUrl) return { kind: 'demo', reason: 'no_api_url', starter: demoStarter }
 
   let getToken: TokenSource
+  let account: Account
   try {
-    getToken = await loadTokenSource()
+    ;({ getToken, account } = await loadTokenSource())
   } catch (err) {
     const reason: DemoReason = err instanceof SignInFailedError ? 'sign_in_failed' : 'no_supabase'
     return { kind: 'demo', reason, starter: demoStarter }
@@ -77,5 +84,5 @@ export async function resolveDataMode(
   if (!token) return { kind: 'demo', reason: 'no_session', starter: demoStarter }
 
   const client = createApiClient({ baseUrl, getToken, fetch: fetchImpl })
-  return { kind: 'api', starter: apiStarter(client) }
+  return { kind: 'api', account, starter: apiStarter(client) }
 }

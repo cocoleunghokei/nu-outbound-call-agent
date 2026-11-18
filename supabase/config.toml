@@ -175,9 +175,10 @@ enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
 enable_signup = true
-# Allow/disallow anonymous sign-ins to your project. The app has no sign-in screen yet
-# (ON-1 is P1): the browser signs in anonymously so API mode and RLS work. Enable the same
-# switch in the hosted project's dashboard (Auth > Providers).
+# Allow/disallow anonymous sign-ins to your project. The browser signs in anonymously on
+# first use so API mode and RLS work with no screen; placing a call then needs an email,
+# verified by a 6-digit code (ON-1; see the templates below). Enable the same switch in the
+# hosted project's dashboard (Auth > Providers).
 enable_anonymous_sign_ins = true
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
@@ -250,6 +251,18 @@ otp_expiry = 3600
 # [auth.email.template.invite]
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"
+
+# The app verifies emails with a 6-digit code typed in the app (ON-1), so these two templates
+# print {{ .Token }}; the defaults only carry a link. Make the same edit in the hosted
+# project's dashboard (Authentication > Email Templates). "Change Email Address" is the one an
+# anonymous user gets when linking an email; "Magic Link" is the sign-in on another device.
+[auth.email.template.magic_link]
+subject = "Your sign-in code"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.email_change]
+subject = "Confirm your email"
+content_path = "./supabase/templates/email_change.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]

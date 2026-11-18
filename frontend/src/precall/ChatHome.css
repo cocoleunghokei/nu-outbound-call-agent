@@ -394,8 +394,72 @@
   font-weight: 600;
 }
 
+/* The email step (ON-1): a panel over the chat, so the draft brief stays where it is. */
+.precall-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(17, 24, 39, 0.35);
+}
+
+.precall-dialog {
+  width: min(100%, 420px);
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-line);
+  border-radius: 24px;
+  padding: 20px;
+  box-shadow: var(--pc-shadow);
+  animation: precall-in 0.22s ease-out;
+}
+
+.precall-dialog h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.precall-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pc-muted);
+}
+
+.precall-field input {
+  border: 1.5px solid var(--pc-line);
+  border-radius: 14px;
+  padding: 11px 14px;
+  font-size: 16px;
+  color: var(--pc-ink);
+  background: var(--pc-surface);
+}
+
+.precall-field input:focus {
+  border-color: var(--pc-brand);
+}
+
+.precall-actions {
+  gap: 10px;
+}
+
+.precall-link {
+  display: block;
+  margin-top: 14px;
+  text-align: center;
+  width: 100%;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .precall-review {
+  .precall-review,
+  .precall-dialog {
     animation: none;
   }
 }

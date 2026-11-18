@@ -18,13 +18,13 @@ There are five independent reasons. Each one alone keeps the app in demo mode:
 |---|---|---|---|---|
 | 1 | Routing | Start opens `/live?call=<id>` (router in `frontend/src/router.ts`, #62). Still missing: live → result and history → result links. | `frontend/src/App.tsx`, `router.ts` | #46 |
 | 2 | Vercel build | Production is built without `VITE_API_URL` or `VITE_LIVE_CALL_SOURCE`. Vite inlines env vars at build time, so `liveCallMode()` returns `mock` and the pre-call screen picks `demoStarter`, which only logs `start call with brief (demo mode, nothing sent)`. | `live-call/backend.ts` `liveCallMode()`, `precall/mode.ts`, `precall/start.ts` | #51 |
-| 3 | Sign-in | API mode also needs a signed-in Supabase session. There's no sign-in screen yet, so the pre-call screen falls back to demo with reason `no_session`. | `precall/mode.ts`; ON-1 | not filed yet |
+| 3 | Sign-in | Done: the browser signs in anonymously on first use (#70), and Start asks for an email verified by a 6-digit code before a call is placed (ON-1). The hosted project needs anonymous sign-ins on and the two email templates printing `{{ .Token }}` (see `docs/devops.md`). | `precall/mode.ts`, `lib/session.ts`, `lib/emailSignIn.ts`, `precall/EmailStep.tsx` | done |
 | 4 | Backend route | `POST /calls {brief_id}` doesn't exist (it returns 404), so nothing calls `VapiVoice.create_call`. Even in API mode, Start saves the brief and reports "saved, not connected". | `backend/app/voice/vapi.py` exists; the route is missing | #45 |
 | 5 | Backend deploy | The backend isn't deployed. There's no Railway URL to put in `VITE_API_URL`, the Vapi server URL isn't set, and the default CORS allows only `http://localhost:5173`. | `backend/app/config.py` (`CORS_ORIGINS`) | #51 |
 
 The one real call so far (2026-11-10, about 40 s) was placed directly through the Vapi API with a generic dashboard assistant, not through the app. It proves the phone path, Twilio number → Vapi → a cell phone, and nothing more.
 
-**Order to unblock a real call from the app:** #45 (`POST /calls`), then #51 (deploy and env vars), then sign-in, then #46 (Start → `/live?call=<id>`).
+**Order to unblock a real call from the app:** #45 (`POST /calls`, done), sign-in (done), #46 (Start → `/live?call=<id>`, done), then #51 (deploy and env vars).
 
 ## What's built
 
