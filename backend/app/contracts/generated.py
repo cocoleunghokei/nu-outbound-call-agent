@@ -513,6 +513,12 @@ class ReportDecisionArgs(BaseModel):
             max_length=200,
         ),
     ] = None
+    covered_by_instruction: Annotated[
+        bool | None,
+        Field(
+            description="For accept or take_fallback: true when the user's own instruction during the call allows this offer although a typed rule doesn't (DC-10). Only after the user sent an instruction; never for money."
+        ),
+    ] = None
     dimensions: Annotated[
         Dimensions,
         Field(

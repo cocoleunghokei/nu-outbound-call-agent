@@ -16,6 +16,11 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
   model's own ``meets_constraints`` and ``matches_fallback`` in the Low-offer and
   needless-ping gates, and the refusal names the broken rule. Where Python can't tell
   (unknown), the model's ``dimensions`` decide as before.
+- **The user's own instruction** (DC-10): the Low-offer and missing-detail gates step aside
+  for an accept or take_fallback marked ``covered_by_instruction`` once the user has sent an
+  instruction during the call ("4pm is fine too", R-09): the typed rules are older than that
+  message, and Python can't read free text. Only with both: the flag alone, before any
+  instruction, changes nothing. The money gate never steps aside for an instruction.
 - **Missing detail** (``missing_detail_gate``): accept or take_fallback is refused when the
   brief has a rule Python could check, but the offer the model wrote down leaves out the
   value it needs (C4-05: "take the Friday morning fallback" with no time, which the business
@@ -145,7 +150,8 @@ class CallFacts:
     ``countered_since_answer``: the agent recorded a counter after the user's last answer to
     a decision ping (or ever, if there was none).
     ``ending``: the user pressed End (or the pause cap fired). ``business_said``: every
-    business transcript line so far, joined and casefolded.
+    business transcript line so far, joined and casefolded. ``instructed``: the user sent an
+    instruction during the call (DC-10).
     """
 
     money_since_yes: bool = False
@@ -154,6 +160,13 @@ class CallFacts:
     countered_since_answer: bool = False
     ending: bool = False
     business_said: str = ""
+    instructed: bool = False
+
+
+def instruction_covers(covered_by_instruction: object, facts: CallFacts) -> bool:
+    """True when the agent marked its action as allowed by the user's own instruction, and the
+    user really did send one during this call (DC-10)."""
+    return covered_by_instruction is True and facts.instructed
 
 
 def mentions_money(text: str) -> bool:
@@ -178,14 +191,16 @@ def low_offer_gate(
     dimensions: Mapping[str, Any] | None,
     facts: CallFacts,
     score: OfferScore | None = None,
+    covered_by_instruction: object = None,
 ) -> str | None:
     """The refusal for accepting an offer that breaks the rules, else None.
 
     "Breaks the rules" comes from Python's ``score`` where it can tell, and from the model's
     own ``dimensions`` where it can't (or when there is no score). A "yes" from the user to
-    the latest ping lets anything through (R-01).
+    the latest ping lets anything through (R-01), and so does an action the agent marks as
+    covered by an instruction the user sent during the call (R-09, ``instruction_covers``).
     """
-    if facts.latest_ping_approved:
+    if facts.latest_ping_approved or instruction_covers(covered_by_instruction, facts):
         return None
     dims: Mapping[str, Any] = dimensions or {}
     meets = score.fits if score is not None and score.fits is not None else None
@@ -250,11 +265,18 @@ def unsaid_name_gate(arguments: Mapping[str, Any], facts: CallFacts) -> str | No
     return REFUSED_UNSAID_NAME
 
 
-def missing_detail_gate(action: str, facts: CallFacts, score: OfferScore | None) -> str | None:
+def missing_detail_gate(
+    action: str,
+    facts: CallFacts,
+    score: OfferScore | None,
+    covered_by_instruction: object = None,
+) -> str | None:
     """The refusal for accepting or taking a fallback when the offer leaves out a value the
     brief's rules need (so Python can't check it), else None. A "yes" from the user to the
-    latest ping lets it through, as in ``low_offer_gate``."""
+    latest ping, or the user's own instruction, lets it through, as in ``low_offer_gate``."""
     if score is None or facts.latest_ping_approved or action not in SETTLING_ACTIONS:
+        return None
+    if instruction_covers(covered_by_instruction, facts):
         return None
     missing = score.missing_to_settle(action)
     return missing_detail_refusal(missing) if missing else None
@@ -282,13 +304,15 @@ def facts_from_timeline(
     Kinds: ``business`` (a business transcript line), ``countered`` (the agent recorded a
     counter), ``answered`` (a decision ping answered, with the reply text),
     ``field_answered`` (an Ask-me-first approval answered: it counts as asking, never as
-    approving money or as an answer to a counter) and ``expired`` (a ping that timed out).
+    approving money or as an answer to a counter), ``expired`` (a ping that timed out) and
+    ``instructed`` (the user sent an instruction, DC-10).
     ``latest_ping_answer`` is the reply to the most recent ping if it was a decision ping and
     was answered, else None.
     """
     money_since_yes = False
     asked = False
     countered = False
+    instructed = False
     said: list[str] = []
     for kind, text in timeline:
         if kind == "business":
@@ -304,6 +328,8 @@ def facts_from_timeline(
                 money_since_yes = False
         elif kind in ("expired", "field_answered"):
             asked = True
+        elif kind == "instructed":
+            instructed = True
     return CallFacts(
         money_since_yes=money_since_yes,
         latest_ping_approved=latest_ping_answer is not None and is_approving(latest_ping_answer),
@@ -311,6 +337,7 @@ def facts_from_timeline(
         countered_since_answer=countered,
         ending=ending,
         business_said="\n".join(said),
+        instructed=instructed,
     )
 
 
@@ -334,7 +361,8 @@ async def load_facts(conn: AsyncConnection[Any], call_id: UUID) -> CallFacts:
             " left join public.pings p on p.ping_id::text = e.payload->>'ping_id'"
             " where e.call_id = %s and (e.type = 'ping.resolved'"
             "  or (e.type = 'transcript.final' and e.payload->>'role' = 'business')"
-            "  or (e.type = 'agent.decision' and e.payload->>'action' = 'counter'))"
+            "  or (e.type = 'agent.decision' and e.payload->>'action' = 'counter')"
+            "  or (e.type = 'command.applied' and e.payload->>'command' = 'instruction'))"
             " order by e.seq",
             (call_id,),
         )
@@ -347,6 +375,8 @@ async def load_facts(conn: AsyncConnection[Any], call_id: UUID) -> CallFacts:
             timeline.append(("business", str(payload.get("text") or "")))
         elif event_type == "agent.decision":
             timeline.append(("countered", ""))
+        elif event_type == "command.applied":
+            timeline.append(("instructed", ""))
         elif payload.get("state") == "answered":
             kind = "answered" if ping_kind == "decision" else "field_answered"
             timeline.append((kind, str(payload.get("reply_text") or "")))

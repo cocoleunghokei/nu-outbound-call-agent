@@ -277,6 +277,11 @@ together must give {name} everything needed to decide from the card alone: what 
 offered (day, time, who, price) and what {name} asked for.
 Every time you act on your own (accept, counter, take a fallback, decline or share a field), \
 call report_decision.
+{name} may send an instruction at any time, as a system message that starts "{name}'s \
+instruction:". From then on it counts like the brief. If it allows an offer a typed rule \
+doesn't (for example "4pm is fine too"), take the offer on your own and set \
+covered_by_instruction to true in report_decision. Never set it otherwise, and never for \
+money: a deposit or fee still needs ask_user.
 When report_decision or ask_user is about an offer, also fill offer with what the business \
 offered, written as data: date as YYYY-MM-DD (work it out from <dates>, year included, so \
 "Friday" means the Friday the brief is about), time as 24-hour HH:MM ("half past two" is \

@@ -157,10 +157,11 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         if action in SETTLING_ACTIONS:
             facts = state.facts()
             score = score_tool_call(state.brief, args)
+            covered = args.get("covered_by_instruction")
             refusal = (
                 money_gate(str(action), facts)
-                or low_offer_gate(str(action), _dims(args), facts, score)
-                or missing_detail_gate(str(action), facts, score)
+                or low_offer_gate(str(action), _dims(args), facts, score, covered)
+                or missing_detail_gate(str(action), facts, score, covered)
             )
             if refusal is not None:
                 return refusal
@@ -279,6 +280,8 @@ async def play_case(
             if step["system"] in ("answer", "field_shared", "field_declined", "timeout"):
                 state.ping = None  # the backend closes the ping it answers
                 state.resolve(step)
+            elif step["system"] == "instruction":
+                state.timeline.append(("instructed", ""))  # command.applied, as DC-10 logs it
             convo.append({"role": "system", "content": text})
             record.events.append(
                 Event(step=number, kind="system", text=text, system_kind=step["system"])

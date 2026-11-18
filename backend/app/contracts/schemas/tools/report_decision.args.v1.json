@@ -49,6 +49,10 @@
       "maxLength": 200,
       "description": "The preference the agent could not meet, shown as a flag in the live feed (DC-4 Medium). Plain language, no score."
     },
+    "covered_by_instruction": {
+      "type": "boolean",
+      "description": "For accept or take_fallback: true when the user's own instruction during the call allows this offer although a typed rule doesn't (DC-10). Only after the user sent an instruction; never for money."
+    },
     "dimensions": {
       "title": "Dimensions",
       "type": "object",

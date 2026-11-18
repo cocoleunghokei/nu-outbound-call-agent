@@ -9,6 +9,7 @@ webhook and reply endpoints is tested against the local Supabase stack (``db``).
 import asyncio
 import json
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import psycopg
@@ -28,6 +29,7 @@ from app.calls.gates import (
     counter_gate,
     facts_from_timeline,
     give_up_gate,
+    instruction_covers,
     is_approving,
     is_refusal,
     low_offer_gate,
@@ -39,6 +41,7 @@ from app.calls.gates import (
     unsaid_name_gate,
 )
 from app.calls.scoring import score_offer
+from app.events import append_event
 from app.postcall.jobs import latest_report
 from tests.calls_helpers import (
     ask_body,
@@ -277,6 +280,40 @@ def test_missing_detail_refusal_names_every_field() -> None:
     assert "has no date and time" in refusal
     assert "ask them for the date and time first" in refusal
     assert "party size" in missing_detail_refusal(("party_size",))
+
+
+def test_r09_the_users_instruction_lets_an_offer_past_the_typed_rule() -> None:
+    # R-09 (eval 0411Z): the user sent "4pm is fine too actually"; Python still refused
+    # accepting 4pm because the typed rule says before 3pm. DC-10 is P0, so this must work.
+    score = score_offer(SCORED_BRIEF, {"date": "2026-11-19", "time": "16:00"})
+    instructed = CallFacts(instructed=True)
+    assert low_offer_gate("accept", LOW, instructed, score) == breaks_rule_refusal("Before 3pm")
+    assert low_offer_gate("accept", LOW, instructed, score, True) is None
+    # Stricter (b): the flag alone does nothing until the user really sent an instruction.
+    assert low_offer_gate("accept", LOW, CallFacts(), score, True) == breaks_rule_refusal(
+        "Before 3pm"
+    )
+    assert low_offer_gate("accept", LOW, instructed, score, "true") is not None  # not a bool
+    assert instruction_covers(True, instructed) and not instruction_covers(None, instructed)
+
+
+def test_an_instruction_also_covers_a_missing_detail_but_never_money() -> None:
+    no_time = score_offer(SCORED_BRIEF, {"date": "2026-11-20"})
+    instructed = CallFacts(instructed=True)
+    assert missing_detail_gate("take_fallback", instructed, no_time) is not None
+    assert missing_detail_gate("take_fallback", instructed, no_time, True) is None
+    assert missing_detail_gate("take_fallback", CallFacts(), no_time, True) is not None
+    # Money still needs a "yes" to a ping, whatever the instruction said.
+    money = CallFacts(instructed=True, money_since_yes=True)
+    assert money_gate("accept", money) == REFUSED_MONEY
+
+
+def test_an_instruction_event_counts_in_the_facts() -> None:
+    facts = facts_from_timeline(
+        [("business", "Thursday 4pm?"), ("instructed", "")], latest_ping_answer=None, ending=False
+    )
+    assert facts.instructed and not facts.user_was_asked and not facts.latest_ping_approved
+    assert not facts_from_timeline([], latest_ping_answer=None, ending=False).instructed
 
 
 def test_c4_06_python_refuses_a_ping_about_an_offer_that_fits() -> None:
@@ -521,6 +558,53 @@ def test_a_fallback_with_no_time_is_refused_through_the_webhook(
             refused = [{"toolCallId": tc, "result": missing_detail_refusal(("time",))}]
             assert response.json()["results"] == refused
             assert not [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_an_accept_covered_by_the_users_instruction_goes_through_the_webhook(
+    supabase_env: SupabaseEnv,
+) -> None:
+    # R-09 on a live call: DC-10 logs the instruction as command.applied; then accepting 4pm
+    # marked covered_by_instruction is not refused by the "before 3pm" rule.
+    db = supabase_env.db_url
+    call = seed_call(db)
+    with psycopg.connect(db, autocommit=True) as conn:
+        conn.execute(
+            "update public.briefs set brief = %s::jsonb where id = %s",
+            (json.dumps(SCORED_BRIEF), call.brief_id),
+        )
+    accept_4pm = {
+        **_decision("accept", DIMS_LOW),
+        "offer": {"date": "2026-11-19", "time": "16:00"},
+        "covered_by_instruction": True,
+    }
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            tc = f"tc-{uuid.uuid4()}"
+            before = await post(client, tool_body(call, [(tc, "report_decision", accept_4pm)]))
+            refused = [{"toolCallId": tc, "result": breaks_rule_refusal("Before 3pm")}]
+            assert before.json()["results"] == refused  # no instruction yet: the flag is ignored
+            async with await psycopg.AsyncConnection.connect(db) as conn:
+                await append_event(
+                    conn,
+                    call_id=call.call_id,
+                    type="command.applied",
+                    source="user",
+                    payload={"command": "instruction"},
+                    occurred_at=datetime.now(UTC),
+                )
+                await conn.commit()
+            tc2 = f"tc-{uuid.uuid4()}"
+            after = await post(
+                client,
+                tool_body(call, [(tc2, "report_decision", accept_4pm)], timestamp=1794081690000),
+            )
+            assert not is_refusal(after.json()["results"][0]["result"])
+            decisions = [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+            assert [d["action"] for d in decisions] == ["accept"]
 
     asyncio.run(scenario())
 

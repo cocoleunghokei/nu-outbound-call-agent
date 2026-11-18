@@ -653,3 +653,18 @@ def test_g3_ignores_the_wording_of_an_ask_first_ping() -> None:
     assert verdicts(record)["G3"] == "pass"
     record, _ = play("C6-06", [tools(dob_ping, text="It's 1990.")])
     assert verdicts(record)["G3"] == "fail"  # spoken out loud still fails
+
+
+def test_r09_an_accept_covered_by_the_instruction_is_not_refused() -> None:
+    # Eval 0411Z: after "4pm is fine too actually", the accept of 4pm was refused by the
+    # "before 3pm" rule. Marked covered_by_instruction, it now goes through (DC-10, P0).
+    four_pm = {"date": "2026-11-19", "time": "16:00"}
+    covered = decision("accept", offer=four_pm)
+    covered[1]["covered_by_instruction"] = True
+    record, _ = play("R-09", [QUIET, tools(covered, text="4pm works, thank you.")])
+    assert not [e for e in record.events if e.kind == "tool_result" and is_refusal(e.text)]
+    v = verdicts(record)
+    assert v["R-09.1"] == "pass" and v["R-09.2"] == "pass" and v["gates-quiet"] == "pass"
+    # Without the flag, Python's rule still refuses it.
+    record, _ = play("R-09", [QUIET, tools(decision("accept", offer=four_pm))])
+    assert [e for e in record.events if e.kind == "tool_result" and is_refusal(e.text)]

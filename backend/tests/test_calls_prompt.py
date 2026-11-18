@@ -99,6 +99,14 @@ def test_the_tool_first_rule_covers_questions_and_missing_information() -> None:
     assert "or asking the business to check again instead of calling ask_user" in flat
 
 
+def test_the_users_instruction_can_widen_a_rule_but_never_money() -> None:
+    # R-09 (eval 0411Z) and DC-10: the user may send an instruction mid-call.
+    flat = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
+    assert "Alex may send an instruction at any time" in flat
+    assert "set covered_by_instruction to true in report_decision" in flat
+    assert "never for money: a deposit or fee still needs ask_user" in flat
+
+
 def test_prompt_names_ask_first_fields_without_their_values() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     assert "date of birth (field_requested: date_of_birth)" in prompt

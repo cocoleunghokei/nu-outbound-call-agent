@@ -384,6 +384,10 @@ export interface ReportDecisionArgs {
    * The preference the agent could not meet, shown as a flag in the live feed (DC-4 Medium). Plain language, no score.
    */
   missed_preference?: string;
+  /**
+   * For accept or take_fallback: true when the user's own instruction during the call allows this offer although a typed rule doesn't (DC-10). Only after the user sent an instruction; never for money.
+   */
+  covered_by_instruction?: boolean;
   dimensions: Dimensions;
   offer?: HeardOffer;
 }
