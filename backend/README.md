@@ -88,6 +88,8 @@ Call creation (`POST /calls`, PC-6 -> DC-3), the pause-and-ping loop (DC-6 to DC
 
 **Placing real calls** needs `VOICE_PLATFORM=vapi`, `VAPI_API_KEY`, `VAPI_PHONE_NUMBER_ID`, `VAPI_WEBHOOK_SECRET` and `PUBLIC_BASE_URL` (this backend's public origin, which must be `https://`, such as the Railway URL; Vapi posts webhooks to `{PUBLIC_BASE_URL}/webhooks/vapi`). Without them `POST /calls` answers `503 calls_not_configured`, writes nothing and dials nothing. With the default `VOICE_PLATFORM=fake`, nothing is ever dialed.
 
+**Limiting who gets called:** `CALL_DESTINATION_ALLOWLIST` (a JSON list of US numbers, like `CORS_ORIGINS`) makes `POST /calls` refuse any other number with `422 destination_not_allowed` before a row is written. Entries are normalised to E.164 at startup, and an entry that isn't a dialable US number stops the app from starting. It is a stopgap while the backend is reachable by anonymous sessions and the per-user call caps (DC-15) don't exist yet: set it to the team's test phones in production, and leave it empty (no restriction) once the caps land.
+
 | File | What it does |
 | --- | --- |
 | `ask.py` | `ask_user` tool handler. Opens a ping with a 45 s clock (frozen if the call is paused), moves the call to `waiting_on_you`, queues the push (`notify` lane) and two "still checking" lines at 15 s and 30 s. An Ask-me-first `field_requested` becomes a `field_approval` ping with a server-written question and Share / Don't share. A newer question (by Vapi timestamp, then tool call id) replaces the open one; an older one is stored `superseded` and never shown. |

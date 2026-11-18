@@ -315,6 +315,43 @@ def test_the_number_is_checked_again_on_the_server(
     assert voice.calls == []
 
 
+def client_with_allowlist(
+    env: SupabaseEnv, voice: FakeVoicePlatform, allowlist: list[str]
+) -> TestClient:
+    app = create_app(settings_for(env, call_destination_allowlist=allowlist))
+    registries(app).workers.clear()
+    app.dependency_overrides[get_call_voice] = lambda: voice
+    return TestClient(app)
+
+
+def test_a_number_outside_the_destination_allowlist_is_refused_before_any_row(
+    supabase_env: SupabaseEnv, signed_up_user: SignedUpUser, voice: FakeVoicePlatform
+) -> None:
+    """The stopgap for an open backend: with an allowlist set, only those numbers are dialed."""
+    # The example brief dials +14155550123; allow a different fake number.
+    with client_with_allowlist(supabase_env, voice, ["(617) 555-0142"]) as client:
+        brief_id = ready_brief(client, supabase_env, signed_up_user)
+        response = start(client, signed_up_user, brief_id)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "destination_not_allowed"
+    assert calls_for_brief(supabase_env, brief_id) == 0
+    assert voice.calls == []
+
+
+def test_a_number_on_the_destination_allowlist_is_dialed(
+    supabase_env: SupabaseEnv, signed_up_user: SignedUpUser, voice: FakeVoicePlatform
+) -> None:
+    # Entries are normalised at load, so a formatted entry matches the brief's E.164 number.
+    with client_with_allowlist(supabase_env, voice, ["415-555-0123"]) as client:
+        brief_id = ready_brief(client, supabase_env, signed_up_user)
+        response = start(client, signed_up_user, brief_id)
+
+    assert response.status_code == 201, response.text
+    assert response.json()["status"] == "dialing"
+    assert len(voice.calls) == 1
+
+
 def test_real_calls_need_the_public_webhook_url(
     supabase_env: SupabaseEnv, signed_up_user: SignedUpUser
 ) -> None:
