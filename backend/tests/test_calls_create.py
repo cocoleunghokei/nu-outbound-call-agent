@@ -10,6 +10,7 @@ import uuid
 from collections.abc import Iterator
 from typing import Any
 
+import httpx
 import psycopg
 import pytest
 from fastapi.testclient import TestClient
@@ -350,6 +351,36 @@ def test_a_number_on_the_destination_allowlist_is_dialed(
     assert response.status_code == 201, response.text
     assert response.json()["status"] == "dialing"
     assert len(voice.calls) == 1
+
+
+def anonymous_user(env: SupabaseEnv) -> SignedUpUser:
+    """A fresh anonymous session, as the browser creates on first use (POST /signup with {})."""
+    response = httpx.post(f"{env.auth_url}/signup", json={}, timeout=15)
+    assert response.status_code == 200, f"anonymous signup failed: {response.text}"
+    body = response.json()
+    assert body["user"]["is_anonymous"] is True
+    return SignedUpUser(user_id=uuid.UUID(body["user"]["id"]), access_token=body["access_token"])
+
+
+def test_an_anonymous_session_can_save_a_brief_but_not_place_a_call(
+    client: TestClient, supabase_env: SupabaseEnv, voice: FakeVoicePlatform
+) -> None:
+    """ON-1: the chat and brief saving work anonymously; Start needs an email-verified user.
+
+    The 403 comes from the dependency, before the idempotency claim, so the same key works
+    once the browser has linked an email to this user (the id does not change).
+    """
+    anonymous = anonymous_user(supabase_env)
+    brief_id = ready_brief(client, supabase_env, anonymous)  # the save stores its own key
+    keys_before = idempotency_rows(supabase_env, anonymous)
+
+    refused = start(client, anonymous, brief_id, uuid.uuid4())
+
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"]["code"] == "sign_in_required"
+    assert calls_for_brief(supabase_env, brief_id) == 0
+    assert voice.calls == []
+    assert idempotency_rows(supabase_env, anonymous) == keys_before  # nothing stored for Start
 
 
 def test_real_calls_need_the_public_webhook_url(
