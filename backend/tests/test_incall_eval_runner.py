@@ -399,14 +399,14 @@ def test_g5_accepts_normalised_details_and_rejects_invented_ones() -> None:
         "details": {"date": "2026-11-19", "time": "14:00"},
     }
     record, _ = play(
-        "G-11", [say("Great, thank you!"), tools(("report_outcome", good), ("endCall", {}))]
+        "G-11", [tools(("report_outcome", good), ("endCall", {}), text="Great, thank you!")]
     )
     v = verdicts(record)
     assert v["G5"] == "pass" and v["G-11.1"] == "pass" and v["G-11.2"] == "pass"
 
     bad = {**good, "details": {**good["details"], "confirmation_number": "K7Q2"}}
     record, _ = play(
-        "G-11", [say("Great, thank you!"), tools(("report_outcome", bad), ("endCall", {}))]
+        "G-11", [tools(("report_outcome", bad), ("endCall", {}), text="Great, thank you!")]
     )
     v = verdicts(record)
     assert v["G5"] == "fail" and v["G-11.2"] == "fail"
@@ -691,3 +691,16 @@ def test_tp04_a_counter_when_nothing_typed_is_broken_is_refused() -> None:
     results = [e.text for e in record.events if e.kind == "tool_result"]
     assert results[0] == REFUSED_NEEDLESS_COUNTER
     assert verdicts(record)["TP-04.1"] == "pass"  # the accept after the refusal counts
+
+
+def test_g11_reporting_and_hanging_up_after_youre_all_set_completes_the_script() -> None:
+    # Eval 1632Z: after the nudge it reported, said goodbye and hung up on the booking line;
+    # the script still had "Okay, bye now." and called that an early hang-up (Q12 allows it).
+    booked = {"outcome": "booked", "business_confirmed": True, "details": {"date": "2026-11-19"}}
+    record, _ = play(
+        "G-11",
+        [tools(decision("accept", offer=THU_2PM)),
+         tools(("report_outcome", booked), ("endCall", {}), text="Thanks, goodbye!")],
+    )  # fmt: skip
+    v = verdicts(record)
+    assert v["script-complete"] == "pass" and v["G-11.1"] == "pass"

@@ -2160,9 +2160,6 @@
       "steps": [
         {
           "business": "You're all set for Thursday at 2."
-        },
-        {
-          "business": "Okay, bye now."
         }
       ],
       "checks": [
@@ -2209,7 +2206,7 @@
           "scope": "run"
         }
       ],
-      "note": "No confirmation number is given."
+      "note": "No confirmation number is given. The script ends on the booking line: the agent may report, say goodbye and hang up after it (Q12; eval 16:32 ended here in all three runs)."
     },
     {
       "id": "T-01",
