@@ -122,7 +122,7 @@ def test_a_low_offer_gets_one_counter_before_a_ping() -> None:
     assert "Counter only once per offer." in prompt
     # Found by the eval: the counter was logged a turn late (C4-03), and the agent asked
     # again after "we can't seat 6 at all this weekend" (C4-11).
-    assert "confidence low in that same reply, before the business answers" in prompt
+    assert "call report_decision with action counter and confidence low. Counter" in prompt
     assert "call ask_user straight away; do not ask the business again" in prompt
     assert "neither gate applies, counter once first" in prompt  # money and ask-first still ping
 
@@ -131,11 +131,33 @@ def test_every_action_is_logged_and_checking_always_pings() -> None:
     # Found by the in-call eval: it countered or accepted without report_decision, and said
     # "Let me check with Alex" without calling ask_user, so the user was never pinged.
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
-    assert "call report_decision in the same reply as your words" in prompt
-    assert (
-        "Never say you are checking with Alex unless you call ask_user in the same reply." in prompt
+    assert "call report_decision.\nHow to call a tool: call it first, before you say anything." in (
+        prompt
     )
+    assert "Never say the words of an action" in prompt
+    assert "Never say you are checking with Alex unless you called ask_user first." in prompt
     assert "under 80 characters" in prompt
+
+
+def test_tools_are_called_before_speaking() -> None:
+    # Found by the eval (C4-03, C4-12, C4-13): DeepSeek either talks or calls a tool in one
+    # reply, never both, so "in the same reply as your words" left every counter unlogged.
+    # It does call a tool first and then speak after the result, as it already did for pings.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "same reply" not in prompt
+    assert "You speak right after its result" in prompt
+
+
+def test_missing_info_and_unclear_speech_ping_instead_of_asking_again() -> None:
+    # Found by the eval: after "we need a referral" it asked the clinic again (C4-12), and it
+    # asked a garbled caller to repeat a second time (C4-13), never pinging Alex.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "If the business needs it to go on, call ask_user." in prompt
+    assert "say so or call ask_user" not in prompt
+    assert "call ask_user with understood false; do not ask them a third time" in prompt
+    assert "(for example a referral), or after your one counter, call ask_user straight away" in (
+        prompt.replace("\n", " ")
+    )
 
 
 def test_inventing_includes_saying_a_detail_does_not_exist() -> None:

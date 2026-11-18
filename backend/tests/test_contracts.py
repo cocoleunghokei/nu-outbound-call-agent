@@ -150,7 +150,7 @@ def test_report_decision_description_allows_a_low_counter() -> None:
     text = _description("report_decision")
     assert "Call ask_user instead whenever the score is Low" not in text
     assert "action counter and confidence low" in text
-    assert "same reply as your words" in text
+    assert "before you speak" in text
 
 
 def test_ask_user_description_covers_missing_info_and_not_understood() -> None:
@@ -158,7 +158,7 @@ def test_ask_user_description_covers_missing_info_and_not_understood() -> None:
     text = _description("ask_user")
     assert "not in the brief" in text
     assert "can't understand them after asking once" in text
-    assert "same reply as your words" in text
+    assert "before you speak" in text
 
 
 def test_tool_dimensions_and_confidence_tiers() -> None:
