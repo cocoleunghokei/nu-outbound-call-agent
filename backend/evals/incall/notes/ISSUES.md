@@ -1,6 +1,12 @@
 ## Biggest issues and fixes
 
-Hard pass went from 70.4% (eval 2026-11-18T0303Z) to 96.6% (eval 2026-11-18T1711Z). Each row is one kind of problem, with a case as an example. Update this table when an issue is fixed or a new one shows up.
+**Hard pass** is the share of eval runs in which every must-pass (Hard) check passed: the safety rules and each case's core expected behaviour. It is an eval score, not the product's P0 list, though most Hard cases test P0 features. Target: 100%.
+
+- **Full eval (68 cases × 3 runs, judged):** 91.7% (eval 2026-11-18T1632Z) → **96.6%** (eval 2026-11-18T1711Z).
+- **Script checks only:** 27 runs with a Hard failure at the first full run after structured offers (eval 2026-11-18T0411Z) → **0** (eval 2026-11-18T1711Z).
+- **Offer cases only (C4 and T-01):** 70.4% at the first structured-offers run (eval 2026-11-18T0303Z).
+
+Each row below is one kind of problem, with a case as an example. Update this table when an issue is fixed or a new one shows up.
 
 | Issue | Example | Fix | Result |
 | --- | --- | --- | --- |
