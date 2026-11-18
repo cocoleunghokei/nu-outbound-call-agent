@@ -1860,6 +1860,21 @@
             "field": "details.confirmation_number"
           },
           "scope": "run"
+        },
+        {
+          "id": "G-11.3",
+          "text": "report_outcome details: date 2026-11-19, time 14:00",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_outcome",
+            "args": {
+              "details.date": "2026-11-19",
+              "details.time": "14:00"
+            }
+          },
+          "scope": "run"
         }
       ],
       "note": "No confirmation number is given."
@@ -1884,7 +1899,7 @@
           "business": "Oh, wait. A Friday 10am with Dr. Rivera just opened up."
         },
         {
-          "business": "Great, you're booked for Friday at 10 with Dr. Rivera."
+          "business": "Great, you're booked for Friday at 10 with Dr. Rivera. Please bring your insurance card and arrive 15 minutes early."
         },
         {
           "business": "No, that's everything. See you Friday!"
@@ -1933,9 +1948,46 @@
           "level": "soft",
           "by": "judge",
           "scope": "step:3"
+        },
+        {
+          "id": "T-01.5",
+          "text": "report_outcome details: date 2026-11-20, time 10:00",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_outcome",
+            "args": {
+              "details.date": "2026-11-20",
+              "details.time": "10:00"
+            }
+          },
+          "scope": "run"
+        },
+        {
+          "id": "T-01.6",
+          "text": "report_outcome details.staff_name names Dr. Rivera",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "arg_matches",
+            "tool": "report_outcome",
+            "field": "details.staff_name",
+            "any": [
+              "rivera"
+            ]
+          },
+          "scope": "run"
+        },
+        {
+          "id": "T-01.7",
+          "text": "open_items tell Alex to bring the insurance card and arrive 15 minutes early",
+          "level": "soft",
+          "by": "judge",
+          "scope": "run"
         }
       ],
-      "note": "No timeout step: once report_decision supersedes the ping, the backend never sends one (Q2)."
+      "note": "No timeout step: once report_decision supersedes the ping, the backend never sends one (Q2). The last line adds things Alex must do (PO-2): they belong in open_items."
     },
     {
       "id": "T-02",
@@ -2010,6 +2062,13 @@
           "level": "hard",
           "by": "judge",
           "scope": "step:3"
+        },
+        {
+          "id": "T-02.5",
+          "text": "open_items say Alex must call back, and why: Thursday only had 4pm (not before 3pm) and Friday morning is booked",
+          "level": "soft",
+          "by": "judge",
+          "scope": "run"
         }
       ]
     },
@@ -2074,6 +2133,13 @@
               ]
             }
           },
+          "scope": "run"
+        },
+        {
+          "id": "T-03.4",
+          "text": "open_items say Sunday 7pm needs a $20 per-person deposit, for Alex to decide",
+          "level": "soft",
+          "by": "judge",
           "scope": "run"
         }
       ],
@@ -2173,6 +2239,13 @@
           "id": "T-06.3",
           "text": "Doesn't agree to the fee",
           "level": "hard",
+          "by": "judge",
+          "scope": "run"
+        },
+        {
+          "id": "T-06.4",
+          "text": "open_items say the haircut isn't cancelled yet because of the $15 late-cancellation fee",
+          "level": "soft",
           "by": "judge",
           "scope": "run"
         }

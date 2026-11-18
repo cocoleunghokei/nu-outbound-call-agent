@@ -195,6 +195,19 @@ def test_prompt_explains_waiting_and_the_no_reply_rule() -> None:
     assert "did not reply in time" in prompt and "Never guess." in prompt
 
 
+def test_finishing_says_what_goes_in_the_report() -> None:
+    """PO-2: the report is the call's summary, so the agent is told what each part holds."""
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    finishing = prompt.split("<finishing>")[1].split("</finishing>")[0]
+    assert "only what the business said" in finishing
+    assert "YYYY-MM-DD" in finishing and "24-hour HH:MM" in finishing
+    assert "staff member's name" in finishing
+    assert "Never fill a detail from the brief" in finishing
+    assert "In open_items" in finishing and "unresolved" in finishing
+    assert "bring" in finishing and "anything special" in finishing
+    assert "{name}" not in finishing  # the calling name is filled in
+
+
 def test_prompt_includes_the_guardrail_rules() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     for rule in GUARDRAIL_RULES:
