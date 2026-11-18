@@ -5,6 +5,7 @@ import { contractExampleBrief } from './contractExample'
 import { fakeProfile, fakeTemplates } from './fakeBriefs'
 import {
   apiStarter,
+  CALL_NOT_PLACED,
   demoStarter,
   describeError,
   emptySession,
@@ -66,7 +67,6 @@ describe('apiStarter (Start in API mode)', () => {
   it.each([
     ['404 from FastAPI', routeMissing()],
     ['405', new ApiError('method_not_allowed', 'Method Not Allowed', 405, false)],
-    ['no answer', new ApiError(NETWORK_ERROR, 'offline', 0, true)],
   ])('says "saved, not connected" when POST /calls is not there (%s)', async (_label, error) => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     const client = fakeClient({ startCall: vi.fn(async () => Promise.reject(error)) })
@@ -74,6 +74,25 @@ describe('apiStarter (Start in API mode)', () => {
     expect(result).toMatchObject({ kind: 'saved_not_connected', briefId: BRIEF_ID })
     expect(info).toHaveBeenCalledWith(expect.stringContaining('POST /calls'), BRIEF_ID)
     info.mockRestore()
+  })
+
+  // Regression (#59 review): no answer from POST /calls was read as "route not deployed",
+  // so the chat said nothing was dialed while a real call could be ringing; a new Start
+  // then called the business twice.
+  it('says the call may have started when POST /calls gets no answer, and Start again replays it', async () => {
+    const startCall = vi
+      .fn<ApiClient['startCall']>()
+      .mockRejectedValueOnce(new ApiError(NETWORK_ERROR, 'offline', 0, true))
+      .mockImplementation(async () => ({ call_id: 'call-1' }))
+    const client = fakeClient({ startCall })
+    const start = apiStarter(client, keys())
+    const first = await start(contractExampleBrief, emptySession)
+    expect(first.result.kind).toBe('error')
+    if (first.result.kind !== 'error') return
+    expect(first.result.message).toMatch(/may have started/)
+    const second = await start(contractExampleBrief, first.session)
+    expect(second.result).toMatchObject({ kind: 'started', callId: 'call-1' })
+    expect(startCall.mock.calls.map((c) => c[1])).toEqual(['key-2', 'key-2'])
   })
 
   it("surfaces the server's message when saving fails (invalid_phone)", async () => {
@@ -115,11 +134,37 @@ describe('apiStarter (Start in API mode)', () => {
     const client = fakeClient({ startCall })
     const start = apiStarter(client, keys())
     const first = await start(contractExampleBrief, emptySession)
-    expect(first.result).toMatchObject({ kind: 'error', message: "I couldn't start the call: Internal server error Tap Start to try again." })
+    // A 5xx can come after the call was placed, so it never says the call didn't start.
+    expect(first.result).toMatchObject({ kind: 'error', message: expect.stringMatching(/may have started/) })
     const second = await start(contractExampleBrief, first.session)
     expect(second.result.kind).toBe('started')
     expect(client.createBrief).toHaveBeenCalledTimes(1)
     expect(startCall.mock.calls.map((c) => c[1])).toEqual(['key-2', 'key-2'])
+  })
+
+  it('a 201 with status "failed" is an error, not a started call, and the retry uses a new key', async () => {
+    const startCall = vi
+      .fn<ApiClient['startCall']>()
+      .mockResolvedValueOnce({ call_id: 'call-1', status: 'failed' })
+      .mockResolvedValue({ call_id: 'call-2', status: 'dialing' })
+    const client = fakeClient({ startCall })
+    const start = apiStarter(client, keys())
+    const first = await start(contractExampleBrief, emptySession)
+    expect(first.result).toMatchObject({
+      kind: 'error',
+      message: "The call didn't go through, so nobody was called. Tap Start to try again.",
+      error: { code: CALL_NOT_PLACED, retryable: true },
+    })
+    const second = await start(contractExampleBrief, first.session)
+    expect(second.result).toMatchObject({ kind: 'started', callId: 'call-2' })
+    expect(client.createBrief).toHaveBeenCalledTimes(1)
+    expect(startCall.mock.calls.map((c) => c[1])).toEqual(['key-2', 'key-3'])
+  })
+
+  it('a call still being checked (creation_uncertain) opens like a started call', async () => {
+    const client = fakeClient({ startCall: vi.fn(async () => ({ call_id: 'call-1', status: 'creation_uncertain' })) })
+    const { result } = await apiStarter(client, keys())(contractExampleBrief, emptySession)
+    expect(result).toMatchObject({ kind: 'started', callId: 'call-1' })
   })
 
   it('an edit after an earlier save is a PATCH to the same brief, with a new key', async () => {
@@ -190,8 +235,9 @@ describe('reviewView (server wins)', () => {
 })
 
 describe('isCallRouteMissing and describeError', () => {
-  it('only treats a missing route or no answer as "not connected"', () => {
+  it('only treats a missing route as "not connected", never no answer', () => {
     expect(isCallRouteMissing(routeMissing())).toBe(true)
+    expect(isCallRouteMissing(new ApiError(NETWORK_ERROR, 'x', 0, true))).toBe(false)
     expect(isCallRouteMissing(new ApiError('http_404', 'x', 404, false))).toBe(true)
     expect(isCallRouteMissing(new ApiError('brief_not_found', 'x', 404, false))).toBe(false)
     expect(isCallRouteMissing(new ApiError('invalid_phone', 'x', 422, false))).toBe(false)

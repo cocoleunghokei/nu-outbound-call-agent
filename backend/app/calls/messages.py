@@ -134,6 +134,14 @@ def pause_cap_goodbye_line(calling_name: str) -> str:
     )
 
 
+def late_call_goodbye_line(calling_name: str) -> str:
+    """Said when a call we had given up on turns out to have connected after all."""
+    return (
+        f"I'm sorry, there was a problem on my end. {calling_name} will call you back. "
+        "Thank you for your time. Goodbye."
+    )
+
+
 def say_and_hang_up(content: str) -> dict[str, Any]:
     """Speak a sentence, then let Vapi end the call once it has been spoken."""
     return {"type": "say", "content": content, "endCallAfterSpoken": True}

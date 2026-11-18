@@ -55,6 +55,10 @@ export type StartResult =
 /** Runs Start for one brief. Returns the result and the updated session; never throws. */
 export type Starter = (brief: Brief, session: SaveSession) => Promise<{ result: StartResult; session: SaveSession }>
 
+/** `POST /calls` answered 201 with `status: "failed"`: the call provably never rang. */
+export const CALL_NOT_PLACED = 'call_not_placed'
+const CALL_NOT_PLACED_MESSAGE = "The call didn't go through, so nobody was called. Tap Start to try again."
+
 /** Demo mode: no network. Logs the brief, as the app did before Step 11. */
 export const demoStarter: Starter = async (brief, session) => {
   console.info('start call with brief (demo mode, nothing sent)', brief)
@@ -69,9 +73,13 @@ export function keyFor(session: SaveSession, signature: string, newKey: () => st
   return [key, { ...session, keys: { ...session.keys, [signature]: key } }]
 }
 
-/** True when `POST /calls` failed because Coco's route isn't there yet, not because of the brief. */
+/**
+ * True when `POST /calls` failed because the route isn't deployed, not because of the brief.
+ *
+ * No answer at all (`NETWORK_ERROR`) is not "missing": the request may have reached the
+ * server and a call may be ringing, so it must never say "nothing was dialed".
+ */
 export function isCallRouteMissing(error: ApiError): boolean {
-  if (error.code === NETWORK_ERROR) return true
   // FastAPI's own 404/405 for an unknown route; a real "brief_not_found" is a different code.
   if (error.code === 'not_found' || error.code === 'method_not_allowed' || error.status === 405) return true
   // A 404 without the shared error shape (e.g. from a proxy in front of the API).
@@ -82,6 +90,12 @@ export function isCallRouteMissing(error: ApiError): boolean {
 export function describeError(error: ApiError, step: 'save' | 'start'): string {
   if (error.code === NO_SESSION || error.code === 'unauthenticated' || error.code === 'token_expired') {
     return "You're signed out, so I couldn't save this. Sign in again, then tap Start."
+  }
+  if (step === 'start' && (error.code === NETWORK_ERROR || error.status >= 500)) {
+    // No answer or a server failure: the call may have started before the answer was lost.
+    // Start again reuses the same Idempotency-Key, so the server returns that call instead
+    // of dialing a second time.
+    return "I didn't hear back from the server, so the call may have started. Check your connection, then tap Start again. It won't call twice."
   }
   if (error.code === NETWORK_ERROR) {
     return "I couldn't reach the server. Check your connection, then tap Start again."
@@ -138,10 +152,19 @@ export function apiStarter(client: ApiClient, newKey: () => string = () => crypt
     }
 
     // 3. Hand the brief to Coco's call controller.
-    const [key, withKey] = keyFor(session, `POST /calls ${saved.brief_id}`, newKey)
+    const signature = `POST /calls ${saved.brief_id}`
+    const [key, withKey] = keyFor(session, signature, newKey)
     session = withKey
     try {
       const call = await client.startCall(saved.brief_id, key)
+      if (call.status === 'failed') {
+        // 201, but the phone service refused the call. Forget the key: a replay of it would
+        // return this same failed call, and the next tap on Start should try a new one.
+        const keys = { ...session.keys }
+        delete keys[signature]
+        const error = new ApiError(CALL_NOT_PLACED, CALL_NOT_PLACED_MESSAGE, 201, true)
+        return { result: { kind: 'error', server, message: CALL_NOT_PLACED_MESSAGE, error }, session: { ...session, keys } }
+      }
       return { result: { kind: 'started', server, callId: typeof call.call_id === 'string' ? call.call_id : null }, session }
     } catch (err) {
       const error = asApiError(err)
