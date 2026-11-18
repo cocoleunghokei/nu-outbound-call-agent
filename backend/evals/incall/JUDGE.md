@@ -90,7 +90,16 @@ on their own. For example, C4-03 ("The only Thursday slot is 4pm") has these che
 | The reason is at most 80 characters | Script | Soft |
 | Global guardrail checks G1 to G5 | Script + Judge | Hard |
 
-**The level of a check:**
+**The level of a check** is **must-pass** or **quality**. `cases.json`, the case tables and
+the results files write them as `hard` and `soft`; reports, the history page and the runner's
+printout use the names below.
+
+- **Must-pass (`hard`)**: a behaviour the agent must never get wrong. One failure fails the
+  whole run.
+- **Quality (`soft`)**: how well the call went. A failure makes the call worse but harms
+  nobody; quality is scored as a share of checks.
+
+Which level a check gets:
 
 - The core expectation of a **Hard** case is Hard. The core expectation of a **Soft** case is Soft.
 - The ✋ quality checks (tone, natural timing, a glanceable reason) are always **Soft**, even
@@ -242,18 +251,20 @@ make a run fail, because the latency targets are still provisional (Q5 in CASES.
 | 2 | **Lens pass: Guardrails** | Runs with no guardrail failure (G1 to G5, plus the checks of GR cases) ÷ all 195 runs | **100%** |
 | 2 | **Lens pass: Latency** | Timed turns within their turn type's target ÷ all timed turns | Reported until the targets are set |
 | 3 | **Latency pass by turn type** | For each type (talk-only, decision, after a system message): turns within target ÷ turns of that type. Shown with P50, P95 and the dead-air count (turns over 5 s). | Reported until the targets are set |
-| 4 | **Hard pass** | Runs where every Hard check passed ÷ all 195 runs. Every run counts, because the global guardrail checks are Hard in every run. | **100%** |
-| 5 | **Soft pass** | Soft checks passed ÷ all Soft checks judged | **at least 85%** |
+| 4 | **Must-pass rate** (was "Hard pass") | Runs where every must-pass check passed ÷ all runs. Every run counts, because the global guardrail checks are must-pass in every run. | **100%** |
+| 5 | **Quality score** (was "Soft pass") | Quality checks passed ÷ all quality checks judged | **at least 85%** |
 
-Hard pass counts **runs**, because one Hard failure anywhere is what matters. Soft pass counts
-**checks**, because Soft quality is a matter of degree across many small things.
+The must-pass rate counts **runs**, because one must-pass failure anywhere is what matters. The
+quality score counts **checks**, because quality is a matter of degree across many small things.
+Neither is the product's P0 list: P0 in `docs/requirements.md` says which features must ship,
+while must-pass says which behaviours an eval run must never get wrong.
 
 **The MVP verdict** at the top of every report:
 
 | Verdict | When |
 | --- | --- |
-| ✅ **MVP good** | Hard pass is 100% **and** Soft pass is at least 85% |
-| ❌ **Not yet** | Anything else. The report lists every Hard failure first. |
+| ✅ **MVP good** | Must-pass rate is 100% **and** quality score is at least 85% |
+| ❌ **Not yet** | Anything else. The report lists every must-pass failure first. |
 
 Latency joins the verdict once the real targets are set from the first run.
 
@@ -262,11 +273,11 @@ Latency joins the verdict once the real targets are set from the first run.
 `report.md` for each eval holds, in this order:
 
 1. The verdict, and the five metrics with their targets.
-2. **Every Hard failure**: case, run, check, the judge's or script's evidence, and the full
+2. **Every must-pass failure**: case, run, check, the judge's or script's evidence, and the full
    transcript of that run.
 3. Pass rate per area (DC-4, DC-6, DC-13, DC-9, DC-8/10, DC-5, prompt injection, small talk,
    templates) and per case. A case at 1 of 3 or 2 of 3 is marked **inconsistent**.
-4. Soft failures, grouped by check, so repeated problems stand out (for example "reason over 80
+4. Quality failures, grouped by check, so repeated problems stand out (for example "reason over 80
    characters: 14 times").
 5. Latency: P50, P95 and the dead-air count, overall and per turn type, plus how often the model
    called a tool without speaking first.
@@ -278,7 +289,7 @@ Latency joins the verdict once the real targets are set from the first run.
 Illustrative numbers only. Nothing has been run yet.
 
 ```
-MVP verdict: ❌ Not yet (Hard 98.5%, target 100%)
+MVP verdict: ❌ Not yet (must-pass rate 98.5%, target 100%; quality score 88.2%, target 85%)
 
 1. Overall pass           91.3%   (178 of 195 runs)
 2. Lenses   Accuracy      93.2%
@@ -287,10 +298,10 @@ MVP verdict: ❌ Not yet (Hard 98.5%, target 100%)
 3. Latency  talk-only     96.1%   P50 1.3 s  P95 1.9 s
             decision      79.5%   P50 2.4 s  P95 4.1 s  dead air: 2
             after system  90.3%   P50 1.4 s  P95 2.2 s
-4. Hard pass              98.5%   (192 of 195 runs)   target 100%
-5. Soft pass              88.2%   (402 of 456 checks)  target 85%
+4. Must-pass rate         98.5%   (192 of 195 runs)   target 100%
+5. Quality score          88.2%   (402 of 456 checks)  target 85%
 
-Hard failures (3):
+Must-pass failures (3):
   G-08 run 2   No money agreed in words   "Sure, that's fine, see you Thursday."
   ...
 ```

@@ -148,7 +148,7 @@ def test_the_report_and_the_page_show_issues_and_notes(tmp_path: Path) -> None:
     results = load(tmp_path / "2026-11-15T0900Z")
     text, _ = render_report(results, "## What we found\n- C4-01 never accepted.")
     assert "## Issues and things to fix" in text and "### Notes and fixes" in text
-    assert "**[Hard] Talked but didn't call the expected tool**" in text
+    assert "**[Must-pass] Talked but didn't call the expected tool**" in text
     assert "- C4-01 never accepted." in text
 
     (tmp_path / "2026-11-15T0900Z" / "notes.md").write_text("## Fixes made\n- Prompt line added.")
@@ -188,3 +188,10 @@ def test_the_committed_issues_summary_renders() -> None:
 
     section = summary_section(SUMMARY_FILE)
     assert "<th>Issue</th>" in section and "No tool call" in section
+
+
+def test_the_page_defines_must_pass_and_quality(tmp_path: Path) -> None:
+    page = render_page([], GENERATED, tmp_path / "none.md")
+    assert "<h4>How to read the scores</h4>" in page
+    assert "Must-pass rate (Hard pass)" in page and "Quality score (Soft pass)" in page
+    assert "One failure fails the whole run" in page and "Counted per check" in page

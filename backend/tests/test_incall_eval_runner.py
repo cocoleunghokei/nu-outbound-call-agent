@@ -591,7 +591,7 @@ def test_every_case_runs_offline_and_the_report_waits_for_the_judge(tmp_path: Pa
     assert len(records) == len(DATA.cases) == len(list((tmp_path / "judge").iterdir()))
     text, code = render(load(tmp_path))
     assert code == 3 and "⏳ Incomplete" in text  # judged checks are still pending
-    assert "## Hard failures" in text and "## Run info" in text
+    assert "## Must-pass failures" in text and "## Run info" in text
 
 
 def test_the_report_is_good_only_when_every_hard_check_passes(tmp_path: Path) -> None:
