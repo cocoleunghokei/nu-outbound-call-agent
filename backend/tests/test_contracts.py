@@ -140,6 +140,27 @@ def test_tool_definitions_wrap_args_schemas() -> None:
         )
 
 
+def _description(name: str) -> str:
+    tools = {d["function"]["name"]: d for d in tool_definitions() if "function" in d}
+    return str(tools[name]["function"]["description"])
+
+
+def test_report_decision_description_allows_a_low_counter() -> None:
+    """Regression: it said "call ask_user whenever the score is Low", so counters went unlogged."""
+    text = _description("report_decision")
+    assert "Call ask_user instead whenever the score is Low" not in text
+    assert "action counter and confidence low" in text
+    assert "same reply as your words" in text
+
+
+def test_ask_user_description_covers_missing_info_and_not_understood() -> None:
+    """Regression: it listed only constraint, ask-first and money, so missing info never pinged."""
+    text = _description("ask_user")
+    assert "not in the brief" in text
+    assert "can't understand them after asking once" in text
+    assert "same reply as your words" in text
+
+
 def test_tool_dimensions_and_confidence_tiers() -> None:
     dims = {
         "needs_ask_first_field",
