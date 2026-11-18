@@ -165,7 +165,13 @@ def test_it_confirms_and_waits_for_goodbye_before_hanging_up() -> None:
     # before the business said "Sorry, 7 just went". Decided in Q12 (CASES.md).
     prompt = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
     assert '"7 works" is not a booking yet' in prompt
-    assert "read the result back in one sentence" in prompt
+    # Found by the eval (SM-06): after "You're booked under Alex Kim for Saturday at 7" it read
+    # everything back again and waited, so the call never got its outcome.
+    assert "If they have said them all, the booking is confirmed: do not read it back again" in (
+        prompt
+    )
+    assert "read back only what they haven't said" in prompt
+    assert "Call report_outcome once, before your goodbye." in prompt
     assert "End the call only after the business says goodbye" in prompt
     assert 'a clear wrap-up ("You\'re all set", "Anything else?")' in prompt
     assert "You may end without waiting only when the business hangs up" in prompt
