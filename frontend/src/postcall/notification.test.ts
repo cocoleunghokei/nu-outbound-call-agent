@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { callEndedNotice, notifyCallEnded, resultPageUrl, type NotifyEnv } from './notification'
+import { routeOf } from '../router'
 
 describe('callEndedNotice', () => {
   it('uses the business name as the title and the outcome in the body', () => {
@@ -31,11 +32,13 @@ describe('callEndedNotice', () => {
 
 describe('resultPageUrl', () => {
   it('points at the history screen with the call open', () => {
-    expect(resultPageUrl('abc-123')).toBe('/?screen=history&open=abc-123')
+    expect(resultPageUrl('abc-123')).toBe('/history?open=abc-123')
+    const url = new URL(resultPageUrl('abc-123'), 'https://app.example.test')
+    expect(routeOf(url.pathname, url.search)).toEqual({ name: 'history' })
   })
 
   it('escapes the call id', () => {
-    expect(resultPageUrl('a&b')).toBe('/?screen=history&open=a%26b')
+    expect(resultPageUrl('a&b')).toBe('/history?open=a%26b')
   })
 })
 
@@ -69,7 +72,7 @@ describe('notifyCallEnded', () => {
     notifyCallEnded(notice, env)
     expect(env.openResult).not.toHaveBeenCalled()
     clickIt()
-    expect(env.openResult).toHaveBeenCalledWith('/?screen=history&open=c1')
+    expect(env.openResult).toHaveBeenCalledWith('/history?open=c1')
   })
 
   it.each(['default', 'denied', 'unsupported'] as const)('shows nothing when permission is %s', (permission) => {

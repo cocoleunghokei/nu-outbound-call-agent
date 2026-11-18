@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,8 +29,31 @@ class Settings(BaseSettings):
     vapi_phone_number_id: str = ""
     vapi_base_url: str = "https://api.vapi.ai"
     vapi_ip_allowlist: bool = False
+    # This backend's public https origin (e.g. the Railway URL). Vapi sends webhooks to
+    # {public_base_url}/webhooks/vapi; POST /calls refuses to dial a real call without it.
+    public_base_url: str = ""
 
     voice_platform: Literal["vapi", "fake"] = "fake"
+
+    # Numbers POST /calls may dial, as a JSON list like CORS_ORIGINS (e.g. ["+16175550142"]).
+    # Empty means no restriction. A stopgap while the backend is reachable by anonymous
+    # sessions and the per-user call caps (DC-15) don't exist yet: set it to the test phones.
+    call_destination_allowlist: list[str] = []
+
+    @field_validator("call_destination_allowlist")
+    @classmethod
+    def _normalise_allowlist(cls, entries: list[str]) -> list[str]:
+        """Store every entry as +1XXXXXXXXXX, so the check matches the brief's normalised number."""
+        # Imported here: app.briefs imports app.auth, which imports this module.
+        from app.briefs.phone import check_phone
+
+        normalised: list[str] = []
+        for entry in entries:
+            checked = check_phone(entry)
+            if checked.e164 is None:
+                raise ValueError(f"CALL_DESTINATION_ALLOWLIST entry {entry!r}: {checked.message}")
+            normalised.append(checked.e164)
+        return normalised
 
     # LLM for custom-goal briefs (PC-3, app/briefs/llm.py). An empty key turns the LLM off:
     # custom briefs then use the user's own words, and the app still starts.
