@@ -4,10 +4,11 @@ Runs inside the webhook ingress transaction with the call lock held, so everythi
 (the ping, its events, the push and the "still checking" lines) commits together or not at
 all, and Vapi gets its answer in well under the 500 ms budget: no network calls here.
 
-A decision ping whose reason is too long for the card, or about an offer that already fits
-(the model's own High, or Python's score of the heard ``offer``, ``app/calls/scoring.py``),
-is refused before anything is written (``length_gate`` and
-``needless_ping_gate`` in ``app/calls/gates.py``); the model gets the refusal instead.
+A decision ping about an offer that already fits (the model's own High, or Python's score
+of the heard ``offer``, ``app/calls/scoring.py``) is refused before anything is written
+(``needless_ping_gate`` in ``app/calls/gates.py``); the model gets the refusal instead. A
+long reason is not refused: 80 characters is a quality target the eval measures, and a
+refusal would cost a silent extra model turn on the call (Q4). The schema caps it at 200.
 """
 
 import logging
@@ -17,7 +18,7 @@ from typing import Any
 from psycopg import AsyncConnection
 
 from app.calls import messages
-from app.calls.gates import length_gate, load_brief, load_facts, needless_ping_gate
+from app.calls.gates import load_brief, load_facts, needless_ping_gate
 from app.calls.pings import (
     FILLER_EVERY_S,
     PING_WINDOW_MS,
@@ -93,16 +94,14 @@ async def handle_ask_user(conn: AsyncConnection[Any], ctx: ToolCallContext) -> s
         raise ValueError("ask_user needs a question")
     # The card shows the model's reason only for a decision ping; a field approval uses ours.
     if kind == "decision":
-        refusal = length_gate(ctx.arguments)
-        if refusal is None:
-            score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)
-            refusal = needless_ping_gate(
-                ctx.confidence,
-                ctx.dimensions,
-                ctx.arguments.get("field_requested"),
-                score,
-                await load_facts(conn, ctx.call_id),
-            )
+        score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)
+        refusal = needless_ping_gate(
+            ctx.confidence,
+            ctx.dimensions,
+            ctx.arguments.get("field_requested"),
+            score,
+            await load_facts(conn, ctx.call_id),
+        )
         if refusal is not None:
             logger.info("ask_user refused by a gate for call %s", ctx.call_id)
             return refusal

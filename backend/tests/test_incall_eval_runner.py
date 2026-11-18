@@ -17,7 +17,7 @@ import pytest
 
 from app.calls import messages
 from app.calls.assistant import TEMPERATURE
-from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY, REFUSED_TOO_LONG
+from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY, is_refusal
 from evals.incall import model as model_module
 from evals.incall.checks import business_dates, business_times, check_run
 from evals.incall.judge_input import render as render_judge
@@ -320,21 +320,20 @@ def test_the_give_up_gate_makes_the_agent_ask_first() -> None:
     assert v["gates-quiet"] == "fail"
 
 
-def test_the_length_gate_refuses_a_long_reason_and_the_retry_counts() -> None:
+def test_a_long_reason_goes_through_and_only_the_length_check_fails() -> None:
+    # Q4: 80 characters is the eval's target, not a live refusal (no silent extra turn).
     long = "They offered Thu 4pm only, and nothing earlier on Thursday. You said before 3pm!!"
     assert len(long) > 80
-    long_ping = ask(reason=long)
     record, _ = play(
         "C4-03",
         [tools(COUNTER, text="That won't work. Anything before 3pm?"), QUIET,
-         tools(long_ping), tools(ask(), text="Let me check with Alex Kim.")],
+         tools(ask(reason=long), text="Let me check with Alex Kim.")],
     )  # fmt: skip
-    refused = [e for e in record.events if e.kind == "tool_result" and e.text == REFUSED_TOO_LONG]
-    assert [e.step for e in refused] == [2]
+    assert not [e for e in record.events if e.kind == "tool_result" and is_refusal(e.text)]
     v = verdicts(record)
-    assert v["D5-len"] == "pass"  # the refused reason never reached the card
-    assert v["C4-03.1"] == "pass"  # the short retry pinged Alex
-    assert v["gates-quiet"] == "fail"
+    assert v["D5-len"] == "fail"  # the eval still flags the long card
+    assert v["C4-03.1"] == "pass"  # Alex was pinged on the first try
+    assert v["gates-quiet"] == "pass"
 
 
 def test_tool_call_ids_are_unique_within_a_run_even_if_the_provider_repeats_them() -> None:

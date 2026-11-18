@@ -30,7 +30,6 @@ from app.calls import messages
 from app.calls.gates import (
     SETTLING_ACTIONS,
     counter_gate,
-    length_gate,
     load_brief,
     load_facts,
     low_offer_gate,
@@ -54,10 +53,6 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
 
     An accept or take_fallback that a gate refuses is not logged; the refusal is returned.
     """
-    too_long = length_gate(ctx.arguments)
-    if too_long is not None:
-        logger.info("report_decision refused by the length gate for call %s", ctx.call_id)
-        return too_long
     action = ctx.arguments.get("action")
     if action == "counter":
         second = counter_gate(action, await load_facts(conn, ctx.call_id))

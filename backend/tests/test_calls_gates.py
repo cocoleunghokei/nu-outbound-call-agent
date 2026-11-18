@@ -15,7 +15,6 @@ import psycopg
 import pytest
 
 from app.calls.gates import (
-    CARD_TEXT_MAX,
     REFUSALS,
     REFUSED_GIVE_UP,
     REFUSED_LOW_OFFER,
@@ -23,7 +22,6 @@ from app.calls.gates import (
     REFUSED_NEEDLESS_PING,
     REFUSED_NOT_A_FALLBACK,
     REFUSED_SECOND_COUNTER,
-    REFUSED_TOO_LONG,
     REFUSED_UNSAID_NAME,
     CallFacts,
     breaks_rule_refusal,
@@ -32,7 +30,6 @@ from app.calls.gates import (
     give_up_gate,
     is_approving,
     is_refusal,
-    length_gate,
     low_offer_gate,
     mentions_money,
     missing_detail_gate,
@@ -156,17 +153,10 @@ def test_a_low_offer_cannot_be_accepted_without_approval() -> None:
     assert low_offer_gate("accept", LOW, CallFacts(latest_ping_approved=True)) is None
 
 
-def test_card_text_over_80_characters_is_refused() -> None:
-    # Found by the eval (D5-len): reasons of 83 to 99 characters, run after run.
-    fits = "x" * CARD_TEXT_MAX
-    assert CARD_TEXT_MAX == 80
-    assert length_gate({"reason": fits, "missed_preference": fits}) is None
-    assert length_gate({"reason": f"  {fits}  "}) is None  # surrounding spaces don't count
-    assert length_gate({"reason": fits + "x"}) == REFUSED_TOO_LONG
-    assert length_gate({"reason": "Short.", "missed_preference": fits + "x"}) == REFUSED_TOO_LONG
-    assert length_gate({}) is None
-    assert length_gate({"reason": 42}) is None  # not text: the schema check rejects it
-    assert REFUSED_TOO_LONG in REFUSALS  # so the eval drops the refused call from its checks
+def test_no_refusal_is_about_card_text_length() -> None:
+    # Q4: 80 characters is the eval's target, not a live refusal. The 04:01 run showed the
+    # length refusal firing 12 times, each a silent extra model turn on the call.
+    assert not [r for r in REFUSALS if "characters" in r]
 
 
 def test_pinging_about_an_offer_scored_high_is_refused() -> None:
@@ -420,9 +410,10 @@ def test_giving_up_before_asking_is_refused_and_never_becomes_the_outcome(
 
 
 @pytest.mark.db
-def test_a_card_reason_over_80_characters_is_refused_and_writes_nothing(
+def test_a_card_reason_over_80_characters_goes_through(
     supabase_env: SupabaseEnv,
 ) -> None:
+    # Regression: the length refusal cost a silent extra model turn on the call (Q4).
     db = supabase_env.db_url
     call = seed_call(db)
     long_reason = (
@@ -435,15 +426,16 @@ def test_a_card_reason_over_80_characters_is_refused_and_writes_nothing(
             decision = {**_decision("counter", DIMS_LOW), "reason": long_reason}
             tc = f"tc-{uuid.uuid4()}"
             response = await post(client, tool_body(call, [(tc, "report_decision", decision)]))
-            assert response.json()["results"] == [{"toolCallId": tc, "result": REFUSED_TOO_LONG}]
-            assert not [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+            [result] = response.json()["results"]
+            assert not is_refusal(result["result"])
+            decisions = [p for t, p in await event_rows(db, call) if t == "agent.decision"]
+            assert [d["reason"] for d in decisions] == [long_reason]
 
             ask_tc, ask = ask_body(call, reason=long_reason)
             response = await post(client, ask)
-            assert response.json()["results"] == [
-                {"toolCallId": ask_tc, "result": REFUSED_TOO_LONG}
-            ]
-            assert await ping_rows(db, call) == []  # no card reached the user
+            [result] = response.json()["results"]
+            assert result["toolCallId"] == ask_tc and not is_refusal(result["result"])
+            assert len(await ping_rows(db, call)) == 1  # the card reached the user
 
     asyncio.run(scenario())
 

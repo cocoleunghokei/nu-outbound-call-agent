@@ -18,7 +18,7 @@ The tool results follow the backend:
 - The action gates (``app/calls/gates.py``) run first, from the same facts the backend reads:
   an accept or take_fallback after unapproved money, a Low offer accepted without a "yes",
   an accept or take_fallback whose offer leaves out a value the rules need,
-  ``needs_follow_up`` before the user was asked, a card reason over 80 characters, a ping
+  ``needs_follow_up`` before the user was asked, a second counter, a ping
   about an offer the model scored High, or a staff name the business never said, gets the
   refusal instead and changes nothing.
 
@@ -39,7 +39,6 @@ from app.calls.gates import (
     counter_gate,
     facts_from_timeline,
     give_up_gate,
-    length_gate,
     low_offer_gate,
     missing_detail_gate,
     money_gate,
@@ -143,15 +142,13 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         key = args.get("field_requested")
         if isinstance(key, str) and key in data.ask_first_values():
             state.ping = _Ping(messages.field_approval_question(key)[0], "field_approval")
-        elif (refusal := length_gate(args) or _needless_ping(state, args)) is not None:
+        elif (refusal := _needless_ping(state, args)) is not None:
             return refusal
         else:
             state.ping = _Ping(str(args.get("question", "")).strip(), "decision")
         state.latest_answer = None  # a new question: no answer to it yet
         return messages.ask_user_result(data.calling_name)
     if name == "report_decision":
-        if (too_long := length_gate(args)) is not None:
-            return too_long
         action = args.get("action")
         if action == "counter":
             if (second := counter_gate(action, state.facts())) is not None:
