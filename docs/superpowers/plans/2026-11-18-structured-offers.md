@@ -1,6 +1,6 @@
 # Structured Offers Plan: the model reports what it heard, Python decides if it fits
 
-> **Status:** proposal, not started. Owner: Coco (during call). Needs Lotto's agreement for the brief format and the review card (pre-call).
+> **Status:** PR 1 (contracts) in progress on `claude/structured-offers`, stacked on `claude/sweet-mccarthy-xekz3h`. Owner and final reviewer: Coco, including the pre-call parts (brief format, review card).
 
 ## Why
 
@@ -43,16 +43,16 @@ Rule kinds (first version):
 
 | Kind | Fields | Example text |
 | --- | --- | --- |
-| `date` | `on`, or `from` / `to` (YYYY-MM-DD) | "On Thursday 19 November" |
+| `date` | `on`, or `earliest` / `latest` (YYYY-MM-DD, inclusive) | "On Thursday 19 November" |
 | `time` | `earliest` and/or `latest` (HH:MM, 24-hour, inclusive) | "Before 3pm" → `latest: 14:59`; "morning (before noon)" → `latest: 11:59` |
 | `party_size` | `exactly`, or `min` / `max` | "Party of 6" |
 | `person` | `name` | "With Dr. Rivera" |
 
-Money stays a gate on its own (`money_gate`), so there's no price rule in the first version.
+Money stays a gate on its own (`money_gate`), so there's no price rule in the first version. The schema is `contracts/brief-rule.v1.json`. "At least one bound" is not in the schema, because `anyOf` makes the generated Python and TypeScript types unreadable. A rule with no bound counts as **unknown** in scoring instead.
 
 ### 2. The offer on tool calls (contracts: `contracts/tools/report_decision.args.v1.json`, `ask_user.args.v1.json`)
 
-An optional `offer` object holds only what the business said, normalised:
+An optional `offer` object holds only what the business said, normalised. Tool schemas go to the model exactly as written (`load_schema` doesn't resolve `$ref`), so `offer` is written out in full in both files, and a test keeps the two copies identical:
 
 ```json
 "offer": { "date": "2026-11-19", "time": "15:00", "party_size": 6, "person": "Dr. Rivera" }
@@ -91,7 +91,14 @@ The eval runner (`backend/evals/incall/play.py`) calls the same functions, as it
 
 - **Deterministic parser first** (new `backend/app/briefs/rules.py`). It covers the common shapes: dates ("Thursday 19 November", against the call's date), times ("before 3pm", "after 6", "between 6:30pm and 8pm", "morning", "afternoon"), party size, and "with Dr. X". `app/postcall/decide.py` already parses times and dates and can be reused.
 - **Model fallback later**, for text the parser can't read. It follows the `app/briefs/llm.py` pattern (JSON mode, strict validation). If validation fails, the item stays text-only. A brief is never blocked by a rule it can't parse.
-- **The review card** (`frontend/src/precall/ReviewCard.tsx`) shows what was understood, for example "Latest time: 2:59pm", so the user can fix a misread before the call. This is open question 1.
+- **The review card** (`frontend/src/precall/ReviewCard.tsx`) keeps its tags as they are. Under each tag, a small grey line shows how it will be checked (decided 2026-11-18). To fix a misread, the user edits the text, which is parsed again. The parsed line itself is read-only.
+
+  ```
+  Must     ( Before 3pm )
+             ✓ Latest start 2:59pm
+           ( A quiet table, not near the kitchen )
+             ~ I'll judge this one myself
+  ```
 
 ## Delivery (one PR each, in this order)
 
@@ -126,7 +133,7 @@ The during-call work is tested first on hand-written rules in the eval briefs, s
 
 ## Open questions
 
-1. Does the user see and edit the parsed rules on the review card, or only the text? (Recommendation: see them, read-only at first.)
-2. Lotto: is adding optional `rules` to brief items, and parsing them in the builder, acceptable for the brief contract and `frontend/src/precall/brief.ts`, which mirrors `builder.py`?
+1. ~~Does the user see the parsed rules?~~ **Decided:** yes, as a grey line under each tag, read-only (see section 6).
+2. ~~Lotto's agreement on the brief format?~~ **Decided:** Coco is the final reviewer for this work.
 3. Does the parser run on the server only, with the review card showing the server's result, or in both places as the builder does today?
 4. DC-4 in `docs/requirements.md` (Notion is the master copy) describes the model scoring every offer. It needs a line saying structured rules are scored in code.
