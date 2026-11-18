@@ -1,6 +1,6 @@
 # Structured Offers Plan: the model reports what it heard, Python decides if it fits
 
-> **Status:** PR 1 (contracts) in progress on `claude/structured-offers`, stacked on `claude/sweet-mccarthy-xekz3h`. Owner and final reviewer: Coco, including the pre-call parts (brief format, review card).
+> **Status:** PR 1 (contracts) and PR 2 (scoring and gates) done on `claude/structured-offers`, stacked on `claude/sweet-mccarthy-xekz3h` (#69). Next: PR 3 (prompt and eval). Owner and final reviewer: Coco, including the pre-call parts (brief format, review card).
 
 ## Why
 

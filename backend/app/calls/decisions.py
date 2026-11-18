@@ -12,8 +12,10 @@ Only a ``decision`` ping is closed: an Ask-me-first approval stays open, because
 offer doesn't answer "may I share your date of birth?". A decision older than the ping (a
 late webhook) closes nothing.
 
-Before anything is logged, the length gate refuses a reason or missed preference too long for
-the card, and the money and Low-offer gates (``app/calls/gates.py``) may refuse
+When the call carries the ``offer`` the model heard, the Low-offer gate judges it with
+Python's score against the brief's rules (``app/calls/scoring.py``) instead of the model's
+own checks. Before anything is logged, the length gate refuses a reason or missed preference
+too long for the card, and the money and Low-offer gates (``app/calls/gates.py``) may refuse
 an accept or take_fallback: the agent then gets the refusal as its tool result, nothing is
 logged, and the open question stays open.
 """
@@ -28,11 +30,13 @@ from app.calls import messages
 from app.calls.gates import (
     SETTLING_ACTIONS,
     length_gate,
+    load_brief,
     load_facts,
     low_offer_gate,
     money_gate,
 )
 from app.calls.pings import close_ping, open_ping_for_update
+from app.calls.scoring import score_tool_call
 from app.calls.store import set_status
 from app.events import append_event
 from app.webhooks.registry import ToolCallContext
@@ -55,7 +59,8 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
     action = ctx.arguments.get("action")
     if action in SETTLING_ACTIONS:
         facts = await load_facts(conn, ctx.call_id)
-        refusal = money_gate(action, facts) or low_offer_gate(action, ctx.dimensions, facts)
+        score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)
+        refusal = money_gate(action, facts) or low_offer_gate(action, ctx.dimensions, facts, score)
         if refusal is not None:
             logger.info("report_decision refused by a gate for call %s", ctx.call_id)
             return refusal

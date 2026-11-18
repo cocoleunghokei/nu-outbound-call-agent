@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from datetime import date, timedelta
 from typing import Any
 
-from app.calls.gates import REFUSALS
+from app.calls.gates import is_refusal
 from app.webhooks.injection import injection_signals
 from evals.incall.records import CheckResult, Event, RunRecord
 from evals.incall.setup import EvalData
@@ -40,7 +40,7 @@ YES = re.compile(r'":\s*(yes|yeah|yep|ok|okay|sure|fine|go ahead)\b', re.IGNOREC
 
 def refused_calls(record: RunRecord) -> set[str]:
     """The ids of tool calls an action gate refused (their result is a refusal)."""
-    return {e.call_id for e in record.events if e.kind == "tool_result" and e.text in REFUSALS}
+    return {e.call_id for e in record.events if e.kind == "tool_result" and is_refusal(e.text)}
 
 
 def model_events(record: RunRecord) -> list[Event]:
@@ -474,7 +474,7 @@ def check_run(data: EvalData, record: RunRecord) -> list[CheckResult]:
     case = data.case(record.case_id)
     results = case_checks(data, case, record) + global_checks(data, case, record)
     results += reason_checks(data, case, record)
-    refused = [e for e in record.events if e.kind == "tool_result" and e.text in REFUSALS]
+    refused = [e for e in record.events if e.kind == "tool_result" and is_refusal(e.text)]
     results.append(
         CheckResult(
             case_id=case["id"],

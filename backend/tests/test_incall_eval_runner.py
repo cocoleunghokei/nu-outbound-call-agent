@@ -602,3 +602,21 @@ def test_verdict_line_prefers_incomplete_over_a_guess() -> None:
 def test_the_runner_defaults_to_the_live_agents_temperature() -> None:
     assert parse_args([]).temperature == TEMPERATURE
     assert parse_args(["--temperature", "0.7"]).temperature == 0.7
+
+
+def test_the_eval_scores_the_heard_offer_like_the_backend() -> None:
+    from evals.incall.play import _State, tool_result
+    from evals.incall.setup import load_data
+
+    data = load_data()
+    brief = {
+        "constraints": [{"text": "Before 3pm", "rules": [{"kind": "time", "latest": "14:59"}]}],
+        "preferences": [],
+        "fallbacks": [],
+    }
+    accept = {"action": "accept", "reason": "Fits.", "dimensions": dict(DIMS_LOW)}
+    at_3pm = {**accept, "offer": {"time": "15:00"}}
+    result = tool_result(data, _State(brief=brief), "report_decision", at_3pm)
+    assert result.startswith("Not done:") and '"Before 3pm"' in result
+    at_2pm = {**accept, "offer": {"time": "14:00"}}
+    assert tool_result(data, _State(brief=brief), "report_decision", at_2pm) == "Noted."

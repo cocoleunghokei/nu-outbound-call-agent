@@ -11,6 +11,11 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
 - **Low offer** (``low_offer_gate``): accept is refused when the model's own ``dimensions``
   say a hard constraint is broken and no fallback matches, unless the user's answer to the
   latest ping was a "yes". take_fallback is refused when neither check passes.
+- **Scored offers** (``app/calls/scoring.py``): when the tool call carries the ``offer`` the
+  model heard and the brief has structured ``rules``, Python's comparison replaces the
+  model's own ``meets_constraints`` and ``matches_fallback`` in the Low-offer and
+  needless-ping gates, and the refusal names the broken rule. Where Python can't tell
+  (unknown), the model's ``dimensions`` decide as before.
 - **Too long** (``length_gate``): ``ask_user`` (a decision ping) and ``report_decision`` are
   refused when ``reason`` or ``missed_preference`` is over ``CARD_TEXT_MAX`` characters, the
   length the user can read on the card at a glance (DC-5). Models can't count characters, so
@@ -38,6 +43,8 @@ from uuid import UUID
 
 from psycopg import AsyncConnection
 
+from app.calls.prompt import one_line
+from app.calls.scoring import OfferScore
 from app.calls.store import is_ending
 
 # The same words the in-call eval's G4 check counts as money (cases.json).
@@ -82,6 +89,28 @@ REFUSED_UNSAID_NAME = (
     "Not done: details.staff_name must be the name of the person you spoke with, exactly as "
     "they said it. They never said that name. Call report_outcome again without staff_name."
 )
+# Every refusal starts with this, including the ones that name a rule, so the eval can tell
+# a refused call from an accepted one without knowing every wording (``is_refusal``).
+REFUSAL_PREFIX = "Not done:"
+
+
+def is_refusal(result: str) -> bool:
+    """True when a tool result is a gate's refusal rather than the action taking effect."""
+    return result.startswith(REFUSAL_PREFIX)
+
+
+def breaks_rule_refusal(rule_text: str) -> str:
+    """The refusal for accepting an offer Python found breaks ``rule_text``."""
+    return (
+        f'Not done: the offer you heard breaks the user\'s rule "{one_line(rule_text)}", and the '
+        "user has not approved it. Do not accept it. Counter once, or call ask_user."
+    )
+
+
+REFUSED_NOT_A_FALLBACK = (
+    "Not done: the offer you heard matches none of the user's fallbacks. Do not take it as a "
+    "fallback. Counter once, or call ask_user."
+)
 REFUSALS = (
     REFUSED_MONEY,
     REFUSED_LOW_OFFER,
@@ -89,6 +118,7 @@ REFUSALS = (
     REFUSED_TOO_LONG,
     REFUSED_NEEDLESS_PING,
     REFUSED_UNSAID_NAME,
+    REFUSED_NOT_A_FALLBACK,
 )
 
 
@@ -128,17 +158,34 @@ def money_gate(action: str, facts: CallFacts) -> str | None:
 
 
 def low_offer_gate(
-    action: str, dimensions: Mapping[str, Any] | None, facts: CallFacts
+    action: str,
+    dimensions: Mapping[str, Any] | None,
+    facts: CallFacts,
+    score: OfferScore | None = None,
 ) -> str | None:
-    """The refusal for accepting an offer the model itself scored as breaking the rules."""
-    if dimensions is None or facts.latest_ping_approved:
+    """The refusal for accepting an offer that breaks the rules, else None.
+
+    "Breaks the rules" comes from Python's ``score`` where it can tell, and from the model's
+    own ``dimensions`` where it can't (or when there is no score). A "yes" from the user to
+    the latest ping lets anything through (R-01).
+    """
+    if facts.latest_ping_approved:
         return None
-    meets = dimensions.get("meets_constraints")
-    matches = dimensions.get("matches_fallback")
+    dims: Mapping[str, Any] = dimensions or {}
+    meets = score.fits if score is not None and score.fits is not None else None
+    if meets is None:
+        meets = dims.get("meets_constraints")
+    matches = score.matches_fallback if score is not None else None
+    if matches is None:
+        matches = dims.get("matches_fallback")
     if action == "accept" and meets is False and matches is not True:
-        return REFUSED_LOW_OFFER
-    if action == "take_fallback" and meets is False and matches is False:
-        return REFUSED_LOW_OFFER
+        broken = score.broken_constraint if score is not None else None
+        return breaks_rule_refusal(broken) if broken else REFUSED_LOW_OFFER
+    if action == "take_fallback" and meets is not True and matches is False:
+        if score is not None and score.matches_fallback is False:
+            return REFUSED_NOT_A_FALLBACK
+        if meets is False:
+            return REFUSED_LOW_OFFER
     return None
 
 
@@ -152,19 +199,34 @@ def length_gate(arguments: Mapping[str, Any]) -> str | None:
 
 
 def needless_ping_gate(
-    confidence: object, dimensions: Mapping[str, Any] | None, field_requested: object
+    confidence: object,
+    dimensions: Mapping[str, Any] | None,
+    field_requested: object,
+    score: OfferScore | None = None,
+    facts: CallFacts | None = None,
 ) -> str | None:
-    """The refusal for asking the user about an offer the model itself scored High, else None.
+    """The refusal for asking the user about an offer that already fits, else None.
 
-    Only when neither DC-4 gate applies: an ask-first field or money always pings. Takes the
-    scores explicitly, because the live ingress strips them from the tool arguments (DC-5).
+    "Fits" is the model's own High, or Python finding every constraint passes (C4-06: a
+    missed preference is Medium, which the agent takes and flags, never pings). Never when a
+    DC-4 gate applies: an ask-first field or money always pings, and so does a ping about
+    something the brief can't answer or that the agent didn't understand. Takes the scores
+    explicitly, because the live ingress strips them from the tool arguments (DC-5).
     """
-    if confidence != "high" or field_requested:
+    if field_requested or (facts is not None and facts.money_since_yes):
         return None
-    dims = dimensions
-    if not isinstance(dims, Mapping):
+    if not isinstance(dimensions, Mapping):
         return None
-    if dims.get("needs_ask_first_field") is False and dims.get("involves_money") is False:
+    if dimensions.get("needs_ask_first_field") is not False:
+        return None
+    if dimensions.get("involves_money") is not False:
+        return None
+    python_fits = score is not None and score.fits is True
+    if python_fits and (
+        dimensions.get("answerable_from_brief") is False or dimensions.get("understood") is False
+    ):
+        return None  # the ping is about something else than the offer
+    if confidence == "high" or python_fits:
         return REFUSED_NEEDLESS_PING
     return None
 
@@ -220,6 +282,18 @@ def facts_from_timeline(
         ending=ending,
         business_said="\n".join(said),
     )
+
+
+async def load_brief(conn: AsyncConnection[Any], call_id: UUID) -> dict[str, Any] | None:
+    """The reviewed brief (brief.v1 JSON) the call was placed from, or None if it has none."""
+    row = await (
+        await conn.execute(
+            "select b.brief from public.calls c join public.briefs b on b.id = c.brief_id"
+            " where c.id = %s",
+            (call_id,),
+        )
+    ).fetchone()
+    return row[0] if row is not None and isinstance(row[0], dict) else None
 
 
 async def load_facts(conn: AsyncConnection[Any], call_id: UUID) -> CallFacts:
