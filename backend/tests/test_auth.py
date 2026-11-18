@@ -246,6 +246,30 @@ def test_missing_idempotency_key_400() -> None:
 
 
 @pytest.mark.db
+def test_anonymous_session_token_accepted(supabase_env: SupabaseEnv) -> None:
+    """An anonymous Supabase session (no sign-in screen yet) passes the verifier like any user.
+
+    The browser signs in anonymously on first use (frontend ``lib/session.ts``). GoTrue issues
+    those tokens with ``aud`` and ``role`` ``authenticated`` and ``is_anonymous: true``, so
+    ``current_user`` accepts them unchanged and ``GET /me`` creates the profile row.
+    """
+    response = httpx.post(f"{supabase_env.auth_url}/signup", json={}, timeout=15)
+    assert response.status_code == 200, f"anonymous signup failed: {response.text}"
+    body = response.json()
+    assert body["user"]["is_anonymous"] is True
+    settings = Settings(
+        database_url=supabase_env.db_url,
+        supabase_jwt_secret=supabase_env.jwt_secret,  # type: ignore[arg-type]
+        supabase_jwt_issuer=supabase_env.jwt_issuer,
+        supabase_jwks_url=f"{supabase_env.auth_url}/.well-known/jwks.json",
+    )
+    with TestClient(create_app(settings)) as client:
+        me = client.get("/me", headers=bearer(body["access_token"]))
+    assert me.status_code == 200, me.text
+    assert me.json() == {"user_id": body["user"]["id"], "onboarded": False}
+
+
+@pytest.mark.db
 def test_real_local_supabase_token_accepted(
     supabase_env: SupabaseEnv, signed_up_user: SignedUpUser
 ) -> None:
