@@ -316,6 +316,7 @@ def render(results: Results, notes: str | None = None) -> tuple[str, int]:
             for r in results.runs
         }
     )
+    served = sorted({s for r in results.runs for s in r.served})
     starts = sorted(r.started_at for r in results.runs)
     stopped = [r for r in results.runs if r.stopped]
     errors = [r for r in results.runs if r.error]
@@ -324,6 +325,7 @@ def render(results: Results, notes: str | None = None) -> tuple[str, int]:
         "## Run info",
         "",
         f"- Model: {', '.join(models) or 'n/a'} · temperature: {', '.join(temps) or 'n/a'}",
+        f"- Served as: {', '.join(served) or 'not recorded'}",
         f"- Started: {starts[0] if starts else 'n/a'} to {starts[-1] if starts else 'n/a'} (UTC)",
         f"- Tokens: {totals.get('prompt', 0):,} in ({totals.get('hit', 0):,} cache hits), "
         f"{totals.get('out', 0):,} out · cost ${usd:.2f}",

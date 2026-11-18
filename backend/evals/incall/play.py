@@ -273,6 +273,8 @@ async def _respond(
         reply = unique_call_ids(await model.reply(convo, tools), record)
         replies.append(reply)
         record.usage.append(reply.usage)
+        if reply.served and reply.served not in record.served:
+            record.served.append(reply.served)
         convo.append(_assistant_message(reply))
         if reply.text:
             record.events.append(Event(step=step, kind="agent", text=reply.text))

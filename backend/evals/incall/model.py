@@ -117,12 +117,14 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
     """Assemble a streamed Chat Completions answer (``data: {...}`` lines) into a reply.
 
     Tool-call fragments arrive by ``index`` and are joined; ``first_token_s`` is the first
-    non-empty ``delta.content``. ``start`` is ``time.perf_counter()`` when the request left.
+    non-empty ``delta.content``; ``served`` is the first chunk's ``model`` and
+    ``system_fingerprint``. ``start`` is ``time.perf_counter()`` when the request left.
     """
     text: list[str] = []
     calls: dict[int, dict[str, str]] = {}
     first_token: float | None = None
     usage: dict[str, int] = {}
+    served = ""
     async for line in lines:
         if not line.startswith("data:"):
             continue
@@ -133,6 +135,9 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
             chunk = json.loads(data)
         except json.JSONDecodeError:
             raise ModelError("stream chunk is not JSON") from None
+        if not served and isinstance(chunk.get("model"), str):
+            fingerprint = chunk.get("system_fingerprint")
+            served = chunk["model"] + (f" {fingerprint}" if isinstance(fingerprint, str) else "")
         if isinstance(chunk.get("usage"), dict):
             usage = {k: v for k, v in chunk["usage"].items() if isinstance(v, int)}
         for choice in chunk.get("choices") or []:
@@ -157,6 +162,7 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
         first_token_s=first_token,
         done_s=done,
         usage=usage,
+        served=served,
     )
 
 

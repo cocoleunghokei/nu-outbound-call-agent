@@ -37,6 +37,9 @@ class ModelReply:
     first_token_s: float | None
     done_s: float
     usage: dict[str, int] = field(default_factory=dict)
+    # The model and build that actually answered (``model``/``system_fingerprint``), e.g.
+    # "deepseek-chat fp_abc". A provider can move an alias to a new model between runs.
+    served: str = ""
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,7 @@ class RunRecord:
     events: list[Event] = field(default_factory=list)
     turns: list[Turn] = field(default_factory=list)
     usage: list[dict[str, int]] = field(default_factory=list)
+    served: list[str] = field(default_factory=list)
     stopped: str = ""
     error: str = ""
 
@@ -94,6 +98,7 @@ class RunRecord:
             events=[Event(**e) for e in data["events"]],
             turns=[Turn(**t) for t in data["turns"]],
             usage=list(data["usage"]),
+            served=list(data.get("served") or []),  # older records don't have it
             stopped=data["stopped"],
             error=data["error"],
         )

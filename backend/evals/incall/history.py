@@ -145,6 +145,7 @@ def summary_html(ev: Eval) -> str:
             {"default" if r.temperature is None else str(r.temperature) for r in ev.results.runs}
         )
     )
+    served = ", ".join(sorted({s for r in ev.results.runs for s in r.served}))
     cases = len({r.case_id for r in ev.results.runs})
     grouped = _by_run(ev.results)
     clean = sum(
@@ -159,6 +160,7 @@ def summary_html(ev: Eval) -> str:
     runs_per = max((r.run for r in ev.results.runs), default=0)
     rows = [
         ("Model", f"{models} · temperature {temps}"),
+        ("Served as", served or "not recorded"),
         ("Size", f"{cases} cases × {runs_per} runs = {m.runs} runs"),
         ("Overall pass", f"{_pct(m.overall, m.runs)} ({m.overall} of {m.runs} runs)"),
         ("Hard pass", f"{_pct(m.hard, m.runs)} ({m.hard} of {m.runs}) · target 100%" + so_far),

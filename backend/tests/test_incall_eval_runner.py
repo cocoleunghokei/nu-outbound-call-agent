@@ -414,7 +414,11 @@ def _sse(*chunks: dict[str, Any]) -> bytes:
 
 
 STREAM = _sse(
-    {"choices": [{"delta": {"content": "One "}}]},
+    {
+        "model": "deepseek-chat",
+        "system_fingerprint": "fp_test",
+        "choices": [{"delta": {"content": "One "}}],
+    },
     {"choices": [{"delta": {"content": "moment."}}]},
     {
         "choices": [
@@ -459,6 +463,16 @@ def test_the_stream_is_assembled_into_text_tool_calls_and_usage() -> None:
         "completion_tokens": 5,
     }
     assert reply.first_token_s is not None and reply.first_token_s <= reply.done_s
+    assert reply.served == "deepseek-chat fp_test"  # which model build answered
+
+
+def test_a_record_written_before_served_existed_still_loads() -> None:
+    record = RunRecord("C4-01", 1, "deepseek-chat", None, "2026-11-17T23:06:00Z")
+    data = record.to_json()
+    del data["served"]
+    assert RunRecord.from_json(data).served == []
+    record.served.append("deepseek-chat fp_test")
+    assert RunRecord.from_json(record.to_json()).served == ["deepseek-chat fp_test"]
 
 
 def test_the_client_retries_a_5xx_and_omits_an_unset_temperature(
