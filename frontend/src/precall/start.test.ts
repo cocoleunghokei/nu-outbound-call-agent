@@ -134,7 +134,8 @@ describe('apiStarter (Start in API mode)', () => {
     const client = fakeClient({ startCall })
     const start = apiStarter(client, keys())
     const first = await start(contractExampleBrief, emptySession)
-    expect(first.result).toMatchObject({ kind: 'error', message: "I couldn't start the call: Internal server error Tap Start to try again." })
+    // A 5xx can come after the call was placed, so it never says the call didn't start.
+    expect(first.result).toMatchObject({ kind: 'error', message: expect.stringMatching(/may have started/) })
     const second = await start(contractExampleBrief, first.session)
     expect(second.result.kind).toBe('started')
     expect(client.createBrief).toHaveBeenCalledTimes(1)

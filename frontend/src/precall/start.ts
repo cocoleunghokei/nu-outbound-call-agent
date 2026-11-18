@@ -91,9 +91,10 @@ export function describeError(error: ApiError, step: 'save' | 'start'): string {
   if (error.code === NO_SESSION || error.code === 'unauthenticated' || error.code === 'token_expired') {
     return "You're signed out, so I couldn't save this. Sign in again, then tap Start."
   }
-  if (error.code === NETWORK_ERROR && step === 'start') {
-    // The call may have started before the answer was lost. Start again reuses the same
-    // Idempotency-Key, so the server returns that call instead of dialing a second time.
+  if (step === 'start' && (error.code === NETWORK_ERROR || error.status >= 500)) {
+    // No answer or a server failure: the call may have started before the answer was lost.
+    // Start again reuses the same Idempotency-Key, so the server returns that call instead
+    // of dialing a second time.
     return "I didn't hear back from the server, so the call may have started. Check your connection, then tap Start again. It won't call twice."
   }
   if (error.code === NETWORK_ERROR) {
