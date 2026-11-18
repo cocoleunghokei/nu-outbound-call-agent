@@ -394,7 +394,7 @@
   font-weight: 600;
 }
 
-/* The email step (ON-1): a panel over the chat, so the draft brief stays where it is. */
+/* The onboarding form (ON-3, ON-8): a panel over the chat, inside this screen's styles. */
 .precall-overlay {
   position: fixed;
   inset: 0;
@@ -444,6 +444,16 @@
 
 .precall-field input:focus {
   border-color: var(--pc-brand);
+}
+
+.precall-field small {
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+
+.precall-loading {
+  padding: 32px 16px;
+  text-align: center;
 }
 
 .precall-actions {

@@ -15,8 +15,8 @@ export async function accessToken(): Promise<string | null> {
 
 /**
  * Who a session belongs to, for change detection: the user id plus whether the session is
- * still anonymous. Linking an email keeps the id (`emailSignIn.ts`), and the screen must
- * still notice that the user became permanent.
+ * still anonymous. Converting an anonymous user to a permanent one (a later email sign-in)
+ * keeps the id, and the screen must still notice.
  */
 function identityOf(session: { user: { id: string; is_anonymous?: boolean } } | null): string | null {
   if (!session) return null
