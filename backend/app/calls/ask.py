@@ -91,7 +91,9 @@ async def handle_ask_user(conn: AsyncConnection[Any], ctx: ToolCallContext) -> s
         raise ValueError("ask_user needs a question")
     # The card shows the model's reason only for a decision ping; a field approval uses ours.
     if kind == "decision":
-        refusal = length_gate(ctx.arguments) or needless_ping_gate(ctx.arguments)
+        refusal = length_gate(ctx.arguments) or needless_ping_gate(
+            ctx.confidence, ctx.dimensions, ctx.arguments.get("field_requested")
+        )
         if refusal is not None:
             logger.info("ask_user refused by a gate for call %s", ctx.call_id)
             return refusal

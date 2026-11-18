@@ -178,6 +178,12 @@ def _dimensions(arguments: dict[str, Any]) -> dict[str, Any] | None:
     return dict(dims) if isinstance(dims, dict) else None
 
 
+def _confidence(arguments: dict[str, Any]) -> str | None:
+    """The model's tier, read-only for the action gates (never stored by a handler)."""
+    value = arguments.get("confidence")
+    return value if isinstance(value, str) else None
+
+
 async def _store_scores(
     conn: AsyncConnection[Any], ctx: ToolCallContext, arguments: dict[str, Any]
 ) -> None:
@@ -286,6 +292,7 @@ async def _receive_tool_call(
         arguments=_without_scores(unit.arguments),
         source_ts=unit.source_ts,
         dimensions=_dimensions(unit.arguments),
+        confidence=_confidence(unit.arguments),
     )
     _, result = await run_tool_handler(
         conn,
@@ -515,6 +522,7 @@ async def dispatch_pending(
                         arguments=_without_scores(arguments),
                         source_ts=source_ts,
                         dimensions=_dimensions(arguments),
+                        confidence=_confidence(arguments),
                     )
                     ok, _ = await run_tool_handler(
                         conn,
