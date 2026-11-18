@@ -160,6 +160,17 @@ def test_missing_info_and_unclear_speech_ping_instead_of_asking_again() -> None:
     )
 
 
+def test_it_confirms_and_waits_for_goodbye_before_hanging_up() -> None:
+    # Found by the eval (C4-10): "Saturday 7pm works" and the agent booked it and hung up,
+    # before the business said "Sorry, 7 just went". Decided in Q12 (CASES.md).
+    prompt = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
+    assert '"7 works" is not a booking yet' in prompt
+    assert "read the result back in one sentence" in prompt
+    assert "End the call only after the business says goodbye" in prompt
+    assert 'a clear wrap-up ("You\'re all set", "Anything else?")' in prompt
+    assert "You may end without waiting only when the business hangs up" in prompt
+
+
 def test_inventing_includes_saying_a_detail_does_not_exist() -> None:
     assert any('"no referral"' in rule and "inventing too" in rule for rule in GUARDRAIL_RULES)
 
