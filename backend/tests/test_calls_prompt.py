@@ -76,6 +76,29 @@ def test_prompt_shares_share_freely_values_only() -> None:
     assert FAKE_DOB not in prompt and FAKE_INSURANCE not in prompt
 
 
+def test_share_freely_lists_each_field_key_with_the_calling_name_first() -> None:
+    # Eval 0411Z (TP-05): the keys weren't in the prompt, so it logged share_field with
+    # field_key "name" instead of "calling_name".
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    start = prompt.index("<share_freely>")
+    lines = prompt[start : prompt.index("</share_freely>")].splitlines()[1:]
+    assert lines == [
+        "- calling name: Alex (field_key: calling_name)",
+        "- full name: Alex Chen (field_key: full_name)",
+        "- email: alex@example.test (field_key: email)",
+    ]
+
+
+def test_the_tool_first_rule_covers_questions_and_missing_information() -> None:
+    # Eval 0411Z: TP-01 and TP-05 answered "Existing" and "Alex Kim" without share_field, and
+    # C4-12 asked the clinic to check again instead of pinging about the referral.
+    flat = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
+    assert "when the business makes an offer, asks you for a detail, or answers" in flat
+    assert "call report_decision with action share_field, field_key from <share_freely>" in flat
+    assert "You: you don't have it, so call ask_user with confidence low." in flat
+    assert "or asking the business to check again instead of calling ask_user" in flat
+
+
 def test_prompt_names_ask_first_fields_without_their_values() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     assert "date of birth (field_requested: date_of_birth)" in prompt
@@ -136,7 +159,8 @@ def test_every_action_is_logged_and_checking_always_pings() -> None:
     assert "How to call a tool: call it first, before you say anything." in prompt
     assert "Never say the words of an action" in prompt
     assert "Never say you are checking with Alex unless you called ask_user first." in prompt
-    assert "under 80 characters" in prompt
+    # Under 70 so the usual overshoot still fits the card's 80 (eval 0411Z: 81 to 91).
+    assert "under 70 characters" in prompt
 
 
 def test_tools_are_called_before_speaking() -> None:
@@ -188,11 +212,13 @@ def test_it_confirms_and_waits_for_goodbye_before_hanging_up() -> None:
     )
     assert "read back only what they haven't said" in prompt
     assert "Call report_outcome once, before your goodbye." in prompt
-    assert "End the call only after the business says goodbye" in prompt
-    # T-01 (eval 0319Z): it hung up after "You're booked", before the business's goodbye (Q12).
-    assert '"You\'re booked" or "You\'re all set" is not a goodbye' in prompt
-    assert "clear wrap-up" not in prompt
-    assert "You may end without waiting only when the business hangs up" in prompt
+    # Q12 revised (eval 0411Z): waiting for the business's goodbye left T-02, T-03, T-06 and
+    # SM-06 never ending the call. Goodbye, then end.
+    assert "End the call only after the business says goodbye" not in prompt
+    assert "4. Then end the call. If the business asks something or keeps talking" in prompt
+    # G-11 (eval 0411Z): after "You're all set" it asked to confirm again and never reported.
+    assert 'When the business says it is booked ("You\'re all set"' in prompt
+    assert "go straight to step 2, even if they are already saying goodbye" in prompt
 
 
 def test_the_agent_writes_down_the_offer_it_heard() -> None:
@@ -418,6 +444,7 @@ def test_prompt_dates_say_none_without_date_rules() -> None:
     assert "<dates>\n- (none)\n</dates>" in build_system_prompt(make_brief(), SNAPSHOT)
 
 
-def test_the_outcome_result_says_to_wait_for_the_business_goodbye() -> None:
-    # T-01 (eval 0319Z): "You can say goodbye and end the call" made it hang up at once (Q12).
-    assert "end the call only after the business says goodbye" in OUTCOME_NOTED
+def test_the_outcome_result_says_goodbye_then_end() -> None:
+    # Q12 revised (eval 0411Z): asking it to wait for the business's goodbye left four
+    # cases that never ended the call.
+    assert OUTCOME_NOTED == "Noted. Say thanks and goodbye, then end the call."

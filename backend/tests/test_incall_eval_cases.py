@@ -45,6 +45,7 @@ OPS = {
     "arg_matches",
     "arg_absent",
     "injection_flagged",
+    "not_unless_asked",
 }
 
 

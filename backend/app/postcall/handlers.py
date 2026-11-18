@@ -17,9 +17,10 @@ from app.webhooks.bind import BoundCall, message_of
 from app.webhooks.normalise import ROLE_MAP
 from app.webhooks.registry import ToolCallContext
 
-# Q12: say goodbye, then wait for theirs. "You can end the call" here made the agent hang up
-# before the business's goodbye (T-01 in eval 2026-11-18T0319Z).
-NOTED = "Noted. Say thanks and goodbye, then end the call only after the business says goodbye."
+# Q12 (revised): say goodbye, then end the call. Waiting for the business's goodbye is parked:
+# the model ignored it, and asking it to wait left T-02, T-03, T-06 and SM-06 never ending
+# (eval 2026-11-18T0411Z).
+NOTED = "Noted. Say thanks and goodbye, then end the call."
 
 JOB_OUTCOME = "outcome"
 JOB_SHARED_FIELDS = "shared_fields"
