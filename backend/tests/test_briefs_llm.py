@@ -74,9 +74,8 @@ def answering(content: Any, status: int = 200, seen: list[httpx.Request] | None 
 
 
 def client_for(handler: Handler, **kwargs: Any) -> DeepSeekClient:
-    return DeepSeekClient(
-        FAKE_KEY, BASE, "deepseek-chat", transport=httpx.MockTransport(handler), **kwargs
-    )
+    # No model argument on purpose: the client's own default is what the tests see.
+    return DeepSeekClient(FAKE_KEY, BASE, transport=httpx.MockTransport(handler), **kwargs)
 
 
 def run(coro: Any) -> Any:
@@ -95,7 +94,8 @@ def test_happy_path_sends_a_json_mode_chat_completion() -> None:
     assert request.method == "POST"
     assert request.headers["Authorization"] == f"Bearer {FAKE_KEY}"
     sent = json.loads(request.content)
-    assert sent["model"] == "deepseek-chat"
+    # deepseek-chat was retired on 2026-07-24; a literal, so an unchanged default fails here.
+    assert sent["model"] == "deepseek-flash"
     assert sent["response_format"] == {"type": "json_object"}
     assert sent["temperature"] <= 0.3
     assert sent["stream"] is False
@@ -319,10 +319,15 @@ def test_no_key_means_the_raw_goal_path() -> None:
     assert interpreter_from_settings(Settings()) is None
 
 
-def test_a_key_in_settings_makes_a_deepseek_client() -> None:
-    client = interpreter_from_settings(Settings(deepseek_api_key=FAKE_KEY))  # type: ignore[arg-type]
+def test_a_key_in_settings_makes_a_deepseek_client(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A developer's .env or shell must not mask the default this test pins.
+    monkeypatch.delenv("DEEPSEEK_MODEL", raising=False)
+    client = interpreter_from_settings(
+        Settings(_env_file=None, deepseek_api_key=FAKE_KEY)  # type: ignore[arg-type, call-arg]
+    )
     assert isinstance(client, DeepSeekClient)
     assert client._url == "https://api.deepseek.com/chat/completions"
+    assert client._model == "deepseek-flash"
 
 
 def test_bad_output_falls_back_to_the_users_words() -> None:
