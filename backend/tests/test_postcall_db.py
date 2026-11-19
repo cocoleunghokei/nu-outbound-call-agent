@@ -5,6 +5,7 @@ import json
 import uuid
 from typing import Any
 
+import psycopg
 import pytest
 
 from app.postcall import jobs as postcall_jobs
@@ -112,6 +113,42 @@ def test_confirmed_booking_is_booked_and_call_ended_goes_out_once(
         assert spoken == [{"field_key": "calling_name", "state": "spoken"}]
         jobs = [r for r in await outbox_rows(db, call) if r["lane"] == "jobs"]
         assert {r["state"] for r in jobs} == {"sent"}
+
+    asyncio.run(scenario())
+
+
+def test_a_weekday_confirms_the_booking_from_the_call_times(supabase_env: SupabaseEnv) -> None:
+    """The in-call eval's G-11: "Thursday at 2" on a call made Tue 17 Nov 2026 is 19 Nov."""
+    db = supabase_env.db_url
+    call = seed_call(db)
+    thursday = {
+        "outcome": "booked",
+        "business_confirmed": True,
+        "details": {"date": "2026-11-19", "time": "14:00"},
+    }
+
+    async def scenario() -> None:
+        app = make_app(db)
+        async with serve(app) as client:
+            await post(
+                client,
+                transcript_body(
+                    call, "You're all set for Thursday at 2.", role="user", timestamp=1794081609000
+                ),
+            )
+            await post(
+                client, tool_body(call, [(f"tc-{uuid.uuid4()}", "report_outcome", thursday)])
+            )
+            await post(client, fixture("end-of-call-report", call))
+            # Pin the call to Tue 17 Nov 2026, 2pm in Boston, whatever today is.
+            async with await psycopg.AsyncConnection.connect(db, autocommit=True) as conn:
+                await conn.execute(
+                    "update public.calls set created_at = %s, ended_at = %s where id = %s",
+                    ("2026-11-17T19:00:00Z", "2026-11-17T19:05:00Z", call.call_id),
+                )
+            await run_due_jobs(app.state.pool)
+
+        assert await outcome_of(db, call) == "booked"
 
     asyncio.run(scenario())
 

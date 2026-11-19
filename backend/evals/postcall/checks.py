@@ -16,18 +16,29 @@ No database, no network and no paid API: these run in CI.
 import json
 import time
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from app.contracts.generated import ReportOutcomeArgs
-from app.postcall.decide import NEEDS_EVIDENCE, decide_outcome, spoken_fields
+from app.postcall.decide import NEEDS_EVIDENCE, call_days_for, decide_outcome, spoken_fields
 
 CASES_PATH = Path(__file__).with_name("cases.json")
 
 Status = Literal["pass", "fail", "not_built"]
 
 CASE_KEYS = frozenset(
-    {"id", "about", "report", "ended_reason", "pause_capped", "transcript", "events", "expect"}
+    {
+        "id",
+        "about",
+        "called_at",
+        "report",
+        "ended_reason",
+        "pause_capped",
+        "transcript",
+        "events",
+        "expect",
+    }
 )
 EXPECT_KEYS = frozenset({"outcome", "spoken", "summary", "guardrail_breach"})
 ROLES = frozenset({"agent", "business"})
@@ -40,6 +51,7 @@ class PostcallCase:
     id: str
     about: str
     report: ReportOutcomeArgs | None
+    call_days: frozenset[date]
     ended_reason: str
     pause_capped: bool
     agent_lines: list[str]
@@ -83,6 +95,7 @@ def load_cases() -> tuple[dict[str, str], list[PostcallCase]]:
                     if raw.get("report") is not None
                     else None
                 ),
+                call_days=_call_days(raw.get("called_at")),
                 ended_reason=raw.get("ended_reason", ""),
                 pause_capped=bool(raw.get("pause_capped", False)),
                 agent_lines=[text for role, text in transcript if role == "agent"],
@@ -92,6 +105,16 @@ def load_cases() -> tuple[dict[str, str], list[PostcallCase]]:
             )
         )
     return profile, cases
+
+
+def _call_days(called_at: str | None) -> frozenset[date]:
+    """The possible local days of a case's call, from its ``called_at`` (ISO, with a zone)."""
+    if called_at is None:
+        return frozenset()
+    moment = datetime.fromisoformat(called_at)
+    if moment.tzinfo is None:
+        raise ValueError(f"called_at {called_at!r} needs a time zone, such as Z")
+    return call_days_for(moment, moment)
 
 
 def _check_keys(raw: dict[str, Any]) -> None:
@@ -114,7 +137,11 @@ def evaluate(case: PostcallCase, profile: dict[str, str]) -> CaseReport:
 
     start = time.perf_counter()
     decision = decide_outcome(
-        case.report, case.ended_reason, case.business_lines, pause_capped=case.pause_capped
+        case.report,
+        case.ended_reason,
+        case.business_lines,
+        pause_capped=case.pause_capped,
+        call_days=case.call_days,
     )
     report.outcome_ms = (time.perf_counter() - start) * 1000
     expected = case.expect["outcome"]

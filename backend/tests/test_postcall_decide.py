@@ -1,12 +1,13 @@
 """Pure post-call rules (app/postcall/decide.py): no database needed."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
 
 from app.contracts.generated import OutcomeDetails, ReportOutcomeArgs
 from app.postcall.decide import (
+    call_days_for,
     clauses,
     decide_outcome,
     has_confirmation_evidence,
@@ -14,6 +15,7 @@ from app.postcall.decide import (
     is_refusal,
     mentions_date,
     mentions_time,
+    mentions_weekday,
     parse_time,
     says_confirmation_number,
     spoken_fields,
@@ -367,3 +369,64 @@ def test_address_matches_street_and_st_alike() -> None:
 def test_spoken_fields_skip_tiny_values_and_empty_transcripts() -> None:
     assert spoken_fields({"calling_name": "A"}, ["Calling for A."]) == []
     assert spoken_fields({"calling_name": "Alex"}, []) == []
+
+
+# --- a weekday as the date (the in-call eval's T-01 and G-11) ------------------------------
+
+TUESDAY = frozenset({date(2026, 11, 17)})
+THURSDAY_2PM = report(outcome="booked", details={"date": "2026-11-19", "time": "14:00"})
+
+
+def test_call_days_cover_every_us_time_zone() -> None:
+    # 19:00 UTC is 2pm in Boston and 9am in Hawaii: the same day everywhere.
+    afternoon = datetime(2026, 11, 17, 19, 0, tzinfo=UTC)
+    assert call_days_for(afternoon, afternoon) == TUESDAY
+    # 04:30 UTC is 12:30am Wednesday in Boston but still 6:30pm Tuesday in Hawaii.
+    late = datetime(2026, 11, 18, 4, 30, tzinfo=UTC)
+    assert call_days_for(late, late) == {date(2026, 11, 17), date(2026, 11, 18)}
+
+
+def test_a_weekday_in_the_next_six_days_names_the_date() -> None:
+    thursday = date(2026, 11, 19)
+    for said in ("thursday", "this thursday", "thursday the 19th"):
+        assert mentions_weekday(f"you're booked for {said} at 2.", thursday, TUESDAY), said
+    assert mentions_weekday("see you monday.", date(2026, 11, 23), TUESDAY)
+
+
+def test_a_weekday_that_could_mean_two_dates_does_not_count() -> None:
+    thursday = date(2026, 11, 19)
+    for said in (
+        "next thursday",
+        "last thursday",
+        "thursday next week",
+        "thursday, november 26th",
+        "thursday the 26th of november",
+    ):
+        assert not mentions_weekday(f"booked for {said} at 2.", thursday, TUESDAY), said
+    # No call day known; the call day's own weekday; a week later; the wrong weekday.
+    assert not mentions_weekday("booked for thursday at 2.", thursday, frozenset())
+    assert not mentions_weekday("booked for tuesday at 2.", date(2026, 11, 24), TUESDAY)
+    assert not mentions_weekday("booked for thursday at 2.", date(2026, 11, 26), TUESDAY)
+    assert not mentions_weekday("booked for friday at 2.", thursday, TUESDAY)
+    # Every possible call day must agree: from Wednesday, "wednesday" is today or next week.
+    near_midnight = frozenset({date(2026, 11, 17), date(2026, 11, 18)})
+    assert not mentions_weekday("booked for wednesday at 2.", date(2026, 11, 18), near_midnight)
+    assert mentions_weekday("booked for thursday at 2.", thursday, near_midnight)
+
+
+def test_at_and_a_whole_hour_is_the_agreed_time() -> None:
+    assert mentions_time("all set for thursday at 2.", (14, 0))
+    assert mentions_time("see you at 10 with dr. rivera.", (10, 0))
+    for said in ("at 2:15", "at 20", "at 2/3", "at 2.5", "at 2am", "at 12"):
+        assert not mentions_time(f"see you {said}.", (14, 0)), said
+    assert not mentions_time("thursday 2 works.", (14, 0))  # no "at"
+
+
+def test_a_weekday_confirms_a_booking_only_with_the_call_days() -> None:
+    lines = ["You're all set for Thursday at 2.", "Okay, bye now."]
+    decided = decide_outcome(THURSDAY_2PM, "assistant-ended-call", lines, call_days=TUESDAY)
+    assert decided.outcome == "booked"
+    assert outcome(THURSDAY_2PM, *lines) == "needs_follow_up"
+    refused = ["Thursday at 2? Sorry, that's taken."]
+    decided = decide_outcome(THURSDAY_2PM, "assistant-ended-call", refused, call_days=TUESDAY)
+    assert decided.outcome == "needs_follow_up"
