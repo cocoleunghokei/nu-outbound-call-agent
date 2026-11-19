@@ -80,7 +80,7 @@ Handlers run inside the ingress transaction, in their own savepoint, with the ca
 
 **Event handlers must be idempotent.** The receipt rule above is for tool handlers only. An event handler (`status-update`, `speech-update`, `end-of-call-report`) has no receipt: it runs again on every redelivery of the same message, and one that raises is dead-lettered into `call_events_failed` and never retried. So write it to be safe to run twice: pass a `dedup_key` to `append_event` (for example `status:<status>`, so a repeated status appends nothing), and make every UPDATE guarded (`... where status = 'talking'`, `... where state = 'open'`) so a second run changes nothing. End a call only through `end_call_transition`, which already does nothing for a terminal call.
 
-Anything stored or logged goes through `app.webhooks.redact.redact` / `redact_text`. Every log line passes through `RedactingFormatter` (installed on the root and uvicorn handlers at startup), which scrubs the process-wide `SecretRegistry`: settings secrets plus every capability URL seen since startup. Never log a raw Vapi body.
+Anything stored or logged goes through `app.webhooks.redact.redact` / `redact_text`. Every log line passes through `RedactingFormatter` (installed on the root and uvicorn handlers at startup), which scrubs the process-wide `SecretRegistry`: settings secrets plus every capability URL seen since startup. Never log a raw Vapi body: a refusal's `message` is logged through `VoiceRejected.detail`, which `_reject_detail` rebuilds from recognised sentence templates; only the templates' own words, allowlisted property paths and model ids, and bounded numeric limits are retained, 300 characters at most.
 
 ## During call (`app/calls/`, Coco)
 
