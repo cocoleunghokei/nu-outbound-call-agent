@@ -59,7 +59,9 @@ class Settings(BaseSettings):
     # custom briefs then use the user's own words, and the app still starts.
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
+    # deepseek-chat (V3) was retired by DeepSeek on 2026-07-24; the team's key offers
+    # deepseek-flash and deepseek-v4-pro.
+    deepseek_model: str = "deepseek-flash"
 
     @model_validator(mode="after")
     def _derive_jwt_urls(self) -> "Settings":
