@@ -6,6 +6,7 @@ the profile frozen into the call's snapshot, and explicit ``failed`` and
 """
 
 import asyncio
+import logging
 import uuid
 from collections.abc import Iterator
 from typing import Any
@@ -200,20 +201,29 @@ def test_a_second_start_while_the_call_runs_is_refused(
     assert len(voice.calls) == 1
 
 
-@pytest.mark.parametrize("exc", [VoiceRejected(400, "bad_number"), VoiceNotSent("offline")])
+REFUSAL_DETAIL = "parameters.property title should not exist"
+
+
+@pytest.mark.parametrize("exc", [VoiceRejected(400, None, REFUSAL_DETAIL), VoiceNotSent("offline")])
 def test_a_call_that_was_not_placed_is_failed_and_can_be_started_again(
     client: TestClient,
     supabase_env: SupabaseEnv,
     signed_up_user: SignedUpUser,
     voice: FakeVoicePlatform,
     exc: Exception,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     brief_id = ready_brief(client, supabase_env, signed_up_user)
     voice.fail_next(exc)
+    caplog.set_level(logging.WARNING, logger="app.calls.create")
 
     response = start(client, signed_up_user, brief_id)
 
     assert response.status_code == 201, response.text
+    if isinstance(exc, VoiceRejected):
+        # The operator reads why Vapi refused in the log (#82), nowhere else.
+        assert REFUSAL_DETAIL in caplog.text
+        assert REFUSAL_DETAIL not in response.text
     call_id = response.json()["call_id"]
     assert response.json()["status"] == "failed"
     row = call_row(supabase_env, call_id)
