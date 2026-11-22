@@ -29,9 +29,13 @@ def main() -> int:
         print(f"{case.id}: {case.about}")
         for result in report.results:
             counts[(result.item, result.status)] += 1
-            mark = {"pass": "PASS", "fail": "FAIL", "not_built": "TODO", "in_call": "INCALL"}[
-                result.status
-            ]
+            mark = {
+                "pass": "PASS",
+                "fail": "FAIL",
+                "not_built": "TODO",
+                "in_call": "INCALL",
+                "known_gap": "GAP",
+            }[result.status]
             print(f"    {mark} {result.item}: {result.detail}")
 
     print()
@@ -39,14 +43,20 @@ def main() -> int:
         passed, failed = counts[(item, "pass")], counts[(item, "fail")]
         pending = counts[(item, "not_built")]
         in_call = counts[(item, "in_call")]
+        gaps = counts[(item, "known_gap")]
         if passed or failed:
             print(f"{item}: {passed}/{passed + failed} passed")
+        if gaps:
+            print(f"{item}: {gaps} known gaps, waiting for a code fix (not counted above)")
         if pending:
             print(f"{item}: {pending} cases ready, not built yet")
         if in_call:
             print(f"{item}: {in_call} open-item checks are judged in the in-call eval")
     wrong_booked = sum(report.wrong_booked for report in reports)
     print(f"wrong booked/cancelled/rescheduled outcomes: {wrong_booked} (target 0)")
+    gap_booked = sum(report.known_gap_booked for report in reports)
+    if gap_booked:
+        print(f"  plus {gap_booked} in known-gap cases, waiting for the fix in decide.py")
     times = [report.outcome_ms for report in reports]
     print(
         f"outcome decision time: P50 {percentile(times, 0.5):.3f} ms,"

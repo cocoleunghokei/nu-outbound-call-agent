@@ -25,6 +25,16 @@ def test_no_case_is_wrongly_booked() -> None:
     assert [case.id for case in CASES if evaluate(case, PROFILE).wrong_booked] == []
 
 
+@pytest.mark.parametrize(
+    "case", [case for case in CASES if case.known_gap], ids=lambda case: case.id
+)
+def test_a_known_gap_is_still_open(case: PostcallCase) -> None:
+    # A known gap records a right answer the code doesn't give yet. Once the code gives it,
+    # this fails as a reminder to remove the case's known_gap flag.
+    statuses = {r.status for r in evaluate(case, PROFILE).results if r.item == "10 outcome"}
+    assert statuses == {"known_gap"}
+
+
 def test_the_cases_cover_every_item_and_outcome() -> None:
     items = {r.item for case in CASES for r in evaluate(case, PROFILE).results}
     assert items == {"10 outcome", "11 summary", "12 shared", "13 guardrail"}
