@@ -171,9 +171,12 @@ def test_replace_after_review_then_refuse_once_a_call_started(
 
     replaced = client.patch(url, json=edited, headers=auth(signed_up_user, uuid.uuid4()))
     assert replaced.status_code == 200, replaced.text
-    assert replaced.json()["brief"]["fallbacks"] == edited["fallbacks"]
+    # The server reads rules out of typed items (app/briefs/rules.py), so compare the words.
+    assert [f["text"] for f in replaced.json()["brief"]["fallbacks"]] == [
+        f["text"] for f in edited["fallbacks"]
+    ]
     assert replaced.json()["created_at"] == created["created_at"]
-    assert client.get(url, headers=auth(signed_up_user)).json()["brief"] == edited
+    assert client.get(url, headers=auth(signed_up_user)).json()["brief"] == replaced.json()["brief"]
 
     with psycopg.connect(supabase_env.db_url, autocommit=True) as conn:
         conn.execute(

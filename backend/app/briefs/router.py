@@ -10,6 +10,11 @@
 Those three answer ``{brief_id, brief, missing_fields, opening_line, created_at}``. Start is
 allowed only when ``missing_fields`` is empty; ``POST /calls`` (Coco) checks again.
 
+``POST`` and ``PATCH`` (and ``/briefs/build``) read structured ``rules`` out of the typed items
+and add a deadline from the goal as a constraint (``app/briefs/rules.py``, ``with_rules``), so
+the brief that is stored, and that the call's gates compare offers with, has them. It never
+blocks a save.
+
 Brief builder (plan Step 9), both read-only, so no ``Idempotency-Key``:
 
 - ``GET /briefs/templates``: ``{templates: [CallTemplate, ...]}``, the P0 templates in chip
@@ -35,9 +40,11 @@ LLM step for custom goals (plan Step 10, PC-3), read-only, so no ``Idempotency-K
   of those the chat can continue with ``/briefs/build``, which never uses the LLM.
 """
 
+import logging
 import uuid
 from collections.abc import Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, Request
@@ -59,6 +66,7 @@ from app.briefs.llm import GoalInterpreter, LlmError, check_goal_summary, interp
 from app.briefs.phone import check_phone
 from app.briefs.ratelimit import reserve_llm_build
 from app.briefs.readiness import Readiness, check_readiness
+from app.briefs.rules import add_rules
 from app.briefs.store import (
     StoredBrief,
     brief_has_call,
@@ -67,6 +75,7 @@ from app.briefs.store import (
     load_snapshot,
     update_brief,
 )
+from app.calls.prompt import us_today
 from app.contracts import validator_for
 from app.db import get_pool
 from app.errors import ApiError
@@ -101,6 +110,22 @@ def validate_brief(body: dict[str, Any]) -> dict[str, Any]:
     return {**body, "phone_e164": phone.e164}
 
 
+logger = logging.getLogger(__name__)
+
+
+def with_rules(brief: dict[str, Any]) -> dict[str, Any]:
+    """The brief with ``rules`` read from its typed items (``app/briefs/rules.py``).
+
+    Never blocks a save: if the result somehow fails the brief contract, the original goes
+    through unchanged, and the items simply stay text only.
+    """
+    enriched = add_rules(brief, us_today(datetime.now(UTC))).brief
+    if validator_for("brief.v1.json").is_valid(enriched):
+        return enriched
+    logger.warning("briefs: rules made the brief invalid; saving it without them")
+    return brief
+
+
 def _response(stored: StoredBrief, readiness: Readiness) -> dict[str, Any]:
     return {
         "brief_id": str(stored.id),
@@ -116,7 +141,7 @@ async def create_brief(
     request: Request, user_id: UserId, key: IdempotencyKey, body: BriefBody
 ) -> dict[str, Any] | JSONResponse:
     """Save a new brief for the caller and report what's still missing."""
-    brief = validate_brief(body)
+    brief = with_rules(validate_brief(body))
     pool = get_pool(request)
     async with pool.connection() as conn, conn.transaction():
         replay = await claim_idempotency(conn, user_id, key)
@@ -209,7 +234,7 @@ def build_response(draft: Draft, profile: Sequence[ProfileField]) -> dict[str, A
     readiness = check_readiness(built.brief, snapshot)
     missing = list(dict.fromkeys([*built.missing_fields, *readiness.missing_fields]))
     return {
-        "brief": built.brief,
+        "brief": with_rules(built.brief),
         "missing_fields": missing,
         "opening_line": None if missing else readiness.opening_line,
     }
@@ -284,7 +309,7 @@ async def replace_brief(
     request: Request, user_id: UserId, key: IdempotencyKey, brief_id: uuid.UUID, body: BriefBody
 ) -> dict[str, Any] | JSONResponse:
     """Replace the caller's brief after review. Refused once a call used it."""
-    brief = validate_brief(body)
+    brief = with_rules(validate_brief(body))
     pool = get_pool(request)
     async with pool.connection() as conn, conn.transaction():
         replay = await claim_idempotency(conn, user_id, key)
