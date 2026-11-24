@@ -29,7 +29,9 @@ pytestmark = pytest.mark.db
 ASKED_AT_MS = 1794081610000
 
 
-def decision_body(call: FreshCall, action: str, *, at_ms: int) -> tuple[str, dict[str, Any]]:
+def decision_body(
+    call: FreshCall, action: str, *, at_ms: int, field_key: str = "phone"
+) -> tuple[str, dict[str, Any]]:
     tc_id = f"tc-{uuid.uuid4()}"
     args: dict[str, Any] = {
         "situation": "They now also offer Fri 10am",
@@ -46,7 +48,7 @@ def decision_body(call: FreshCall, action: str, *, at_ms: int) -> tuple[str, dic
         },
     }
     if action == "share_field":
-        args["field_key"] = "phone"
+        args["field_key"] = field_key
     return tc_id, tool_body(call, [(tc_id, "report_decision", args)], timestamp=at_ms)
 
 
@@ -145,5 +147,26 @@ def test_a_decision_with_no_open_question_is_just_logged(supabase_env: SupabaseE
         assert response.json()["results"][0]["result"] == "Noted."
         assert await ping_rows(db, call) == []
         assert await call_status(db, call) == "talking"
+
+    asyncio.run(scenario())
+
+
+def test_a_field_shared_again_is_logged_once(supabase_env: SupabaseEnv) -> None:
+    """The business couldn't hear the phone number and the agent said it again: one row."""
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            for at_ms, field in (
+                (ASKED_AT_MS, "phone"),
+                (ASKED_AT_MS + 5_000, "phone"),
+                (ASKED_AT_MS + 9_000, "email"),
+            ):
+                _, body = decision_body(call, "share_field", at_ms=at_ms, field_key=field)
+                response = await post(client, body)
+                assert response.json()["results"][0]["result"] == "Noted."
+        decisions = [p for kind, p in await event_rows(db, call) if kind == "agent.decision"]
+        assert [d["field_key"] for d in decisions] == ["phone", "email"]
 
     asyncio.run(scenario())

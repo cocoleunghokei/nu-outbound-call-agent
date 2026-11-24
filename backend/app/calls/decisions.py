@@ -18,6 +18,9 @@ own checks. Before anything is logged, the length gate refuses a reason or misse
 too long for the card, and the money and Low-offer gates (``app/calls/gates.py``) may refuse
 an accept or take_fallback: the agent then gets the refusal as its tool result, nothing is
 logged, and the open question stays open.
+
+A field the agent shares again (the business couldn't hear the phone number) is logged once:
+see ``decision_dedup_key``.
 """
 
 import logging
@@ -48,6 +51,21 @@ logger = logging.getLogger(__name__)
 
 DECISION_FIELDS = ("situation", "action", "reason", "field_key", "missed_preference")
 NOTED = "Noted."
+
+
+def decision_dedup_key(payload: dict[str, str], tool_call_id: str) -> str:
+    """The event's dedup key: one per tool call, except a ``share_field`` that names its field.
+
+    A field is shared once per call as far as the user's feed goes. When the business can't
+    hear the phone number and the agent says it again, that is the same share, not a new
+    decision, so the repeat is not logged ("They couldn't hear the phone number. Repeating
+    it slowly." was a second row for the same share). Without a ``field_key`` a share can't be
+    matched to an earlier one, so it stays one row per tool call.
+    """
+    field_key = payload.get("field_key")
+    if payload.get("action") == "share_field" and field_key:
+        return f"decision:share_field:{field_key}"
+    return f"decision:{tool_call_id}"
 
 
 async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContext) -> str:
@@ -86,7 +104,7 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
         source="vapi",
         payload=payload,
         occurred_at=ctx.source_ts or datetime.now(UTC),
-        dedup_key=f"decision:{ctx.tool_call_id}",
+        dedup_key=decision_dedup_key(payload, ctx.tool_call_id),
     )
     if payload.get("action") not in SETTLING_ACTIONS:
         return NOTED
