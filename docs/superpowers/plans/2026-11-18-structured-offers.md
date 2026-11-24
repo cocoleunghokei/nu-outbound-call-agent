@@ -1,6 +1,6 @@
 # Structured Offers Plan: the model reports what it heard, Python decides if it fits
 
-> **Status:** PRs 1–3 (contracts, scoring and gates, prompt and eval) done on `claude/structured-offers`, stacked on `claude/sweet-mccarthy-xekz3h` (#69). Next: measure with `make eval-incall ARGS="--cases C4- --runs 3"`, then PR 4 (rules in real briefs). Owner and final reviewer: Coco, including the pre-call parts (brief format, review card).
+> **Status:** PRs 1–3 (contracts, scoring and gates, prompt and eval) done on `claude/structured-offers`, stacked on `claude/sweet-mccarthy-xekz3h` (#69). PR 4's backend half is done: `app/briefs/rules.py` reads rules when a brief is saved (24 Nov). Still to do: the chat asking the parser's clarifying questions, and the review card showing the parsed rules (Lotto). Owner and final reviewer: Coco, including the pre-call parts (brief format, review card).
 
 ## Why
 

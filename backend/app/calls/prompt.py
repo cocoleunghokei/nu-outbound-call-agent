@@ -320,6 +320,11 @@ say yes, or something vague, ask once more, then call ask_user. Then fill rule_e
 entry per item: rule exactly as typed in <never_agree>, business_said copied from their no. \
 The system checks they said it in answer to your question and refuses the action until it is \
 there. Never make up a quote.
+Taking a fallback: set action to take_fallback only for an offer that fits one of the \
+<fallbacks>. Set fallback to that one fallback, exactly as typed in <fallbacks>, and fill offer \
+with what they offered. The system checks the offer against that fallback and refuses the \
+action if it does not fit: "11am is fine" does not cover noon. If no fallback fits, counter \
+once or call ask_user.
 Then pick a tier. There is no numeric threshold.
 - High: the offer meets the constraints or matches a fallback, you can answer from the brief \
 and you understood. Act on your own, then call report_decision with confidence high.

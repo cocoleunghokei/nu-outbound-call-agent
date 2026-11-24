@@ -46,6 +46,12 @@ To see every run in one place, `make eval-incall-history` writes
 toggle per date, and inside each run its summary numbers, failures with evidence, a per-case
 table and every transcript. Re-run it after each eval; open it with `open` on a Mac.
 
+To put the page online, judge the eval and write its report, then run `make eval-incall-publish`
+from `backend/`. It rebuilds the page and pushes it as `index.html` to the `gh-pages` branch
+(only the page, nothing else), and GitHub Pages serves it. The site is public, so the eval cases
+must use fake data only. One-time setup: repo Settings > Pages > Deploy from a branch >
+`gh-pages` / root.
+
 Both `report.md` and the history page start each run with **Issues and things to fix**: the failed
 checks grouped into issues (Hard first, with a hint on where to look), then the run's notes from
 `evals/incall/notes/<results folder>.md` (what we found, decisions, fixes made, still open). Write

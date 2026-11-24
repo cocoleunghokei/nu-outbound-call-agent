@@ -37,6 +37,9 @@ class ModelReply:
     first_token_s: float | None
     done_s: float
     usage: dict[str, int] = field(default_factory=dict)
+    # How the stream ended ("stop", "length", "tool_calls", ...) and whether the model sent
+    # reasoning tokens, e.g. "stop, reasoning". Explains a reply that says and does nothing.
+    finish: str = ""
     # The model and build that actually answered (``model``/``system_fingerprint``), e.g.
     # "deepseek-chat fp_abc". A provider can move an alias to a new model between runs.
     served: str = ""
@@ -81,6 +84,8 @@ class RunRecord:
     served: list[str] = field(default_factory=list)
     stopped: str = ""
     error: str = ""
+    # Each model reply that said nothing and called no tool, as "step N: <how the stream ended>".
+    silences: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         """The record as plain JSON types."""
@@ -101,6 +106,7 @@ class RunRecord:
             served=list(data.get("served") or []),  # older records don't have it
             stopped=data["stopped"],
             error=data["error"],
+            silences=list(data.get("silences") or []),  # older records don't have it
         )
 
 

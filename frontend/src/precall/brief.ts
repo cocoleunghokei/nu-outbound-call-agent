@@ -10,7 +10,7 @@
  * Pure function, so the backend brief builder (plan Step 9) can be checked
  * against the same tests.
  */
-import type { CallDraft } from './chat'
+import type { CallDraft, ListItem } from './chat'
 import { missingTemplateFields, withProfileField } from './missing'
 import type { Brief, BriefCallDetail, CallTemplate, ProfileField, TaskVarFieldRef, TaskVarLiteral } from './types'
 
@@ -96,15 +96,20 @@ export function buildBrief(draft: CallDraft, template: CallTemplate | undefined,
     template_key: draft.template_key,
     task_line: taskLine,
     task_vars: taskVars,
-    constraints: draft.constraints.map((i) => ({ text: i.text })),
-    preferences: draft.preferences.map((i) => ({ text: i.text })),
-    fallbacks: draft.fallbacks.map((i) => ({ text: i.text })),
+    constraints: draft.constraints.map(withRules),
+    preferences: draft.preferences.map(withRules),
+    fallbacks: draft.fallbacks.map(withRules),
     never_agree: draft.never_agree.map((i) => ({ text: i.text })),
     share_freely_keys: shareKeys.filter((key) => byKey.get(key)?.sharing === 'share_freely'),
     ask_first_keys: shareKeys.filter((key) => byKey.get(key)?.sharing === 'ask_first'),
     call_details: template ? callDetails(template, draft.answers) : [],
   }
   return { brief, missing_fields: [...new Set(missing)] }
+}
+
+/** An item as the brief carries it: its words, and the rules the user settled in a clarifying answer. */
+function withRules(item: ListItem): ListItem {
+  return item.rules === undefined ? { text: item.text } : { text: item.text, rules: item.rules }
 }
 
 /**

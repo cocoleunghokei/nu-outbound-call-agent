@@ -6,6 +6,8 @@
  *   1. Save the brief: `POST /briefs` the first time, `PATCH /briefs/{id}` if the
  *      user edited it after an earlier save in this draft, nothing if unchanged.
  *   2. The server's `missing_fields` win: if it lists anything, stop there.
+ *   2b. If it could not settle part of the brief ("at 7pm": the latest, or the only time?),
+ *      stop and hand its questions to the chat. Nothing is dialed until they are answered.
  *   3. `POST /calls {brief_id}` (Coco's route). If that route isn't deployed
  *      yet (404/405 or no answer), the brief is still saved: say so calmly.
  *
@@ -18,6 +20,7 @@
  * renders the `StartResult`.
  */
 import { ApiError, NETWORK_ERROR, NO_SESSION, type ApiClient, type BriefResponse } from './api'
+import type { Clarification } from './clarify'
 import { profileLabel } from './missing'
 import type { Brief } from './types'
 
@@ -49,6 +52,8 @@ export type StartResult =
   | { kind: 'saved_not_connected'; server: ServerCheck; briefId: string }
   /** Saved, but the server says something is still missing. Start stays blocked. */
   | { kind: 'blocked'; server: ServerCheck; message: string }
+  /** Saved, but the server has questions about how to read the brief. The chat asks them, then Start runs again. */
+  | { kind: 'clarify'; server: ServerCheck; questions: Clarification[] }
   /** The user hasn't set up their profile yet; the screen opens the onboarding form (ON-8). */
   | { kind: 'profile_required'; server: ServerCheck | null; message: string }
   /** Something went wrong; `message` is plain words for the chat. */
@@ -123,7 +128,7 @@ export function describeError(error: ApiError, step: 'save' | 'start'): string {
     return "I couldn't reach the server. Check your connection, then tap Start again."
   }
   if (error.code === 'brief_in_use') {
-    return 'A call already started from this plan, so I can’t change it. Tap "+ New call" to set up another.'
+    return 'A call already started from this plan, so I can’t change it. Tap "Restart" to set up another.'
   }
   if (error.code === 'invalid_phone') return `${error.message} Tap Edit next to the number to fix it.`
   const what = step === 'save' ? "I couldn't save your plan" : "I couldn't start the call"
@@ -171,6 +176,12 @@ export function apiStarter(client: ApiClient, newKey: () => string = () => crypt
     // 2. The server has the final say on what's missing.
     if (saved.missing_fields.length > 0) {
       return { result: { kind: 'blocked', server, message: blockedMessage(saved.missing_fields) }, session }
+    }
+
+    // 2b. Questions the server could not settle: ask before anything is dialed.
+    const questions = saved.clarifications ?? []
+    if (questions.length > 0) {
+      return { result: { kind: 'clarify', server, questions }, session }
     }
 
     // 3. Hand the brief to Coco's call controller.

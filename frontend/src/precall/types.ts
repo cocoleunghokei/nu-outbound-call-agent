@@ -12,6 +12,7 @@
  * `briefs` tables in PR #19. `CallTemplate` is a draft until the template
  * format is agreed with Harper (plan Step 7).
  */
+import type { BriefRule } from '../contracts/generated'
 
 // ---- Copied from PR #19 generated contracts (brief.v1) ----
 
@@ -61,12 +62,16 @@ export interface TaskVarFieldRef {
 }
 export interface BriefConstraint {
   text: string
+  /** Read by the server (`backend/app/briefs/rules.py`) or chosen in a clarifying answer. `[]` means "decide on the call". */
+  rules?: BriefRule[]
 }
 export interface BriefPreference {
   text: string
+  rules?: BriefRule[]
 }
 export interface BriefFallback {
   text: string
+  rules?: BriefRule[]
 }
 export interface BriefNeverAgree {
   text: string

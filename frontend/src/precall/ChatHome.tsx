@@ -41,7 +41,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
   const [runStarter] = useState(() =>
     singleFlight((run: Starter, ...args: Parameters<Starter>) => run(...args)),
   )
-  // What has been saved for this draft, and which draft it is; both reset on "new call".
+  // What has been saved for this draft, and which draft it is; both reset on "restart".
   const session = useRef<SaveSession>(emptySession)
   const draftGeneration = useRef(0)
   const feedEnd = useRef<HTMLDivElement>(null)
@@ -65,9 +65,9 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
     setText('')
   }
 
-  /** Dispatch a chat action; a new call also forgets what was saved for the old draft. */
+  /** Dispatch a chat action; a restart also forgets what was saved for the old draft. */
   function act(action: ChatAction) {
-    if (action.type === 'new_call') {
+    if (action.type === 'restart') {
       draftGeneration.current += 1
       session.current = emptySession
       setServer(null)
@@ -81,7 +81,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
   const review = reviewOf(state, context)
 
   async function start() {
-    if (!review || state.stage !== 'draft_ready') return
+    if (!review || state.stage !== 'draft_ready' || state.clarify.length > 0) return
     const local = { missing_fields: review.missing_fields, opening_line: null }
     if (reviewView(review.brief, local, server).missing_fields.length > 0) return
     const generation = draftGeneration.current
@@ -89,7 +89,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
     const out = await runStarter(starter, review.brief, session.current)
     if (out === null) return // a Start is already in flight; it clears `busy` itself
     setBusy(false)
-    if (generation !== draftGeneration.current) return // the user moved on to a new call
+    if (generation !== draftGeneration.current) return // the user restarted
     session.current = out.session
     const result = out.result
     if (result.server) setServer(result.server)
@@ -102,6 +102,10 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
         break
       case 'saved_not_connected':
         dispatch({ type: 'saved_not_connected' })
+        break
+      case 'clarify':
+        // The server saved the plan but has questions about how to read it. Nothing is dialed yet.
+        dispatch({ type: 'clarify', questions: result.questions })
         break
       case 'profile_required':
         dispatch({ type: 'note', text: result.message })
@@ -125,8 +129,8 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
             </span>
           )}
         </div>
-        <button type="button" className="precall-pill" onClick={() => act({ type: 'new_call' })}>
-          + New call
+        <button type="button" className="precall-pill" onClick={() => act({ type: 'restart' })}>
+          Restart
         </button>
       </header>
 
@@ -145,6 +149,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
                   outcome={state.startOutcome}
                   server={server}
                   busy={busy}
+                  waiting={state.clarify.length > 0}
                   onEdit={(target) => act({ type: 'edit', target })}
                   onStart={() => void start()}
                 />

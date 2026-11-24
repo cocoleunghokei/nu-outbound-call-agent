@@ -534,6 +534,13 @@ class ReportDecisionArgs(BaseModel):
             description="For accept or take_fallback: true when the user's own instruction during the call allows this offer although a typed rule doesn't (DC-10). Only after the user sent an instruction; never for money."
         ),
     ] = None
+    fallback: Annotated[
+        str | None,
+        Field(
+            description="For take_fallback: the one fallback the offer matches, exactly as the user typed it in <fallbacks>. The system checks the offer against it and refuses the action if it does not fit, or if you name none.",
+            max_length=200,
+        ),
+    ] = None
     dimensions: Annotated[
         Dimensions,
         Field(
