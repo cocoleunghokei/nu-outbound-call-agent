@@ -632,9 +632,10 @@ def test_the_runner_defaults_to_the_live_agents_temperature() -> None:
 
 
 def test_the_reply_token_limit_defaults_to_600_and_can_be_raised() -> None:
-    from evals.incall.model import MAX_TOKENS
+    from app.calls.assistant import MAX_TOKENS
+    from evals.incall.model import MAX_TOKENS as EVAL_MAX_TOKENS
 
-    assert MAX_TOKENS == 600
+    assert EVAL_MAX_TOKENS == MAX_TOKENS == 600  # the eval tests the cap real calls get
     assert parse_args([]).max_tokens == MAX_TOKENS
     assert parse_args(["--max-tokens", "2000"]).max_tokens == 2000
     default = DeepSeekChat("key", "https://example.test", "deepseek-flash")

@@ -34,7 +34,20 @@ SERVER_MESSAGES = (
 # in-call eval (evals/incall) tests what real calls get. The provider default (1.0) made
 # identical eval runs disagree.
 TEMPERATURE = 0.2
-MODEL = {"provider": "deep-seek", "model": "deepseek-flash", "temperature": TEMPERATURE}
+# The most tokens one reply may use. Vapi's default is 250 and our own model calls come close
+# to it: the largest reply in a thinking-off eval run was 236 tokens (a spoken line plus a tool
+# call that is mostly JSON), and a reply cut off mid-JSON is a broken tool call. 600 is what
+# the in-call eval caps replies at (``evals/incall/model.py`` reads this value), so the eval
+# tests what real calls get. If DeepSeek's thinking mode were on, reasoning would count toward
+# this cap and could use all of it (a silent turn); the eval's ``--thinking`` and
+# ``--max-tokens`` options test that.
+MAX_TOKENS = 600
+MODEL = {
+    "provider": "deep-seek",
+    "model": "deepseek-flash",
+    "temperature": TEMPERATURE,
+    "maxTokens": MAX_TOKENS,
+}
 # Voice and transcriber as used in the probe kit; tune after the Vapi session.
 VOICE = {"provider": "vapi", "voiceId": "Clara"}
 TRANSCRIBER = {"provider": "deepgram", "model": "nova-3", "language": "en-US"}
