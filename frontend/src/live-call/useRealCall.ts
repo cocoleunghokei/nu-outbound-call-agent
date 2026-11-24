@@ -116,10 +116,10 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
   )
 
   const sendCommand = useCallback<SendCallCommand>(
-    async (id, command) => {
+    async (id, command, text) => {
       const token = await accessToken()
       if (!token) return { kind: 'error', message: 'You were signed out. Sign in and try again.' }
-      return postCommand(apiBase, token, id, command)
+      return postCommand(apiBase, token, id, command, text)
     },
     [apiBase],
   )
