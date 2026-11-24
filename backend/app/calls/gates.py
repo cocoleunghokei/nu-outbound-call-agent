@@ -37,6 +37,14 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
   ``details.staff_name`` is a name the business never said (SM-06 put the restaurant's own
   name there). Dates, times and confirmation numbers are checked after the call instead
   (``app/postcall/decide.py``).
+- **New proposal** (``new_proposal_gate``): accept or take_fallback is refused when the model's own
+  ``answerable_from_brief`` is false: the business proposed something the brief doesn't cover
+  (marshmallow cake in place of the mochi the user wanted), which is the user's call, not a
+  missed preference.
+- **Never-agree evidence** (``never_agree_gate``): accept or take_fallback is refused until
+  ``rule_evidence`` quotes the business's own words, really said on the call, for every
+  never-agree item that isn't about money ("cake with nuts"). Python can't read the item, so
+  the agent has to ask the business and bring the quote; the quote must be in the transcript.
 - **Wrong day** (``report_day_gate``): ``report_outcome`` is refused when ``details.date`` is not
   the day the user typed ("Dec 23", read into 2026-12-23 by ``requested_day``), not a day a date
   rule in the brief allows, and not a day the business named. The requirement list anchors the
@@ -55,7 +63,7 @@ without a database; ``load_facts`` reads that snapshot inside the ingress transa
 """
 
 import re
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -150,6 +158,27 @@ def missing_detail_refusal(fields: tuple[str, ...]) -> str:
         f"If the business said it or it is clear from the call (for example the party size "
         f"you asked for and they didn't change), call again with it in offer. If not, ask "
         f"them for the {names} first. Never accept or take a fallback on a guess."
+    )
+
+
+REFUSED_NEW_PROPOSAL = (
+    "Not done: your own checks say the brief can't answer this. The business proposed "
+    "something it doesn't cover (a different item, flavour or option the user never "
+    "mentioned), so the user decides. Do not accept it. Call ask_user with what they proposed "
+    "and what the user asked for."
+)
+
+
+def never_agree_refusal(unconfirmed: Sequence[str]) -> str:
+    """The refusal for settling an offer before the business has said it isn't a never-agree
+    item. ``unconfirmed`` are the items as the user typed them."""
+    names = "; ".join(f'"{one_line(text)}"' for text in unconfirmed)
+    return (
+        "Not done: the user said never to agree to these, and the business has not said in its "
+        f"own words that this offer is not one of them: {names}. Ask the business about each "
+        '(for example "Does that cake have any nuts?"), then call report_decision again with '
+        "rule_evidence: one entry per item, rule exactly as the user typed it and business_said "
+        "copied from what they said. If they can't say, call ask_user."
     )
 
 
@@ -299,6 +328,89 @@ def unsaid_name_gate(arguments: Mapping[str, Any], facts: CallFacts) -> str | No
     if folded in " ".join(facts.business_said.split()):
         return None
     return REFUSED_UNSAID_NAME
+
+
+def new_proposal_gate(
+    action: str,
+    dimensions: Mapping[str, Any] | None,
+    facts: CallFacts,
+    covered_by_instruction: object = None,
+) -> str | None:
+    """The refusal for accepting something the business proposed that the brief doesn't cover.
+
+    The model says so itself: ``answerable_from_brief`` false (check 5: "can you answer from
+    this brief without making anything up?"). Marshmallow cake offered in place of the mochi
+    the user asked for is not a missed preference, it is a new thing, and the user decides. A
+    "yes" from the user to the latest ping, or their own instruction (R-09), lets it through,
+    as in ``low_offer_gate``.
+    """
+    if action not in SETTLING_ACTIONS or facts.latest_ping_approved:
+        return None
+    if instruction_covers(covered_by_instruction, facts):
+        return None
+    if isinstance(dimensions, Mapping) and dimensions.get("answerable_from_brief") is False:
+        return REFUSED_NEW_PROPOSAL
+    return None
+
+
+def _normal(text: object) -> str:
+    """Casefolded words only: punctuation and repeated spaces don't matter when matching."""
+    return " ".join(re.sub(r"[^\w\s]", " ", str(text).casefold()).split())
+
+
+# A quote this short ("yeah") says nothing about a particular item.
+_MIN_QUOTE_WORDS = 2
+
+
+def never_agree_to_check(brief: Mapping[str, Any] | None) -> list[str]:
+    """The brief's never-agree items the business has to speak to: every one that isn't about
+    money. Money (a deposit, a fee, a charge) already has its own gate (``money_gate``)."""
+    items = brief.get("never_agree") if brief else None
+    texts = (
+        [i.get("text") for i in items if isinstance(i, Mapping)] if isinstance(items, list) else []
+    )
+    return [
+        t.strip() for t in texts if isinstance(t, str) and t.strip() and not MONEY_WORDS.search(t)
+    ]
+
+
+def never_agree_gate(
+    action: str,
+    arguments: Mapping[str, Any],
+    brief: Mapping[str, Any] | None,
+    facts: CallFacts,
+    covered_by_instruction: object = None,
+) -> str | None:
+    """The refusal for accepting or taking a fallback before the business has said, in its own
+    words, that the offer is not one of the user's never-agree items, else None.
+
+    Python can't read "cake with nuts", so the agent must bring evidence: ``rule_evidence``
+    with one entry per item (the item exactly as typed, and what the business said), and each
+    quote must really be in the business's words on this call (at least two words, so "yeah"
+    doesn't do). That proves the business said it, not that it answers the question: the
+    agent still has to ask. A "yes" from the user to the latest ping, or their own instruction,
+    lets it through, as in ``low_offer_gate``.
+    """
+    if action not in SETTLING_ACTIONS or facts.latest_ping_approved:
+        return None
+    if instruction_covers(covered_by_instruction, facts):
+        return None
+    required = never_agree_to_check(brief)
+    if not required:
+        return None
+    evidence = arguments.get("rule_evidence")
+    quotes: dict[str, str] = {}
+    for entry in evidence if isinstance(evidence, list) else []:
+        if isinstance(entry, Mapping):
+            quotes[_normal(entry.get("rule", ""))] = _normal(entry.get("business_said", ""))
+    said = f" {_normal(facts.business_said)} "
+    unconfirmed = [
+        text
+        for text in required
+        if len(quotes.get(_normal(text), "").split()) < _MIN_QUOTE_WORDS
+        or f" {quotes[_normal(text)]} " not in said
+    ]
+    return never_agree_refusal(unconfirmed) if unconfirmed else None
 
 
 def report_day_gate(

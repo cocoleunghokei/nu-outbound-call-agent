@@ -489,6 +489,21 @@ class AskUserArgs(BaseModel):
     ] = None
 
 
+class RuleEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    rule: Annotated[
+        str,
+        Field(description="The never-agree item exactly as typed in <never_agree>", max_length=200),
+    ]
+    business_said: Annotated[
+        str,
+        Field(
+            description="What the business said on this call, copied as it was said, e.g. no nuts in any of our cakes",
+            max_length=200,
+        ),
+    ]
+
+
 class ReportDecisionArgs(BaseModel):
     situation: Annotated[
         str, Field(description="What the other side offered or asked", max_length=200)
@@ -531,6 +546,12 @@ class ReportDecisionArgs(BaseModel):
         Field(
             description='The offer exactly as the other side said it, written as data. Fill a field only when they said it or it is clear from the call ("Thursday" on a call about Thursday 19 November). Leave out anything you are unsure of. Never your own judgment.',
             title="HeardOffer",
+        ),
+    ] = None
+    rule_evidence: Annotated[
+        list[RuleEvidence] | None,
+        Field(
+            description="For accept or take_fallback, when the brief has never-agree items that are not about money: one entry per item, with the business's own words showing the offer is not that thing. The system checks the words really were said on this call, and refuses the action until every item has them. Ask the business first if they haven't said it."
         ),
     ] = None
 

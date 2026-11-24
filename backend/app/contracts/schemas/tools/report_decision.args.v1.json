@@ -116,6 +116,31 @@
           "description": "Who it is with, as they said it, e.g. Dr. Patel"
         }
       }
+    },
+    "rule_evidence": {
+      "type": "array",
+      "description": "For accept or take_fallback, when the brief has never-agree items that are not about money: one entry per item, with the business's own words showing the offer is not that thing. The system checks the words really were said on this call, and refuses the action until every item has them. Ask the business first if they haven't said it.",
+      "items": {
+        "title": "RuleEvidence",
+        "type": "object",
+        "required": [
+          "rule",
+          "business_said"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rule": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The never-agree item exactly as typed in <never_agree>"
+          },
+          "business_said": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "What the business said on this call, copied as it was said, e.g. no nuts in any of our cakes"
+          }
+        }
+      }
     }
   }
 }
