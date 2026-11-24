@@ -9,6 +9,7 @@ from app.contracts.generated import OutcomeDetails, ReportOutcomeArgs
 from app.postcall.decide import (
     call_days_for,
     clauses,
+    confirmed_details,
     decide_outcome,
     has_confirmation_evidence,
     is_question,
@@ -18,6 +19,7 @@ from app.postcall.decide import (
     mentions_weekday,
     parse_time,
     says_confirmation_number,
+    says_staff_name,
     spoken_fields,
     valid_confirmation_number,
     valid_iso_date,
@@ -430,3 +432,51 @@ def test_a_weekday_confirms_a_booking_only_with_the_call_days() -> None:
     refused = ["Thursday at 2? Sorry, that's taken."]
     decided = decide_outcome(THURSDAY_2PM, "assistant-ended-call", refused, call_days=TUESDAY)
     assert decided.outcome == "needs_follow_up"
+
+
+# --- which details the summary may show (PO-2) ---------------------------------------------
+
+FULL = OutcomeDetails(
+    date="2026-10-24", time="19:30", staff_name="Marco", confirmation_number="4417"
+)
+
+
+def test_only_details_the_business_said_are_shown() -> None:
+    shown = confirmed_details(FULL, ["You're all set for 7:30 on October 24th."])
+    assert shown == OutcomeDetails(date="2026-10-24", time="19:30")
+    shown = confirmed_details(FULL, ["Done, your confirmation number is 4417. I'm Marco."])
+    assert shown == OutcomeDetails(staff_name="Marco", confirmation_number="4417")
+
+
+def test_each_detail_may_come_from_a_different_line() -> None:
+    lines = ["That's October 24th.", "I'm Marco, see you at 7:30.", "Reference 4417."]
+    assert confirmed_details(FULL, lines) == FULL
+
+
+def test_questions_and_refused_lines_never_confirm_a_detail() -> None:
+    assert confirmed_details(FULL, ["Marco here, October 24th at 7:30?"]) == OutcomeDetails()
+    lines = ["I'm Marco. October 24th at 7:30.", "No, sorry, that's taken."]
+    assert confirmed_details(FULL, lines) == OutcomeDetails()
+
+
+def test_malformed_or_missing_details_are_never_shown() -> None:
+    assert confirmed_details(None, ["October 24th at 7:30."]) == OutcomeDetails()
+    odd = OutcomeDetails(date="24/10/2026", time="soon", confirmation_number="44")
+    assert confirmed_details(odd, ["October 24th at 7:30, confirmation 44."]) == OutcomeDetails()
+
+
+def test_a_weekday_shows_the_date_only_with_the_call_days() -> None:
+    thursday = OutcomeDetails(date="2026-11-19", time="14:00")
+    lines = ["You're all set for Thursday at 2."]
+    assert confirmed_details(thursday, lines, call_days=TUESDAY) == thursday
+    assert confirmed_details(thursday, lines) == OutcomeDetails(time="14:00")
+
+
+def test_staff_name_matches_whole_words_with_or_without_a_title() -> None:
+    assert says_staff_name("dr. rivera will see you.", "Dr. Rivera")
+    assert says_staff_name("rivera will see you.", "Dr. Rivera")
+    assert says_staff_name("doctor rivera will see you.", "Rivera")
+    assert says_staff_name("ask for jen.", "jen")
+    assert not says_staff_name("see you in march.", "Mar")
+    assert not says_staff_name("marcos will seat you.", "Marco")
+    assert not says_staff_name("a table for 2.", "A")
