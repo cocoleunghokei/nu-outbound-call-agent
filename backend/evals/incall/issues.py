@@ -86,7 +86,7 @@ def theme(check: CheckResult) -> tuple[str, str]:
     if check.text.startswith("Counters first"):
         return (
             "Countered in words without logging it (Q9)",
-            "Expected report_decision action=counter in the same reply as the spoken counter.",
+            "Expected report_decision action=counter before the spoken counter (tool, then words).",
         )
     if check.evidence.startswith("no tool call") or check.evidence.startswith("reason: no "):
         return (

@@ -11,6 +11,17 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
 - **Low offer** (``low_offer_gate``): accept is refused when the model's own ``dimensions``
   say a hard constraint is broken and no fallback matches, unless the user's answer to the
   latest ping was a "yes". take_fallback is refused when neither check passes.
+- **Too long** (``length_gate``): ``ask_user`` (a decision ping) and ``report_decision`` are
+  refused when ``reason`` or ``missed_preference`` is over ``CARD_TEXT_MAX`` characters, the
+  length the user can read on the card at a glance (DC-5). Models can't count characters, so
+  the prompt alone kept missing it (D5-len in the in-call eval).
+- **Pinging a fit** (``needless_ping_gate``): ``ask_user`` with confidence high is refused
+  when neither gate applies (no ask-first field, no money): the model's own score says it
+  can act alone, so it should take the offer, not ask (C4-01).
+- **Unsaid name** (``unsaid_name_gate``): ``report_outcome`` is refused when
+  ``details.staff_name`` is a name the business never said (SM-06 put the restaurant's own
+  name there). Dates, times and confirmation numbers are checked after the call instead
+  (``app/postcall/decide.py``).
 - **Give up** (``give_up_gate``): ``report_outcome`` with ``needs_follow_up`` is refused when
   the user was never asked (no ping answered or expired) and the user didn't press End. The
   agent must ask before it gives up.
@@ -41,6 +52,9 @@ APPROVING_REPLY = re.compile(
     re.IGNORECASE,
 )
 SETTLING_ACTIONS = frozenset({"accept", "take_fallback"})
+# DC-5: a reason the user reads in about 2 seconds. The schemas allow 200; this is the policy.
+CARD_TEXT_MAX = 80
+CARD_TEXT_FIELDS = ("reason", "missed_preference")
 
 REFUSED_MONEY = (
     "Not done: the business mentioned money (a deposit, fee, card hold or charge) and the user "
@@ -55,7 +69,27 @@ REFUSED_GIVE_UP = (
     "Not done: you have not asked the user yet. Do not end the call. Call ask_user with what "
     "they offered and what the user asked for, then wait for the answer."
 )
-REFUSALS = (REFUSED_MONEY, REFUSED_LOW_OFFER, REFUSED_GIVE_UP)
+REFUSED_TOO_LONG = (
+    f"Not done: reason and missed_preference must each be {CARD_TEXT_MAX} characters or fewer, "
+    "so the user can read the card at a glance. Call the same tool again right away with "
+    "shorter wording: one idea, plain words. Say nothing to the business about this."
+)
+REFUSED_NEEDLESS_PING = (
+    "Not done: your own checks say this offer fits and needs no approval, so do not ask the "
+    "user. Accept it yourself and call report_decision with action accept."
+)
+REFUSED_UNSAID_NAME = (
+    "Not done: details.staff_name must be the name of the person you spoke with, exactly as "
+    "they said it. They never said that name. Call report_outcome again without staff_name."
+)
+REFUSALS = (
+    REFUSED_MONEY,
+    REFUSED_LOW_OFFER,
+    REFUSED_GIVE_UP,
+    REFUSED_TOO_LONG,
+    REFUSED_NEEDLESS_PING,
+    REFUSED_UNSAID_NAME,
+)
 
 
 @dataclass(frozen=True)
@@ -65,13 +99,15 @@ class CallFacts:
     ``money_since_yes``: the business mentioned money after the user's last approving reply
     (or ever, if there was none). ``latest_ping_approved``: the most recent ping was answered
     with an approving reply. ``user_was_asked``: some ping was answered or expired.
-    ``ending``: the user pressed End (or the pause cap fired).
+    ``ending``: the user pressed End (or the pause cap fired). ``business_said``: every
+    business transcript line so far, joined and casefolded.
     """
 
     money_since_yes: bool = False
     latest_ping_approved: bool = False
     user_was_asked: bool = False
     ending: bool = False
+    business_said: str = ""
 
 
 def mentions_money(text: str) -> bool:
@@ -106,6 +142,45 @@ def low_offer_gate(
     return None
 
 
+def length_gate(arguments: Mapping[str, Any]) -> str | None:
+    """The refusal for a ``reason`` or ``missed_preference`` too long for the card, else None."""
+    for key in CARD_TEXT_FIELDS:
+        value = arguments.get(key)
+        if isinstance(value, str) and len(value.strip()) > CARD_TEXT_MAX:
+            return REFUSED_TOO_LONG
+    return None
+
+
+def needless_ping_gate(
+    confidence: object, dimensions: Mapping[str, Any] | None, field_requested: object
+) -> str | None:
+    """The refusal for asking the user about an offer the model itself scored High, else None.
+
+    Only when neither DC-4 gate applies: an ask-first field or money always pings. Takes the
+    scores explicitly, because the live ingress strips them from the tool arguments (DC-5).
+    """
+    if confidence != "high" or field_requested:
+        return None
+    dims = dimensions
+    if not isinstance(dims, Mapping):
+        return None
+    if dims.get("needs_ask_first_field") is False and dims.get("involves_money") is False:
+        return REFUSED_NEEDLESS_PING
+    return None
+
+
+def unsaid_name_gate(arguments: Mapping[str, Any], facts: CallFacts) -> str | None:
+    """The refusal for a ``details.staff_name`` the business never said, else None."""
+    details = arguments.get("details")
+    name = details.get("staff_name") if isinstance(details, Mapping) else None
+    if not isinstance(name, str) or not name.strip():
+        return None
+    folded = " ".join(name.casefold().split())
+    if folded in " ".join(facts.business_said.split()):
+        return None
+    return REFUSED_UNSAID_NAME
+
+
 def give_up_gate(outcome: str, facts: CallFacts) -> str | None:
     """The refusal for ending as needs_follow_up without ever asking the user, else None."""
     if outcome == "needs_follow_up" and not facts.user_was_asked and not facts.ending:
@@ -126,7 +201,10 @@ def facts_from_timeline(
     """
     money_since_yes = False
     asked = False
+    said: list[str] = []
     for kind, text in timeline:
+        if kind == "business":
+            said.append(text.casefold())
         if kind == "business" and mentions_money(text):
             money_since_yes = True
         elif kind == "answered":
@@ -140,6 +218,7 @@ def facts_from_timeline(
         latest_ping_approved=latest_ping_answer is not None and is_approving(latest_ping_answer),
         user_was_asked=asked,
         ending=ending,
+        business_said="\n".join(said),
     )
 
 

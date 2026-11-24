@@ -27,8 +27,8 @@ make eval-incall ARGS="--cases C4-,G-03 --runs 1" # a few cases, for a quick che
 The runner prints each run's script failures and writes a new folder
 `evals/incall/results/<UTC time>/` (git-ignored) with `runs.jsonl`, `script.jsonl` and one
 judge input per run in `judge/<case>-<run>.xml`. Other options: `--model` (time the same
-cases on another model), `--temperature` (default: unset, the provider's default, which is
-what live calls get until `assistant.py` pins one) and `--out`.
+cases on another model), `--temperature` (default: `TEMPERATURE` in `app/calls/assistant.py`,
+the value live calls use, so the eval tests what real calls get) and `--out`.
 
 Then Claude Code judges each file in `judge/` with this document as its instructions, and
 appends one line per decided check to `judgments.jsonl` in the same folder (the format is in

@@ -416,7 +416,12 @@ class OutcomeDetails(BaseModel):
     confirmation_number: Annotated[
         str | None, Field(description="Exactly as the business said it, e.g. A1B2")
     ] = None
-    staff_name: str | None = None
+    staff_name: Annotated[
+        str | None,
+        Field(
+            description="The name of the person at the business you spoke with, exactly as they said it, e.g. Marco. Never the business's own name. Leave it out if they gave no name."
+        ),
+    ] = None
 
 
 class ReportOutcomeArgs(BaseModel):
