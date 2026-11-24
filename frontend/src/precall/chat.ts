@@ -488,21 +488,71 @@ function finishList(state: ChatState, key: ListKey): ChatState {
   return askNext({ ...state, draft: { ...state.draft, done_lists: done } })
 }
 
-/** Add one item to the current PC-5 list. */
+/** True if the "." at `index` ends a sentence: 3 or more letters before it, then a space and a
+ * capital ("Thanks. Tea cake"). Not "Dr. Rivera", "p.m. Then" or "Dec. 23". */
+function endsSentence(line: string, index: number): boolean {
+  const word = /[A-Za-z]+$/.exec(line.slice(0, index))
+  return word !== null && word[0].length >= 3 && /^\s+[A-Z]/.test(line.slice(index + 1))
+}
+
+/**
+ * Split one chat message into list items, so a long message is not saved as a single tag.
+ * Splits at line breaks, after "?", "!" and ";", and after a "." that ends a sentence.
+ * Never at a comma or "and": "include a topper, candles, knife" is one item. Bullets are removed.
+ */
+export function splitListItems(text: string): string[] {
+  const parts: string[] = []
+  for (const line of text.split(/\r?\n/)) {
+    let start = 0
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      const next = line[i + 1]
+      const ends = ch === '?' || ch === '!' || ch === ';' || (ch === '.' && endsSentence(line, i))
+      if (ends && (next === undefined || /\s/.test(next))) {
+        parts.push(line.slice(start, i + 1))
+        start = i + 1
+      }
+    }
+    parts.push(line.slice(start))
+  }
+  return parts
+    .map((part) => part.replace(/^\s*(?:[-•*]|\d+[.)])\s+/, '').replace(/[;\s]+$/, '').trim())
+    .filter((part) => part !== '')
+}
+
+/** Add what the user typed to the current PC-5 list: one item, or several if the message holds
+ * more than one (``splitListItems``). */
 function addListItem(state: ChatState, key: ListKey, text: string): ChatState {
-  if (text.length > LIST_ITEM_MAX) {
+  const pieces = splitListItems(text)
+  const typed = pieces.length > 0 ? pieces : [text]
+  if (typed.some((piece) => piece.length > LIST_ITEM_MAX)) {
     return say(state, 'agent', `Could you keep that under ${LIST_ITEM_MAX} characters?`)
   }
-  const items = state.draft[key] ?? []
-  if (items.some((i) => i.text.toLowerCase() === text.toLowerCase())) {
+  const updated = [...(state.draft[key] ?? [])]
+  let added = 0
+  let leftOut = 0
+  for (const piece of typed) {
+    if (updated.some((i) => i.text.toLowerCase() === piece.toLowerCase())) continue
+    if (updated.length >= LIST_MAX_ITEMS) {
+      leftOut++
+      continue
+    }
+    updated.push({ text: piece })
+    added++
+  }
+  if (added === 0 && leftOut === 0) {
     return waitForListItem(state, key, 'You already added that. Anything else?')
   }
-  const updated = [...items, { text }]
   const withItem = { ...state, draft: { ...state.draft, [key]: updated } }
   if (updated.length >= LIST_MAX_ITEMS) {
-    return finishList(say(withItem, 'agent', `That's ${LIST_MAX_ITEMS}, the most I can keep track of here.`), key)
+    const kept = leftOut > 0 ? ` I left out the last ${leftOut}.` : ''
+    return finishList(
+      say(withItem, 'agent', `That's ${LIST_MAX_ITEMS}, the most I can keep track of here.${kept}`),
+      key,
+    )
   }
-  return waitForListItem(withItem, key, LIST_PROMPTS[key].again(updated.length))
+  const split = added > 1 ? `I saved that as ${added} items. ` : ''
+  return waitForListItem(withItem, key, split + LIST_PROMPTS[key].again(updated.length))
 }
 
 /** What the user says in the chat when they tap Edit on a review row. */

@@ -22,7 +22,9 @@ from app.calls.gates import (
     REFUSED_LOW_OFFER,
     REFUSED_MONEY,
     REFUSED_NEEDLESS_COUNTER,
+    REFUSED_NEW_PROPOSAL,
     is_refusal,
+    never_agree_refusal,
 )
 from evals.incall import model as model_module
 from evals.incall.checks import business_dates, business_times, check_run
@@ -704,3 +706,63 @@ def test_g11_reporting_and_hanging_up_after_youre_all_set_completes_the_script()
     )  # fmt: skip
     v = verdicts(record)
     assert v["script-complete"] == "pass" and v["G-11.1"] == "pass"
+
+
+# --- the reported cake call, replayed -------------------------------------------------------
+
+
+def results_of(record: RunRecord) -> list[str]:
+    return [e.text for e in record.events if e.kind == "tool_result"]
+
+
+def test_the_reported_cake_call_is_refused_for_nuts_until_the_business_says_no() -> None:
+    """The agent accepted the marshmallow cake without asking about nuts. Now the accept is
+    refused, the agent asks, the business says no, and the same accept goes through."""
+    plain = decision("accept", "medium")
+    with_evidence = decision("accept", "medium")
+    with_evidence[1]["rule_evidence"] = [{"rule": "Cake with nuts", "business_said": "no nuts"}]
+    record, _ = play(
+        "C4-19",
+        [
+            tools(plain, text="That sounds good."),
+            say("Does that cake have any nuts?"),
+            tools(with_evidence, text="Great, thank you."),
+        ],
+    )
+    first, second = results_of(record)[:2]
+    assert first == never_agree_refusal(["Cake with nuts"])  # the deposit item is left to money
+    assert not is_refusal(second)
+    v = verdicts(record)
+    assert v["C4-19.1"] == "pass"  # asked about nuts at step 1
+    assert v["C4-19.2"] == "pass"  # accepted at step 2
+
+
+def test_a_made_up_nut_quote_does_not_unlock_the_accept() -> None:
+    quoted = decision("accept", "medium")
+    quoted[1]["rule_evidence"] = [{"rule": "Cake with nuts", "business_said": "no nuts"}]
+    record, _ = play("C4-19", [tools(quoted, text="Sounds good.")])
+    # Step 1: nobody has said "no nuts" yet, so the quote is made up and is refused.
+    assert results_of(record)[0] == never_agree_refusal(["Cake with nuts"])
+
+
+def test_the_marshmallow_cake_is_refused_as_a_new_proposal_when_the_brief_cant_answer() -> None:
+    record, _ = play(
+        "C4-18",
+        [
+            tools(decision("accept", "medium", answerable_from_brief=False), text="Sure."),
+            tools(ask(), text="Let me check with Alex Kim."),
+        ],
+    )
+    assert results_of(record)[0] == REFUSED_NEW_PROPOSAL
+    v = verdicts(record)
+    assert v["C4-18.1"] == "pass"  # the refused accept doesn't count as accepting
+    assert v["C4-18.2"] == "pass"  # the user was asked
+
+
+def test_the_marshmallow_cake_is_refused_for_nuts_even_when_the_model_thinks_it_fits() -> None:
+    record, _ = play(
+        "C4-18",
+        [tools(decision("accept", "medium"), text="Marshmallow is fine."), tools(ask())],
+    )
+    assert results_of(record)[0] == never_agree_refusal(["Cake with nuts"])
+    assert verdicts(record)["C4-18.1"] == "pass"

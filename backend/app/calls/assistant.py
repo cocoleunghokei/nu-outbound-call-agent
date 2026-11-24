@@ -9,6 +9,7 @@ Raises before anything is built when the call can't start safely:
 ``AskFirstInPrompt`` (an ask-first value would reach the model, DC-6).
 """
 
+from datetime import date
 from typing import Any
 
 from app.calls.prompt import build_system_prompt
@@ -46,6 +47,7 @@ def build_assistant_config(
     server_url: str,
     webhook_secret: str,
     max_duration_s: int,
+    today: date | None = None,
 ) -> dict[str, Any]:
     """Return the inline assistant for this call, without tools (the voice port adds them).
 
@@ -53,7 +55,7 @@ def build_assistant_config(
     a secret: never log the returned config.
     """
     first_message = build_first_message(brief.model_dump(mode="json"), snapshot)
-    prompt = build_system_prompt(brief, snapshot)
+    prompt = build_system_prompt(brief, snapshot, today)
     assert_prompt_safe(first_message, snapshot)
     assert_prompt_safe(prompt, snapshot)
     server = {"url": server_url, "headers": {SECRET_HEADER: webhook_secret}}

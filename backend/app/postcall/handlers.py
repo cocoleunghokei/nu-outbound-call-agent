@@ -5,13 +5,22 @@ and must not call the network. The slow part, deciding the outcome and checking 
 said, is queued on the outbox ``jobs`` lane and done by the worker in ``jobs.py``.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
-from app.calls.gates import give_up_gate, load_facts, unsaid_name_gate
+from app.calls.gates import (
+    give_up_gate,
+    load_brief,
+    load_facts,
+    report_day_gate,
+    unsaid_name_gate,
+)
+from app.calls.prompt import us_today
+from app.calls.requested_day import requested_day, rule_days
 from app.calls_lock import end_call_transition
 from app.webhooks.bind import BoundCall, message_of
 from app.webhooks.normalise import ROLE_MAP
@@ -21,6 +30,9 @@ from app.webhooks.registry import ToolCallContext
 # the model ignored it, and asking it to wait left T-02, T-03, T-06 and SM-06 never ending
 # (eval 2026-11-18T0411Z).
 NOTED = "Noted. Say thanks and goodbye, then end the call."
+
+# The speakers whose lines the post-call jobs read (the app's own user never speaks on a call).
+TURN_ROLES = frozenset({"agent", "business"})
 
 JOB_OUTCOME = "outcome"
 JOB_SHARED_FIELDS = "shared_fields"
@@ -32,14 +44,21 @@ async def handle_report_outcome(conn: AsyncConnection[Any], ctx: ToolCallContext
 
     The validated arguments are already stored on the ``tool_calls`` receipt; the outcome
     job reads them after the call, checks them against the transcript and decides. A
-    ``needs_follow_up`` before the user was ever asked, or a staff name the business never
-    said, is refused (``app/calls/gates.py``):
+    ``needs_follow_up`` before the user was ever asked, a staff name the business never
+    said, or a date that contradicts the day the user asked for, is refused
+    (``app/calls/gates.py``):
     the receipt keeps the refusal as its result, and ``jobs.latest_report`` skips it.
     """
     outcome = ctx.arguments.get("outcome")
     if isinstance(outcome, str):
         facts = await load_facts(conn, ctx.call_id)
-        refusal = give_up_gate(outcome, facts) or unsaid_name_gate(ctx.arguments, facts)
+        brief = await load_brief(conn, ctx.call_id)
+        asked_for = requested_day(brief, us_today(datetime.now(UTC)))
+        refusal = (
+            give_up_gate(outcome, facts)
+            or unsaid_name_gate(ctx.arguments, facts)
+            or report_day_gate(ctx.arguments, asked_for, rule_days(brief), facts)
+        )
         if refusal is not None:
             return refusal
     return NOTED
@@ -57,7 +76,11 @@ async def handle_end_of_call_report(
     reason = message.get("endedReason")
     ended_reason = reason.strip() if isinstance(reason, str) else ""
     await end_call_transition(conn, call.call_id, reason="end-of-call-report", source="vapi")
-    payload = {"ended_reason": ended_reason, **report_lines(message)}
+    payload = {
+        "ended_reason": ended_reason,
+        **report_lines(message),
+        "turns": report_turns(message),
+    }
     for kind in POSTCALL_JOBS:
         await queue_job(conn, call.call_id, kind, payload)
 
@@ -81,6 +104,24 @@ def report_lines(message: dict[str, Any]) -> dict[str, list[str]]:
         if role is not None and isinstance(text, str) and text.strip():
             lines[f"{role}_lines"].append(text.strip())
     return lines
+
+
+def report_turns(message: dict[str, Any]) -> list[list[str]]:
+    """The full transcript from the report in the order it was spoken, as [role, text] pairs
+    (JSON has no tuples). The roles are the agent's and the business's, as in ``report_lines``.
+    The outcome job needs the order to match a plain "yes" to what it answered."""
+    artifact = message.get("artifact")
+    entries = artifact.get("messages") if isinstance(artifact, dict) else None
+    turns: list[list[str]] = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        vapi_role = entry.get("role")
+        role = ROLE_MAP.get(vapi_role) if isinstance(vapi_role, str) else None
+        text = entry.get("message")
+        if role in TURN_ROLES and isinstance(text, str) and text.strip():
+            turns.append([role, text.strip()])
+    return turns
 
 
 async def queue_job(
