@@ -21,6 +21,8 @@ export interface TranscriptLine {
 /** A transcript line ready to show. */
 export interface TranscriptRow {
   seq: number
+  /** `seq` of every line joined into this row, in order (the first is `seq`) */
+  seqs: number[]
   role: TranscriptLine['role']
   /** Who spoke, e.g. "Assistant", the business name, or "You" */
   speaker: string
@@ -64,9 +66,11 @@ export function transcriptRows(lines: readonly TranscriptLine[], businessName: s
     if (joinsPrevious) {
       const last = rows[rows.length - 1]
       last.text = `${last.text} ${text}`
+      last.seqs.push(line.seq)
     } else {
       rows.push({
         seq: line.seq,
+        seqs: [line.seq],
         role: line.role,
         speaker: speakerName(line.role, businessName),
         text,
