@@ -252,7 +252,7 @@ describe('isCallRouteMissing and describeError', () => {
   it('uses plain words for sign-in and connection problems', () => {
     expect(describeError(new ApiError('unauthenticated', 'Missing or invalid credentials', 401, false), 'save')).toMatch(/signed out/)
     expect(describeError(new ApiError(NETWORK_ERROR, 'x', 0, true), 'save')).toMatch(/couldn't reach the server/)
-    expect(describeError(new ApiError('brief_in_use', 'A call already started from this brief', 409, false), 'save')).toMatch(/\+ New call/)
+    expect(describeError(new ApiError('brief_in_use', 'A call already started from this brief', 409, false), 'save')).toMatch(/Restart/)
   })
 
   it('tells a definite server refusal apart from a lost answer on Start', () => {
@@ -312,8 +312,8 @@ describe('chat reducer: Start outcomes from the API', () => {
     expect(reduce(ready, { type: 'note', text: '  ' })).toBe(ready)
   })
 
-  it('a new call clears the outcome', () => {
-    const s = reduce(reduce(ready, { type: 'saved_not_connected' }), { type: 'new_call' })
+  it('a restart clears the outcome', () => {
+    const s = reduce(reduce(ready, { type: 'saved_not_connected' }), { type: 'restart' })
     expect(s.startOutcome).toBeNull()
   })
 })

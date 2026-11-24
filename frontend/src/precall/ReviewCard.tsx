@@ -94,7 +94,7 @@ export function ReviewCard({
         </Row>
         <Row label="Never agree to" edit={editButton('never_agree', 'what not to agree to')}>
           <Tags items={texts(brief.never_agree)} empty="Nothing listed" />
-          <div className="precall-small">I'll always check with you before any deposit or fee.</div>
+          <div className="precall-small">I'll check with you before agreeing to any of these.</div>
         </Row>
       </dl>
 
