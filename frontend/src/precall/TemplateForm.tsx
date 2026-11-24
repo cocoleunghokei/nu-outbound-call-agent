@@ -32,13 +32,13 @@ const LIST_SECTIONS: { key: ListKey; title: string; hint: string; placeholder: s
   {
     key: 'fallbacks',
     title: "If that's not available, I'm OK with",
-    hint: "I'll take one of these without asking you. Leave empty and I'll ask you instead.",
+    hint: "I'll take one of these without asking you.",
     placeholder: 'e.g. within an hour of that time',
   },
   {
     key: 'never_agree',
     title: 'Never agree to',
-    hint: "I'll always check with you before agreeing to a deposit or fee.",
+    hint: "I'll check with you before agreeing to any of these.",
     placeholder: 'Add something else',
   },
 ]
