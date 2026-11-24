@@ -9,6 +9,7 @@ import {
   chatReducer,
   completedDraft,
   initialChatState,
+  splitListItems,
   type ChatAction,
   type ChatContext,
   type ChatState,
@@ -287,6 +288,51 @@ describe('constraints and fallbacks (PC-5)', () => {
     })
   })
 
+  it('splits a long message into one item per question or sentence', () => {
+    let s = [done('Nothing specific'), done('Nothing')].reduce(reduce, atLists())
+    s = reduce(
+      s,
+      send(
+        'is there another branch for pick up if this store is not available? is there deliveyr options? tea flavoured cake if possible',
+      ),
+    )
+    expect(s.draft.fallbacks).toEqual([
+      { text: 'is there another branch for pick up if this store is not available?' },
+      { text: 'is there deliveyr options?' },
+      { text: 'tea flavoured cake if possible' },
+    ])
+    expect(lastAgent(s)).toBe('I saved that as 3 items. Saved. Anything else you would be OK with?')
+  })
+
+  it('keeps a message with commas as one item', () => {
+    const s = reduce(atLists(), send('include happy birthday cake topper, candles, knife'))
+    expect(s.draft.constraints).toEqual([{ text: 'include happy birthday cake topper, candles, knife' }])
+    expect(lastAgent(s)).toBe('Got it. Anything else that must be true?')
+  })
+
+  it('skips repeats inside a split message and keeps at most the limit', () => {
+    let s = reduce(atLists(), send('Before 6pm'))
+    s = reduce(s, send('before 6PM; a; b; c; d; e; f'))
+    expect(s.draft.constraints?.map((i) => i.text)).toEqual(['Before 6pm', 'a', 'b', 'c', 'd'])
+    expect(s.messages.map((m) => m.text)).toContain(
+      `That's ${LIST_MAX_ITEMS}, the most I can keep track of here. I left out the last 2.`,
+    )
+    expect(s.listKey).toBe('preferences')
+  })
+
+  it('asks again when every part of a split message was already added', () => {
+    let s = reduce(atLists(), send('Before 6pm; Not on Sunday'))
+    s = reduce(s, send('not on sunday; before 6pm'))
+    expect(s.draft.constraints).toHaveLength(2)
+    expect(lastAgent(s)).toBe('You already added that. Anything else?')
+  })
+
+  it('rejects a message when any part is too long', () => {
+    const s = reduce(atLists(), send(`Before 6pm; ${'x'.repeat(LIST_ITEM_MAX + 1)}`))
+    expect(s.draft.constraints).toEqual([])
+    expect(lastAgent(s)).toBe(`Could you keep that under ${LIST_ITEM_MAX} characters?`)
+  })
+
   it('ignores a duplicate item (any case) and asks again', () => {
     let s = reduce(atLists(), send('Before 6pm'))
     s = reduce(s, send('before 6PM'))
@@ -437,5 +483,40 @@ describe('callingNameOf', () => {
     expect(callingNameOf(fakeProfile)).toBe('Alex')
     expect(callingNameOf([{ key: 'full_name', value: 'Alex Chen', sharing: 'share_freely' }])).toBe('Alex Chen')
     expect(callingNameOf([])).toBe('there')
+  })
+})
+
+
+describe('splitListItems', () => {
+  it('splits after a question mark, an exclamation mark, a semicolon and a sentence end', () => {
+    expect(splitListItems('One? Two! Three; Four. Five')).toEqual(['One?', 'Two!', 'Three', 'Four.', 'Five'])
+  })
+
+  it('splits at line breaks and drops bullets and numbers', () => {
+    expect(splitListItems('- tea cake\n• another branch\r\n1) delivery\n2. no nuts')).toEqual([
+      'tea cake',
+      'another branch',
+      'delivery',
+      'no nuts',
+    ])
+  })
+
+  it('does not split at commas, "and", abbreviations, times or dates', () => {
+    for (const text of [
+      'topper, candles and a knife',
+      'see Dr. Rivera on Tuesday',
+      'pickup at 6 p.m. Friday works',
+      'on Dec. 23 at 7:30 pm',
+      'price under $3.50 is fine',
+      'is it open 24/7?',
+    ]) {
+      expect(splitListItems(text)).toEqual([text])
+    }
+  })
+
+  it('keeps "??" together and ignores empty pieces', () => {
+    expect(splitListItems('really?? ok')).toEqual(['really??', 'ok'])
+    expect(splitListItems(' ; ;; \n ')).toEqual([])
+    expect(splitListItems('')).toEqual([])
   })
 })
