@@ -43,6 +43,7 @@ from app.calls.gates import (
     low_offer_gate,
     missing_detail_gate,
     money_gate,
+    named_fallback_gate,
     needless_counter_gate,
     needless_ping_gate,
     never_agree_gate,
@@ -170,6 +171,7 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
                 money_gate(str(action), facts)
                 or low_offer_gate(str(action), _dims(args), facts, score, covered)
                 or new_proposal_gate(str(action), _dims(args), facts, covered)
+                or named_fallback_gate(str(action), args, state.brief, facts, covered)
                 or missing_detail_gate(str(action), facts, score, covered)
                 or never_agree_gate(str(action), args, state.brief, facts, covered)
             )
@@ -331,7 +333,12 @@ async def _respond(
         record.usage.append(reply.usage)
         if reply.served and reply.served not in record.served:
             record.served.append(reply.served)
-        convo.append(_assistant_message(reply))
+        if reply.text or reply.tool_calls:
+            # An empty assistant message (no content, no tool calls) is a 400 from the provider
+            # on the next request, and Vapi sends none: a silent reply adds nothing.
+            convo.append(_assistant_message(reply))
+        else:
+            record.silences.append(f"step {step}: {reply.finish or 'unknown'}")
         if reply.text:
             record.events.append(Event(step=step, kind="agent", text=reply.text))
             state.timeline.append(("agent", reply.text))  # the backend stores the agent's lines too

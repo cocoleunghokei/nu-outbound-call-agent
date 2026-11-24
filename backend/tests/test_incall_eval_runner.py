@@ -23,6 +23,8 @@ from app.calls.gates import (
     REFUSED_MONEY,
     REFUSED_NEEDLESS_COUNTER,
     REFUSED_NEW_PROPOSAL,
+    fallback_breaks_refusal,
+    fallback_not_named_refusal,
     is_refusal,
     never_agree_refusal,
 )
@@ -258,6 +260,17 @@ def test_ending_the_call_early_stops_the_run() -> None:
     assert not [e for e in record.events if e.step == 2]
 
 
+def friday_morning_fallback() -> tuple[str, dict[str, Any]]:
+    """T-01's take_fallback as the model should write it: the fallback named, the offer noted."""
+    call = decision(
+        "take_fallback",
+        matches_fallback=True,
+        offer={"date": "2026-11-20", "time": "10:00"},
+    )
+    call[1]["fallback"] = "Friday 20 November, morning (before noon)"
+    return call
+
+
 def test_a_settling_decision_withdraws_the_open_question() -> None:
     record, _ = play(
         "T-01",
@@ -265,7 +278,7 @@ def test_a_settling_decision_withdraws_the_open_question() -> None:
             tools(ask(), text="One moment."),
             QUIET,
             say("Thanks, still checking."),
-            tools(decision("take_fallback", matches_fallback=True)),
+            tools(friday_morning_fallback()),
         ],
     )
     results = [e.text for e in record.events if e.kind == "tool_result"]
@@ -631,6 +644,30 @@ def test_the_runner_defaults_to_the_live_agents_temperature() -> None:
     assert parse_args(["--temperature", "0.7"]).temperature == 0.7
 
 
+def test_the_reply_token_limit_defaults_to_600_and_can_be_raised() -> None:
+    from app.calls.assistant import MAX_TOKENS
+    from evals.incall.model import MAX_TOKENS as EVAL_MAX_TOKENS
+
+    assert EVAL_MAX_TOKENS == MAX_TOKENS == 600  # the eval tests the cap real calls get
+    assert parse_args([]).max_tokens == MAX_TOKENS
+    assert parse_args(["--max-tokens", "2000"]).max_tokens == 2000
+    default = DeepSeekChat("key", "https://example.test", "deepseek-flash")
+    raised = DeepSeekChat("key", "https://example.test", "deepseek-flash", max_tokens=2000)
+    assert default.request_body([], [])["max_tokens"] == 600
+    assert raised.request_body([], [])["max_tokens"] == 2000
+
+
+def test_thinking_is_left_to_the_provider_unless_the_eval_sets_it() -> None:
+    default = DeepSeekChat("key", "https://example.test", "deepseek-flash")
+    off = DeepSeekChat("key", "https://example.test", "deepseek-flash", thinking="disabled")
+    assert "thinking" not in default.request_body([], [])
+    assert off.request_body([], [])["thinking"] == {"type": "disabled"}
+    assert parse_args([]).thinking is None
+    assert parse_args(["--thinking", "disabled"]).thinking == "disabled"
+    with pytest.raises(SystemExit):
+        parse_args(["--thinking", "maybe"])
+
+
 def test_the_eval_scores_the_heard_offer_like_the_backend() -> None:
     from evals.incall.play import _State, tool_result
     from evals.incall.setup import load_data
@@ -766,3 +803,133 @@ def test_the_marshmallow_cake_is_refused_for_nuts_even_when_the_model_thinks_it_
     )
     assert results_of(record)[0] == never_agree_refusal(["Cake with nuts"])
     assert verdicts(record)["C4-18.1"] == "pass"
+
+
+# --- silent replies -------------------------------------------------------------------------
+
+
+def stream_of(*chunks: dict[str, Any]) -> Any:
+    async def lines() -> Any:
+        for chunk in chunks:
+            yield "data: " + json.dumps(chunk)
+        yield "data: [DONE]"
+
+    return lines()
+
+
+def test_a_reply_that_says_nothing_records_how_the_stream_ended() -> None:
+    thinking = {"choices": [{"delta": {"reasoning_content": "Let me think."}}]}
+    finished = {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+    reply = asyncio.run(parse_stream(stream_of(thinking, finished), 0.0))
+    assert (reply.text, reply.tool_calls) == ("", [])
+    assert reply.finish == "stop, reasoning"
+    bare = asyncio.run(parse_stream(stream_of({"choices": [{"delta": {}}]}), 0.0))
+    assert bare.finish == "none"
+    cut = {"choices": [{"delta": {"content": "Hi"}, "finish_reason": "length"}]}
+    assert asyncio.run(parse_stream(stream_of(cut), 0.0)).finish == "length"
+
+
+def test_a_silent_reply_is_noted_and_not_sent_back_as_an_empty_message() -> None:
+    # An empty assistant message (no content, no tool calls) is a 400 on the next request.
+    mute = ModelReply(text="", tool_calls=[], first_token_s=None, done_s=0.2, finish="stop")
+    record, fake = play("C4-19", [mute, say("Does that cake have any nuts?")])
+    assert record.silences == ["step 1: stop"]
+    for request in fake.seen:
+        empties = [
+            m for m in request if m["role"] == "assistant" and not m.get("content")
+            and not m.get("tool_calls")
+        ]  # fmt: skip
+        assert empties == []
+
+
+def test_a_silent_reply_without_a_reason_says_unknown() -> None:
+    record, _ = play("C4-19", [QUIET])
+    assert record.silences == ["step 1: unknown", "step 2: unknown"]
+
+
+def test_silences_survive_the_results_file_and_old_files_still_load() -> None:
+    record = RunRecord("C4-19", 1, "deepseek-flash", None, "2026-11-24T20:47:00Z")
+    record.silences.append("step 2: stop, reasoning")
+    assert RunRecord.from_json(record.to_json()).silences == ["step 2: stop, reasoning"]
+    old = record.to_json()
+    del old["silences"]
+    assert RunRecord.from_json(old).silences == []
+
+
+# --- noon taken as the 11am fallback, replayed ---------------------------------------------
+
+PICKUP_11AM = "Pickup at 11am is fine too"
+
+
+def take_fallback(name: str | None, offer: dict[str, Any] | None) -> tuple[str, dict[str, Any]]:
+    call = decision("take_fallback", matches_fallback=True, offer=offer)
+    if name is not None:
+        call[1]["fallback"] = name
+    return call
+
+
+def test_the_cake_briefs_rules_come_from_the_real_parser() -> None:
+    from evals.incall.setup import build_case_brief
+
+    brief = build_case_brief(DATA, DATA.case("C4-20"))
+    deadline = brief["constraints"][-1]
+    assert deadline["text"] == "By tomorrow 10am"  # from the goal; the eval's today is 17 Nov
+    assert deadline["rules"] == [
+        {"kind": "date", "on": "2026-11-18"},
+        {"kind": "time", "latest": "10:00"},
+    ]
+    assert brief["fallbacks"][0]["rules"] == [{"kind": "time", "latest": "11:00"}]
+    assert "rules" not in brief["fallbacks"][1]  # the tea cake is words only
+
+
+def test_noon_is_refused_as_the_11am_fallback_even_with_words_only_siblings() -> None:
+    counter = decision(
+        "counter", "low", offer={"date": "2026-11-18", "time": "12:00"}, meets_constraints=False
+    )
+    record, _ = play(
+        "C4-20",
+        [
+            tools(take_fallback(PICKUP_11AM, {"time": "12:00"}), text="Noon works."),
+            tools(counter, text="That's later than we need. Anything earlier?"),
+        ],
+    )
+    assert results_of(record)[0] == fallback_breaks_refusal(PICKUP_11AM)
+    assert not is_refusal(results_of(record)[1])  # the counter is allowed
+    v = verdicts(record)
+    assert v["C4-20.1"] == "pass"  # the refused take_fallback doesn't count as taking it
+    assert v["C4-20.2"] == "pass"  # it countered once, as the live agent did
+
+
+def test_a_take_fallback_that_names_nothing_is_told_the_options() -> None:
+    record, _ = play("C4-20", [tools(take_fallback(None, {"time": "12:00"})), tools(ask())])
+    options = [
+        PICKUP_11AM,
+        "Is there another branch for pickup if this store is not available?",
+        "Tea flavoured cake if possible",
+    ]
+    refusal = results_of(record)[0]
+    assert refusal.startswith(fallback_not_named_refusal(options)[:60])
+    assert is_refusal(refusal)
+
+
+def test_a_fallback_that_fits_is_taken_when_it_is_named() -> None:
+    # T-01: "A Friday 10am with Dr. Rivera just opened up", brief A's Friday-morning fallback.
+    record, _ = play(
+        "T-01",
+        [
+            tools(ask(), text="One moment."),
+            QUIET,
+            say("Still checking."),
+            tools(friday_morning_fallback()),
+        ],
+    )
+    assert not is_refusal(results_of(record)[-1])
+
+
+def test_a_fallback_named_for_an_offer_that_breaks_it_is_refused_in_the_eval_too() -> None:
+    late = decision(
+        "take_fallback", matches_fallback=True, offer={"date": "2026-11-20", "time": "12:00"}
+    )
+    late[1]["fallback"] = "Friday 20 November, morning (before noon)"
+    record, _ = play("T-01", [tools(ask(), text="One moment."), QUIET, say("Still."), tools(late)])
+    assert is_refusal(results_of(record)[-1])

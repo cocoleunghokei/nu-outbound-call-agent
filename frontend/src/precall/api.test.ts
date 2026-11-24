@@ -7,6 +7,7 @@ import {
   createApiClient,
   normaliseBaseUrl,
   parseApiError,
+  parseBriefResponse,
   type BriefResponse,
 } from './api'
 import { contractExampleBrief } from './contractExample'
@@ -39,7 +40,7 @@ function setup(respond: () => Response | Promise<Response> = () => json(201, okB
 describe('createApiClient', () => {
   it('POST /briefs sends the Bearer token, the Idempotency-Key and the brief as JSON', async () => {
     const { client, call } = setup()
-    await expect(client.createBrief(contractExampleBrief, KEY)).resolves.toEqual(okBrief)
+    await expect(client.createBrief(contractExampleBrief, KEY)).resolves.toEqual({ ...okBrief, clarifications: [] })
     const { url, init, headers } = call()
     expect(url).toBe('https://api.test/briefs')
     expect(init.method).toBe('POST')
@@ -130,5 +131,26 @@ describe('normaliseBaseUrl', () => {
     expect(normaliseBaseUrl(undefined)).toBeNull()
     expect(normaliseBaseUrl('  ')).toBeNull()
     expect(normaliseBaseUrl('http://localhost:8000//')).toBe('http://localhost:8000')
+  })
+})
+
+
+describe('parseBriefResponse clarifications', () => {
+  const question = {
+    item: 'at 7pm',
+    list: 'constraints',
+    question: 'You wrote "at 7pm". Is 7pm the latest you would accept, or the only time that works?',
+    answers: [{ label: '7pm or earlier', rules: [{ kind: 'time', latest: '19:00' }], text: null }],
+  }
+
+  it('keeps the questions the server sends', () => {
+    const parsed = parseBriefResponse({ ...okBrief, clarifications: [question] })
+    expect(parsed.clarifications).toEqual([question])
+  })
+
+  it('has none when the server sends none or sends rubbish', () => {
+    expect(parseBriefResponse(okBrief).clarifications).toEqual([])
+    expect(parseBriefResponse({ ...okBrief, clarifications: 'oops' }).clarifications).toEqual([])
+    expect(parseBriefResponse({ ...okBrief, clarifications: [{ item: 5 }, null] }).clarifications).toEqual([])
   })
 })

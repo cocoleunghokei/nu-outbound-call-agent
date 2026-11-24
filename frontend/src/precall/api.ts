@@ -11,6 +11,7 @@
  * Errors come back in the shared shape `{"error": {"code", "message",
  * "retryable"}}` and are thrown as `ApiError`. Uses `fetch` only.
  */
+import { parseClarifications, type Clarification } from './clarify'
 import type { Brief } from './types'
 
 /** What every brief route returns. `missing_fields` must be empty before Start. */
@@ -20,6 +21,8 @@ export interface BriefResponse {
   missing_fields: string[]
   /** The agent's exact first sentence; null while something is missing. */
   opening_line: string | null
+  /** What the server could not settle when it read the brief; the chat asks before Start. */
+  clarifications?: Clarification[]
   created_at: string
 }
 
@@ -92,7 +95,8 @@ export function parseBriefResponse(body: unknown): BriefResponse {
     (body.opening_line === null || typeof body.opening_line === 'string') &&
     typeof body.created_at === 'string'
   if (!ok) throw new ApiError(BAD_RESPONSE, 'The server sent an answer I could not read.', 200, false)
-  return body as unknown as BriefResponse
+  const response = body as unknown as BriefResponse
+  return { ...response, clarifications: parseClarifications(response.clarifications) }
 }
 
 /** Strip trailing slashes; empty or blank means "no API configured". */

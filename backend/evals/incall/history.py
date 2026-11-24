@@ -257,6 +257,11 @@ def transcript_html(run: RunRecord, checks: Sequence[CheckResult]) -> str:
         lines.append(f'<div class="t note">Stopped: {e(run.stopped)}</div>')
     if run.error:
         lines.append(f'<div class="t note">Error: {e(run.error)}</div>')
+    if run.silences:
+        lines.append(
+            f'<div class="t note">Silent replies (no words, no tool call): '
+            f"{e('; '.join(run.silences))}</div>"
+        )
     bad = [c for c in checks if c.verdict in ("fail", "unclear")]
     failed = "".join(f"<li><code>{e(c.check)}</code> {e(c.text)}</li>" for c in bad)
     silences = ", ".join(
