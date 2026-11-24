@@ -48,7 +48,113 @@
       "type": "array",
       "items": {
         "type": "string"
+      },
+      "description": "Things the user must still act on or check. What changed on the call goes in result_items."
+    },
+    "result_items": {
+      "type": "array",
+      "maxItems": 12,
+      "description": "One row per thing the user asked for, or that the business added, saying what was actually agreed (asked vs. got). Include rows that match the brief too (status as_asked). Fill it when you report the outcome. Leave it out if the call ended before anything was discussed.",
+      "items": {
+        "title": "ResultItem",
+        "type": "object",
+        "required": [
+          "ref",
+          "label",
+          "got",
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "ref": {
+            "title": "ResultItemRef",
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false,
+            "description": "Which part of the brief this row is about. The system copies the user's own words from it for the Asked column, so do not write them yourself.",
+            "properties": {
+              "kind": {
+                "title": "ResultItemRefKind",
+                "type": "string",
+                "enum": [
+                  "task_var",
+                  "constraint",
+                  "preference",
+                  "fallback",
+                  "extra"
+                ],
+                "description": "extra: something the business added that the brief never mentioned, such as a fee. extra has no key or index."
+              },
+              "key": {
+                "type": "string",
+                "minLength": 1,
+                "description": "For task_var: the task variable name, e.g. party_size"
+              },
+              "index": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "For constraint, preference or fallback: its position in that list in the brief, starting at 0"
+              }
+            }
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40,
+            "description": "One to three words naming the row, e.g. Cake, Pickup, Ice pack"
+          },
+          "got": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "What was agreed, in plain words, not what was first offered"
+          },
+          "status": {
+            "title": "ResultItemStatus",
+            "type": "string",
+            "enum": [
+              "as_asked",
+              "changed",
+              "not_met",
+              "extra"
+            ],
+            "description": "as_asked: it matches the brief. changed: a different result the user accepted or a fallback allowed. not_met: not agreed, and the user must act. extra: a new cost or condition."
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Why, in plain words. Leave it out for as_asked."
+          },
+          "approved_by": {
+            "title": "ResultItemApproval",
+            "type": "string",
+            "enum": [
+              "brief",
+              "user",
+              "none"
+            ],
+            "description": "brief: the brief or a fallback the user wrote allowed it. user: the user said yes during the call. none: nobody approved it. Leave it out if unsure."
+          },
+          "cost_cents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000,
+            "description": "For a fee or price: the amount in whole cents, e.g. 300 for $3. Leave it out otherwise."
+          },
+          "business_said": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "The business's own words that support this row, copied as they said them. The system checks that they really said it. A row with no matching words is shown less prominently or left out."
+          }
+        }
       }
+    },
+    "follow_up": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "One sentence on what the user must do next, e.g. Call to confirm the cake is nut-free. Leave it out when nothing is needed."
     }
   }
 }

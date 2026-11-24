@@ -590,13 +590,151 @@ class OutcomeDetails(BaseModel):
     ] = None
 
 
+class ResultItemRefKind(StrEnum):
+    """
+    extra: something the business added that the brief never mentioned, such as a fee. extra has no key or index.
+    """
+
+    task_var = "task_var"
+    constraint = "constraint"
+    preference = "preference"
+    fallback = "fallback"
+    extra = "extra"
+
+
+class ResultItemRef(BaseModel):
+    """
+    Which part of the brief this row is about. The system copies the user's own words from it for the Asked column, so do not write them yourself.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Annotated[
+        ResultItemRefKind,
+        Field(
+            description="extra: something the business added that the brief never mentioned, such as a fee. extra has no key or index.",
+            title="ResultItemRefKind",
+        ),
+    ]
+    key: Annotated[
+        str | None,
+        Field(description="For task_var: the task variable name, e.g. party_size", min_length=1),
+    ] = None
+    index: Annotated[
+        int | None,
+        Field(
+            description="For constraint, preference or fallback: its position in that list in the brief, starting at 0",
+            ge=0,
+        ),
+    ] = None
+
+
+class ResultItemStatus(StrEnum):
+    """
+    as_asked: it matches the brief. changed: a different result the user accepted or a fallback allowed. not_met: not agreed, and the user must act. extra: a new cost or condition.
+    """
+
+    as_asked = "as_asked"
+    changed = "changed"
+    not_met = "not_met"
+    extra = "extra"
+
+
+class ResultItemApproval(StrEnum):
+    """
+    brief: the brief or a fallback the user wrote allowed it. user: the user said yes during the call. none: nobody approved it. Leave it out if unsure.
+    """
+
+    brief = "brief"
+    user = "user"
+    none = "none"
+
+
+class ResultItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ref: Annotated[
+        ResultItemRef,
+        Field(
+            description="Which part of the brief this row is about. The system copies the user's own words from it for the Asked column, so do not write them yourself.",
+            title="ResultItemRef",
+        ),
+    ]
+    label: Annotated[
+        str,
+        Field(
+            description="One to three words naming the row, e.g. Cake, Pickup, Ice pack",
+            max_length=40,
+            min_length=1,
+        ),
+    ]
+    got: Annotated[
+        str,
+        Field(
+            description="What was agreed, in plain words, not what was first offered",
+            max_length=80,
+            min_length=1,
+        ),
+    ]
+    status: Annotated[
+        ResultItemStatus,
+        Field(
+            description="as_asked: it matches the brief. changed: a different result the user accepted or a fallback allowed. not_met: not agreed, and the user must act. extra: a new cost or condition.",
+            title="ResultItemStatus",
+        ),
+    ]
+    reason: Annotated[
+        str | None,
+        Field(description="Why, in plain words. Leave it out for as_asked.", max_length=120),
+    ] = None
+    approved_by: Annotated[
+        ResultItemApproval | None,
+        Field(
+            description="brief: the brief or a fallback the user wrote allowed it. user: the user said yes during the call. none: nobody approved it. Leave it out if unsure.",
+            title="ResultItemApproval",
+        ),
+    ] = None
+    cost_cents: Annotated[
+        int | None,
+        Field(
+            description="For a fee or price: the amount in whole cents, e.g. 300 for $3. Leave it out otherwise.",
+            ge=0,
+            le=1000000,
+        ),
+    ] = None
+    business_said: Annotated[
+        str | None,
+        Field(
+            description="The business's own words that support this row, copied as they said them. The system checks that they really said it. A row with no matching words is shown less prominently or left out.",
+            max_length=200,
+        ),
+    ] = None
+
+
 class ReportOutcomeArgs(BaseModel):
     outcome: Annotated[ReportedOutcome, Field(title="ReportedOutcome")]
     business_confirmed: Annotated[
         bool, Field(description="True only if the other side explicitly confirmed it, in words")
     ]
     details: Annotated[OutcomeDetails | None, Field(title="OutcomeDetails")] = None
-    open_items: list[str] | None = None
+    open_items: Annotated[
+        list[str] | None,
+        Field(
+            description="Things the user must still act on or check. What changed on the call goes in result_items."
+        ),
+    ] = None
+    result_items: Annotated[
+        list[ResultItem] | None,
+        Field(
+            description="One row per thing the user asked for, or that the business added, saying what was actually agreed (asked vs. got). Include rows that match the brief too (status as_asked). Fill it when you report the outcome. Leave it out if the call ended before anything was discussed.",
+            max_length=12,
+        ),
+    ] = None
+    follow_up: Annotated[
+        str | None,
+        Field(
+            description="One sentence on what the user must do next, e.g. Call to confirm the cake is nut-free. Leave it out when nothing is needed.",
+            max_length=200,
+        ),
+    ] = None
 
 
 class CallEventType(StrEnum):

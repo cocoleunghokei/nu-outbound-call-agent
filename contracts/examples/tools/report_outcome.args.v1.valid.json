@@ -7,5 +7,54 @@
     "confirmation_number": "TB-1234",
     "staff_name": "Sam"
   },
-  "open_items": []
+  "open_items": [
+    "Call back to confirm the cake is nut-free."
+  ],
+  "result_items": [
+    {
+      "ref": {
+        "kind": "preference",
+        "index": 0
+      },
+      "label": "Cake",
+      "got": "Marshmallow cake",
+      "status": "changed",
+      "reason": "Mochi isn't available.",
+      "approved_by": "user",
+      "business_said": "We have all of those except mochi. Is marshmallow okay?"
+    },
+    {
+      "ref": {
+        "kind": "task_var",
+        "key": "pickup_time"
+      },
+      "label": "Pickup",
+      "got": "Wed 12:00 PM",
+      "status": "changed",
+      "reason": "10 AM wasn't possible.",
+      "approved_by": "brief"
+    },
+    {
+      "ref": {
+        "kind": "extra"
+      },
+      "label": "Ice pack",
+      "got": "+$3.00",
+      "status": "extra",
+      "reason": "They wouldn't waive the fee.",
+      "approved_by": "user",
+      "cost_cents": 300,
+      "business_said": "The ice pack is three dollars extra."
+    },
+    {
+      "ref": {
+        "kind": "constraint",
+        "index": 0
+      },
+      "label": "Topper, candles, knife",
+      "got": "All included",
+      "status": "as_asked"
+    }
+  ],
+  "follow_up": "Call to confirm the cake is nut-free."
 }
