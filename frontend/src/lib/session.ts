@@ -8,7 +8,9 @@
  * and no history. The profile itself (name, phone, email) is collected on the first visit
  * and stored under this user (`profile.ts`); there is no email verification for now.
  *
- * Only the `auth` part of the client is used, so tests pass a small fake.
+ * Only the `auth` part of the client is used, so tests pass a small fake. Screens reach it
+ * through `ensureSignedIn()` in `accessToken.ts`, which adds the shared client and makes
+ * concurrent callers share one sign-in.
  */
 
 /** The parts of a Supabase user this app reads. */
@@ -54,16 +56,16 @@ export function accountOf(user: SessionUser): Account {
 
 /**
  * Returns the current session's user, signing in anonymously first when there is none.
- * Never throws: a failed sign-in (rate limit, auth outage, anonymous sign-ins disabled)
- * comes back as `{ kind: 'failed' }` with the server's message.
+ * Never throws: a failed sign-in (rate limit, auth outage, anonymous sign-ins disabled) or
+ * a session read that fails comes back as `{ kind: 'failed' }` with the error's message.
  */
 export async function ensureSession(auth: SessionAuth): Promise<SessionResult> {
-  const existing = await auth.getSession()
-  if (existing.data.session) {
-    const { user } = existing.data.session
-    return { kind: 'session', userId: user.id, account: accountOf(user) }
-  }
   try {
+    const existing = await auth.getSession()
+    if (existing.data.session) {
+      const { user } = existing.data.session
+      return { kind: 'session', userId: user.id, account: accountOf(user) }
+    }
     const { data, error } = await auth.signInAnonymously()
     if (error) return { kind: 'failed', message: error.message }
     if (!data.session) return { kind: 'failed', message: 'No session was returned' }

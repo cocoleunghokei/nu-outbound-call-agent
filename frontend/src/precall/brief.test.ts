@@ -51,6 +51,10 @@ function expectValidBrief(brief: Brief, profile: ProfileField[]) {
   for (const list of ['constraints', 'preferences', 'fallbacks', 'never_agree'] as const) {
     for (const item of brief[list]) expect(Object.keys(item)).toEqual(['text'])
   }
+  for (const detail of brief.call_details ?? []) {
+    expect(Object.keys(detail)).toEqual(['key', 'question', 'value'])
+    expect(profile.some((f) => f.key === detail.key)).toBe(false)
+  }
   for (const v of Object.values(brief.task_vars)) {
     expect(Object.keys(v)).toHaveLength(1)
     if ('field_ref' in v) {
@@ -118,6 +122,12 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
     expectValidBrief(brief, fakeProfile)
     expect(missing_fields).toEqual([])
     expect(brief.task_vars).toEqual({ provider_name: { literal: 'Dr. Lee' } })
+    // Regression: answers with no task-line placeholder used to be dropped (PC-4).
+    expect(brief.call_details).toEqual([
+      { key: 'provider_name', question: 'Which doctor?', value: 'Dr. Lee' },
+      { key: 'patient_status', question: 'Are you a new or existing patient?', value: 'Existing' },
+      { key: 'reason', question: "What's the visit for?", value: 'Check-up' },
+    ])
     expect(brief.share_freely_keys).toEqual(['calling_name', 'phone'])
     expect(brief.ask_first_keys).toEqual(['date_of_birth'])
     expect(brief.never_agree).toEqual([])

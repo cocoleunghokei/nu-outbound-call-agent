@@ -49,4 +49,16 @@ describe('ensureSession', () => {
     const empty = fakeAuth(null, async () => ({ data: { session: null }, error: null }))
     await expect(ensureSession(empty)).resolves.toMatchObject({ kind: 'failed' })
   })
+
+  // The live and history screens await this inside their start-up; a rejection there
+  // would leave them loading forever with an unhandled promise.
+  it('reports a session read that fails instead of throwing', async () => {
+    const signIn = vi.fn<SessionAuth['signInAnonymously']>()
+    const broken: SessionAuth = {
+      getSession: async () => Promise.reject(new Error('storage unavailable')),
+      signInAnonymously: signIn,
+    }
+    await expect(ensureSession(broken)).resolves.toEqual({ kind: 'failed', message: 'storage unavailable' })
+    expect(signIn).not.toHaveBeenCalled()
+  })
 })

@@ -22,4 +22,5 @@ export const contractExampleBrief: Brief = {
   never_agree: [{ text: 'A deposit' }],
   share_freely_keys: ['calling_name', 'phone'],
   ask_first_keys: ['date_of_birth'],
+  call_details: [{ key: 'party_size', question: 'How many people?', value: '4' }],
 }

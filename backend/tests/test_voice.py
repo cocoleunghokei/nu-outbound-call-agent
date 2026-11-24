@@ -176,6 +176,124 @@ def test_4xx_raises_rejected_with_code() -> None:
     with pytest.raises(VoiceRejected) as info:
         create(vapi(recorder))
     assert (info.value.status, info.value.code) == (400, "bad_number")
+    assert info.value.detail is None
+
+
+def rejected(body: Any, *, raw: str | None = None) -> VoiceRejected:
+    """The VoiceRejected a 400 with ``body`` (or the raw text ``raw``) produces."""
+    respond = (
+        (lambda r: httpx.Response(400, text=raw))
+        if raw is not None
+        else (lambda r: httpx.Response(400, json=body))
+    )
+    with pytest.raises(VoiceRejected) as info:
+        create(vapi(Recorder(respond)))
+    return info.value
+
+
+TITLE_REFUSAL = "model.each value in tools.function.parameters.property title should not exist"
+RETIRED_REFUSAL = (
+    "Retired models cannot be saved. deep-seek/deepseek-chat (model) was retired on "
+    "2026-07-24; use deepseek-flash instead."
+)
+
+
+# Regression (#82): the only trace of a refusal was "status 400, code None"; Vapi's reason
+# lives in ``message``, which was never read.
+@pytest.mark.parametrize(
+    ("message", "detail"),
+    [
+        (
+            [TITLE_REFUSAL, "customer.number must be a string"],
+            f"{TITLE_REFUSAL}; customer.number must be a string",
+        ),
+        (
+            RETIRED_REFUSAL,
+            "Retired models cannot be saved. deep-seek/deepseek-chat (model) was retired; "
+            "use deepseek-flash instead.",
+        ),
+        (
+            RETIRED_REFUSAL.replace("deepseek-flash", "gpt-4o"),
+            "Retired models cannot be saved. deep-seek/deepseek-chat (model) was retired; "
+            "use _ instead.",
+        ),
+        (
+            "model.voice.voiceId must be one of the following values: Clara, Elliot, Rohan",
+            "model.voice.voiceId must be one of the following values: _",
+        ),
+        (
+            "customer.number must be a valid phone number",
+            "customer.number must be a valid phone number",
+        ),
+        (
+            "assistant.firstMessage must be shorter than or equal to 1000 characters",
+            "assistant.firstMessage must be shorter than or equal to 1000 characters",
+        ),
+        (
+            "each value in model.tools must be an object",
+            "each value in model.tools must be an object",
+        ),
+        ("model.property Alex should not exist", "model.property _ should not exist"),
+        ("customer.number\tmust be\na string", "customer.number must be a string"),
+        (["customer.number must be a string", 123], "customer.number must be a string"),
+    ],
+)
+def test_rejection_detail_renders_recognised_messages(message: Any, detail: str) -> None:
+    exc = rejected({"message": message, "error": "Bad Request", "statusCode": 400})
+    assert (exc.status, exc.code, exc.detail) == (400, None, detail)
+    assert detail in str(exc)
+
+
+def test_rejection_detail_is_none_without_a_usable_message() -> None:
+    assert rejected({"code": "bad_number"}).detail is None
+    assert rejected(None, raw="not json").detail is None
+    assert rejected(["a", "list"]).detail is None
+    assert rejected({"message": {"nested": "dict"}}).detail is None
+    assert rejected({"message": [123]}).detail is None
+
+
+# No word of Vapi's message is ever copied: the request it describes holds the destination
+# number and the prompt built from the user's brief.
+@pytest.mark.parametrize(
+    ("message", "detail"),
+    [
+        (
+            "customer.number +1 (617) 555-0142 is not valid",
+            "unrecognised refusal; paths: customer.number",
+        ),
+        (
+            "contact alex@example.test or https://example.test/x?token=abc or https://example.test/plain",
+            "unrecognised refusal; paths: none",
+        ),
+        (
+            "alex.chen example.test customer.6175550142 customer.Alex.Chen "
+            "model.messages.0.content.Alex 04.12.90 customer.number.04.12.90 "
+            "alex/chen openai/alex.chen",
+            "unrecognised refusal; paths: none",
+        ),
+        ("An Long should not exist", "unrecognised refusal; paths: none"),
+        (
+            "model.messages.0.content Hi, I'm an AI assistant calling on behalf of Alex Chen. "
+            "I'm calling to ask if they can hold a table for two at 7pm tonight. is too long",
+            "unrecognised refusal; paths: model.messages.0.content",
+        ),
+        (
+            "customer.number must be a string; see test-key",
+            "unrecognised refusal; paths: customer.number",
+        ),
+    ],
+)
+def test_nothing_from_the_message_survives(message: str, detail: str) -> None:
+    exc = rejected({"message": message})
+    assert exc.detail == detail
+    assert not any(ch.isdigit() for ch in exc.detail.replace("0.content", ""))
+    assert "test-key" not in str(exc) and "@" not in str(exc) and "https" not in str(exc)
+
+
+def test_rejection_detail_is_bounded() -> None:
+    exc = rejected({"message": ["model.tools.0.function.parameters should not exist"] * 9})
+    assert exc.detail is not None
+    assert len(exc.detail) == 300 and exc.detail.endswith("…")
 
 
 def test_logs_never_contain_control_url(caplog: pytest.LogCaptureFixture) -> None:
@@ -403,6 +521,10 @@ def test_adapter_exception_messages_never_contain_url() -> None:
         (raising(httpx.ReadTimeout("boom " + CONTROL_URL)), VoiceUncertain),
         (lambda r: httpx.Response(502, text=CONTROL_URL), VoiceUncertain),
         (lambda r: httpx.Response(404, json={"code": CONTROL_URL}), VoiceRejected),
+        (
+            lambda r: httpx.Response(400, json={"message": f"callback {CONTROL_URL} failed"}),
+            VoiceRejected,
+        ),
     ]
     for respond, expected in cases:
         adapter = vapi(Recorder(respond))

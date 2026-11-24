@@ -3,14 +3,60 @@
  * (never a second client). The client is imported lazily, so screens on fake data never
  * load it.
  *
- * Resolves to null when nobody is signed in. Rejects when Supabase isn't configured
- * (`supabase.ts` throws at import when its variables are missing); callers that treat
- * that as "signed out" catch it.
+ * Two ways in:
+ * - `ensureSignedIn()` / `signedInAccessToken()` for a screen's first load: they sign the
+ *   browser in anonymously when it has no session yet, so a browser whose first page is
+ *   `/history` or `/live` gets the same session the chat home would have created.
+ * - `accessToken()` for calls made once a screen is up (replies, commands): it only reads.
+ *   Resolves to null when nobody is signed in. Rejects when Supabase isn't configured
+ *   (`supabase.ts` throws at import when its variables are missing); callers that treat
+ *   that as "signed out" catch it.
  */
+import { ensureSession, type SessionResult } from './session'
+
 export async function accessToken(): Promise<string | null> {
   const { supabase } = await import('./supabase')
   const { data } = await supabase.auth.getSession()
   return data.session?.access_token ?? null
+}
+
+let inFlight: Promise<SessionResult> | null = null
+
+/**
+ * Makes sure this browser has a session, signing in anonymously when there is none, and
+ * says whose it is. Single-flight: callers that overlap (the history list and an open
+ * call's result, a StrictMode double effect) share one sign-in and so one user; a call
+ * after it settled runs the check again and finds the session. Never rejects: a missing
+ * Supabase configuration or an unexpected error comes back as `failed`.
+ */
+export function ensureSignedIn(): Promise<SessionResult> {
+  if (inFlight) return inFlight
+  const attempt = (async (): Promise<SessionResult> => {
+    try {
+      const { supabase } = await import('./supabase')
+      return await ensureSession(supabase.auth)
+    } catch (err) {
+      return { kind: 'failed', message: err instanceof Error ? err.message : String(err) }
+    }
+  })().finally(() => {
+    inFlight = null
+  })
+  inFlight = attempt
+  return attempt
+}
+
+/**
+ * The access token after `ensureSignedIn()`: null when the sign-in failed, when Supabase
+ * isn't configured, or when the token can't be read. Never rejects.
+ */
+export async function signedInAccessToken(): Promise<string | null> {
+  try {
+    const result = await ensureSignedIn()
+    if (result.kind === 'failed') return null
+    return await accessToken()
+  } catch {
+    return null
+  }
 }
 
 /**

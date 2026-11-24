@@ -134,10 +134,35 @@ def test_tool_definitions_wrap_args_schemas() -> None:
         assert definition["type"] == "function"
         assert definition["async"] is True
         assert definition["function"]["description"]
-        assert definition["function"]["parameters"] == load_schema(f"tools/{name}.args.v1.json")
-        assert definition["function"]["parameters"] == read_json(
-            CONTRACTS / "tools" / f"{name}.args.v1.json"
-        )
+        schema = read_json(CONTRACTS / "tools" / f"{name}.args.v1.json")
+        assert schema == load_schema(f"tools/{name}.args.v1.json")
+        # Vapi's call API accepts only an OpenAI-style parameters object. Any other JSON Schema
+        # keyword at its top level (the contract files carry ``title``) is a 400 on POST /call,
+        # which the backend records as a failed call. Seen on the first deployed call.
+        parameters = definition["function"]["parameters"]
+        assert set(parameters) <= {"type", "properties", "required"}
+        assert parameters == {k: schema[k] for k in ("type", "properties", "required")}
+
+
+def _description(name: str) -> str:
+    tools = {d["function"]["name"]: d for d in tool_definitions() if "function" in d}
+    return str(tools[name]["function"]["description"])
+
+
+def test_report_decision_description_allows_a_low_counter() -> None:
+    """Regression: it said "call ask_user whenever the score is Low", so counters went unlogged."""
+    text = _description("report_decision")
+    assert "Call ask_user instead whenever the score is Low" not in text
+    assert "action counter and confidence low" in text
+    assert "before you speak" in text
+
+
+def test_ask_user_description_covers_missing_info_and_not_understood() -> None:
+    """Regression: it listed only constraint, ask-first and money, so missing info never pinged."""
+    text = _description("ask_user")
+    assert "not in the brief" in text
+    assert "can't understand them after asking once" in text
+    assert "before you speak" in text
 
 
 def test_tool_dimensions_and_confidence_tiers() -> None:

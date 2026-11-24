@@ -5,19 +5,28 @@ from typing import Any
 from app.contracts import load_schema
 
 _TOOL_DESCRIPTIONS: dict[str, str] = {
+    # These must agree with the <deciding> rubric in app/calls/prompt.py. The model reads both,
+    # and when they disagree it tends to call neither tool and only talk.
     "ask_user": (
-        "Ask the user when an offer breaks a hard constraint with no matching fallback, when "
-        "the other side asks for an ask-first field, or before agreeing to any payment, deposit "
-        "or fee, or to a never-agree item, whatever your confidence."
+        "Ask the user whenever you can't decide alone: an "
+        "offer breaks a hard constraint and you already countered once or the other side has "
+        "nothing that fits; the other side asks for something that is not in the brief; you "
+        "still can't understand them after asking once to repeat; they ask for an ask-first "
+        "field; or before agreeing to any payment, deposit or fee, or to a never-agree item, "
+        "whatever your confidence. Call it before you speak, then tell the other side you "
+        "are checking. Never say you are checking without calling this."
     ),
     "report_decision": (
-        "Report every action you take on your own after scoring an offer or question against "
-        "the brief. Call ask_user instead whenever the score is Low, and always for an "
-        "ask-first field or before agreeing to any payment, deposit or fee, or to a never-agree "
-        "item. When you act at Medium (every check passes but a preference is missed), set "
+        "Report every action you take on your own: accept, "
+        "take a fallback, decline, share a field, end the call, or counter. A counter is the "
+        "one Low action you take alone: when an offer breaks a hard constraint, turn it down, "
+        "ask for something that fits, and call this with action counter and confidence low. "
+        "Otherwise, for a Low offer call ask_user, and always call ask_user for an ask-first "
+        "field or before agreeing to any payment, deposit or fee, or to a never-agree item. "
+        "When you act at Medium (every check passes but a preference is missed), set "
         "missed_preference to the preference you could not meet, in plain language and without "
         'any score, for example "No window seat, patio only"; it is shown as a flag in the '
-        "live feed."
+        "live feed. Call it before you speak; say your words after its result."
     ),
     "report_outcome": (
         "Call once, before you end the call, to report how the call went. Set "
@@ -25,6 +34,17 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "words."
     ),
 }
+
+
+# The only keys Vapi's call API accepts at the top of ``function.parameters``. The contract
+# files are full JSON Schema documents (``title`` and so on); sending one as-is is a 400 from
+# POST /call, which the backend records as a failed call before anything rings.
+_PARAMETER_KEYS = ("type", "properties", "required")
+
+
+def _vapi_parameters(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return the OpenAI-style parameters object Vapi accepts, built from a contract schema."""
+    return {key: schema[key] for key in _PARAMETER_KEYS if key in schema}
 
 
 def tool_definitions() -> list[dict[str, Any]]:
@@ -36,7 +56,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "function": {
                 "name": name,
                 "description": description,
-                "parameters": load_schema(f"tools/{name}.args.v1.json"),
+                "parameters": _vapi_parameters(load_schema(f"tools/{name}.args.v1.json")),
             },
         }
         for name, description in _TOOL_DESCRIPTIONS.items()

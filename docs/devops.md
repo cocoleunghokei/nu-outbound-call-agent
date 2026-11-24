@@ -48,7 +48,7 @@ Vercel's GitHub integration builds `frontend/`. Every merge to `main` goes to pr
 
 The backend is a Railway service built from `backend/`. Coco creates it. Like Vercel, there's no workflow file; it's set up in the Railway dashboard:
 
-- Root directory: `backend`. The start command and health check are in `backend/railway.toml`.
+- Root directory: `backend`. The start command and health check are in `backend/railway.toml`. The start command runs `uv run --no-dev`, so the container installs only the runtime packages, never the dev group (pytest, ruff, mypy).
 - Environment variables: every name in `backend/.env.example` (the Postgres connection string through the Supabase session pooler, the Supabase JWT settings, the Vapi keys and webhook secret). Set `VOICE_PLATFORM=vapi` in production.
 - Deploys follow `main`. Vapi's server URL points at `https://<service>/webhooks/vapi` with the webhook secret in the `X-Vapi-Secret` header.
 

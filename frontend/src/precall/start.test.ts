@@ -10,6 +10,7 @@ import {
   describeError,
   emptySession,
   isCallRouteMissing,
+  isDefiniteRefusal,
   reviewView,
   profileRequired,
   singleFlight,
@@ -252,6 +253,27 @@ describe('isCallRouteMissing and describeError', () => {
     expect(describeError(new ApiError('unauthenticated', 'Missing or invalid credentials', 401, false), 'save')).toMatch(/signed out/)
     expect(describeError(new ApiError(NETWORK_ERROR, 'x', 0, true), 'save')).toMatch(/couldn't reach the server/)
     expect(describeError(new ApiError('brief_in_use', 'A call already started from this brief', 409, false), 'save')).toMatch(/Start a new call/)
+  })
+
+  it('tells a definite server refusal apart from a lost answer on Start', () => {
+    // A 503 the server chose, with its own code and retryable: false: nothing was dialed.
+    const notConfigured = new ApiError('calls_not_configured', "Calling isn't set up on the server yet", 503, false)
+    expect(isDefiniteRefusal(notConfigured)).toBe(true)
+    const message = describeError(notConfigured, 'start')
+    expect(message).toMatch(/nothing was dialed/)
+    expect(message).not.toMatch(/may have started/)
+    // Any other definite 5xx keeps the server's words instead of the "may have started" hedge.
+    expect(describeError(new ApiError('unsafe_assistant_config', 'The assistant config failed a safety check.', 500, false), 'start'))
+      .toBe("I couldn't start the call: The assistant config failed a safety check.")
+    // A proxy error or a retryable failure still may have started the call: keep the hedge.
+    for (const lost of [
+      new ApiError('http_502', 'The server answered with an error (HTTP 502).', 502, true),
+      new ApiError('database_unavailable', 'Database is not configured', 503, true),
+      new ApiError(NETWORK_ERROR, 'x', 0, true),
+    ]) {
+      expect(isDefiniteRefusal(lost)).toBe(false)
+      expect(describeError(lost, 'start')).toMatch(/may have started/)
+    }
   })
 })
 

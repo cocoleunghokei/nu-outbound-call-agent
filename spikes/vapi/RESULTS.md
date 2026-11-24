@@ -95,3 +95,29 @@ Reason:
 - Vapi features to rely on:
 - Workarounds to plan for:
 - Risks that stay open:
+
+## First real call from the app (2026-11-18)
+
+The tables above are the probe-kit session. This is the first call placed end to end through the app itself: anonymous session in the browser → profile → brief → `POST /calls` → Vapi → the phone. Deployed stack at the time: `main` @ `374564b` (#82) on Railway, Vercel site, hosted Supabase. Setup and the fixes it took are in #77 (closed 2026-11-19).
+
+| Field | Value |
+| --- | --- |
+| Placed at | 2026-11-18 23:36 UTC, from the chat on the Vercel site |
+| Backend call id | `0b58767c-a507-4d6c-a1b7-ad2312fea922` |
+| Vapi call id | `01a1f105-3c1b-7aaf-8cf9-d37aa9852a7d` |
+| Destination | a team member's phone, on `CALL_DESTINATION_ALLOWLIST` (number not recorded here) |
+| Model | `deep-seek/deepseek-flash` (decision 7; `deepseek-chat` was retired by DeepSeek on 2026-07-24) |
+| Rang and spoke | yes: the phone rang from +1 231-359-4180 and the agent spoke the DC-1 opening line |
+| Duration | 37 s |
+| Ended reason | `assistant-ended-call`: the agent reported the outcome and hung up itself |
+| Tool calls seen by Vapi | `report_outcome`, then `endCall` |
+| Cost (Vapi) | USD 0.0523 |
+| Recording | off (`artifactPlan.recordingEnabled: false`); transcript on, 10 lines |
+
+What worked: the whole path from the browser to the ringing phone, the disclosure line, DeepSeek answering through Vapi, and tool calling on DeepSeek for `report_outcome` and the built-in `endCall`. That settles the "tool calling on DeepSeek is unverified" part of decision 7 for the outcome tool.
+
+What this call did not exercise: `ask_user` and `report_decision` (the goal needed no decision at a gate), the live page (it still played the demo until #83) and the history screen (#84). Still open from #77: a second Start during a running call (expected `409 call_in_progress`).
+
+What it took to get here, all found on this call and fixed the same day: `PUBLIC_BASE_URL` needs its `https://` (503 `calls_not_configured`), Vapi rejects a JSON Schema `title` inside tool parameters and the retired `deepseek-chat` name (#82), and Vapi has no DeepSeek keys of its own (the team's key is connected under Integrations). A refusal's reason now reaches the Railway log (#86).
+
+**Second call, 2026-11-19 02:46 UTC**, placed the same way with #83, #84, #85 and #86 deployed, to confirm the parts the first call could not: `POST /briefs` 201, `POST /calls` 201 `dialing`, the browser landed on `/live?call=…` and showed the real call, with the agent's three opening lines arriving as transcript bubbles and the status rail ending on "Ended" at 00:52. Vapi: 40 s, `silence-timed-out` (the agent spoke its opening and nobody replied), USD 0.0434, no tool calls. Backend call id `d8743f63-4d5d-4939-95cb-36686a08822b`, Vapi call id `01a1f1b2-c091-7334-bfc3-841f4c3cc94b`. The post-call summary card still said "once it's ready" when the page was last read, a few seconds after the end.
