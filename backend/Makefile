@@ -1,5 +1,5 @@
 # Backend targets. The root Makefile calls lint, test and build.
-.PHONY: lint test test-db build seed-dev replay realtime-smoke eval-briefs eval-incall eval-incall-report eval-incall-history
+.PHONY: lint test test-db build seed-dev replay realtime-smoke eval-briefs eval-incall eval-incall-report eval-incall-history eval-incall-publish
 
 lint:
 	uv run ruff check .
@@ -38,3 +38,6 @@ eval-incall-report: ## write report.md for one in-call eval after judging: make 
 
 eval-incall-history: ## one HTML page of every in-call eval run, by date: evals/incall/results/history.html
 	uv run python -m evals.incall.history
+
+eval-incall-publish: ## rebuild the history page and push it to the gh-pages branch (GitHub Pages). Run after judging.
+	uv run python -m evals.incall.publish
