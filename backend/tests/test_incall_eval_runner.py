@@ -631,6 +631,29 @@ def test_the_runner_defaults_to_the_live_agents_temperature() -> None:
     assert parse_args(["--temperature", "0.7"]).temperature == 0.7
 
 
+def test_the_reply_token_limit_defaults_to_600_and_can_be_raised() -> None:
+    from evals.incall.model import MAX_TOKENS
+
+    assert MAX_TOKENS == 600
+    assert parse_args([]).max_tokens == MAX_TOKENS
+    assert parse_args(["--max-tokens", "2000"]).max_tokens == 2000
+    default = DeepSeekChat("key", "https://example.test", "deepseek-flash")
+    raised = DeepSeekChat("key", "https://example.test", "deepseek-flash", max_tokens=2000)
+    assert default.request_body([], [])["max_tokens"] == 600
+    assert raised.request_body([], [])["max_tokens"] == 2000
+
+
+def test_thinking_is_left_to_the_provider_unless_the_eval_sets_it() -> None:
+    default = DeepSeekChat("key", "https://example.test", "deepseek-flash")
+    off = DeepSeekChat("key", "https://example.test", "deepseek-flash", thinking="disabled")
+    assert "thinking" not in default.request_body([], [])
+    assert off.request_body([], [])["thinking"] == {"type": "disabled"}
+    assert parse_args([]).thinking is None
+    assert parse_args(["--thinking", "disabled"]).thinking == "disabled"
+    with pytest.raises(SystemExit):
+        parse_args(["--thinking", "maybe"])
+
+
 def test_the_eval_scores_the_heard_offer_like_the_backend() -> None:
     from evals.incall.play import _State, tool_result
     from evals.incall.setup import load_data
