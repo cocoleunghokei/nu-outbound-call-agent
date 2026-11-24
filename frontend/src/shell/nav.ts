@@ -2,7 +2,7 @@ import type { Route } from '../router'
 
 /** One entry in the app's sidebar. */
 export interface NavItem {
-  key: 'chat' | 'calls'
+  key: 'chat' | 'calls' | 'profile'
   label: string
   /** The address the entry opens (see `router.ts`). */
   path: string
@@ -10,16 +10,18 @@ export interface NavItem {
 
 /**
  * The sidebar entries, in order. Only screens that exist are listed; the prototype's
- * Calendar and Privacy & profile get an entry when their screens are built.
+ * Calendar gets an entry when its screen is built.
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   { key: 'chat', label: 'Chat', path: '/' },
   { key: 'calls', label: 'Calls', path: '/history' },
+  { key: 'profile', label: 'Profile', path: '/profile' },
 ]
 
 /** The sidebar entry to highlight for a route. A live call belongs to Calls. */
 export function activeNav(route: Route): NavItem['key'] {
-  return route.name === 'home' ? 'chat' : 'calls'
+  if (route.name === 'home') return 'chat'
+  return route.name === 'profile' ? 'profile' : 'calls'
 }
 
 /**

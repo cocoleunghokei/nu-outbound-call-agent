@@ -12,6 +12,12 @@ const ICONS: Record<NavItem['key'], ReactNode> = {
       <path d="M12 7v5l3 2" />
     </>
   ),
+  profile: (
+    <>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
+    </>
+  ),
 }
 
 /**
