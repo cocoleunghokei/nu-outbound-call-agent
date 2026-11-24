@@ -1,0 +1,142 @@
+/* The profile screen. Colours follow the app shell's tokens (shell/AppShell.css). */
+
+.profile-page {
+  box-sizing: border-box;
+  max-width: 640px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+  overflow-y: auto;
+  color: var(--as-ink, #111827);
+}
+
+.profile-head h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+.profile-muted {
+  margin: 0;
+  font-size: 14px;
+  color: var(--as-muted, #6b7280);
+}
+
+.profile-note {
+  margin: 16px 0 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  background: var(--as-brand-soft, #e8f0ff);
+}
+
+.profile-form {
+  margin-top: 8px;
+}
+
+.profile-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--as-line, #e5e9f0);
+}
+
+.profile-row label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--as-muted, #6b7280);
+}
+
+.profile-row input {
+  border: 1.5px solid var(--as-line, #e5e9f0);
+  border-radius: 14px;
+  padding: 11px 14px;
+  font-size: 16px;
+  color: var(--as-ink, #111827);
+  background: var(--as-surface, #fff);
+}
+
+.profile-row input:focus-visible {
+  outline: 2px solid var(--as-brand, #1a6dff);
+  outline-offset: 1px;
+}
+
+.profile-row input:disabled {
+  background: var(--as-surface-2, #f1f4f9);
+}
+
+.profile-row small {
+  font-size: 12px;
+  color: var(--as-muted, #6b7280);
+  overflow-wrap: anywhere;
+}
+
+.profile-share {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--as-surface-2, #f1f4f9);
+}
+
+.profile-share button {
+  border: 0;
+  border-radius: 9px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--as-muted, #6b7280);
+  background: transparent;
+  cursor: pointer;
+}
+
+.profile-share button.on {
+  color: var(--as-brand, #1a6dff);
+  background: var(--as-surface, #fff);
+  font-weight: 600;
+}
+
+.profile-share button.on.ask {
+  color: #b45309;
+}
+
+.profile-share button:focus-visible {
+  outline: 2px solid var(--as-brand, #1a6dff);
+}
+
+.profile-hint {
+  margin-top: 14px;
+}
+
+.profile-warn {
+  margin: 14px 0 0;
+  font-size: 14px;
+  color: #b91c1c;
+}
+
+.profile-ok {
+  margin: 14px 0 0;
+  font-size: 14px;
+  color: #047857;
+}
+
+.profile-actions {
+  margin-top: 18px;
+}
+
+.profile-btn {
+  border: 0;
+  border-radius: 14px;
+  padding: 12px 22px;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--as-brand, #1a6dff);
+  cursor: pointer;
+}
+
+.profile-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
