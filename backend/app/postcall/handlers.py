@@ -22,6 +22,9 @@ from app.webhooks.registry import ToolCallContext
 # (eval 2026-11-18T0411Z).
 NOTED = "Noted. Say thanks and goodbye, then end the call."
 
+# The speakers whose lines the post-call jobs read (the app's own user never speaks on a call).
+TURN_ROLES = frozenset({"agent", "business"})
+
 JOB_OUTCOME = "outcome"
 JOB_SHARED_FIELDS = "shared_fields"
 POSTCALL_JOBS = (JOB_OUTCOME, JOB_SHARED_FIELDS)
@@ -57,7 +60,11 @@ async def handle_end_of_call_report(
     reason = message.get("endedReason")
     ended_reason = reason.strip() if isinstance(reason, str) else ""
     await end_call_transition(conn, call.call_id, reason="end-of-call-report", source="vapi")
-    payload = {"ended_reason": ended_reason, **report_lines(message)}
+    payload = {
+        "ended_reason": ended_reason,
+        **report_lines(message),
+        "turns": report_turns(message),
+    }
     for kind in POSTCALL_JOBS:
         await queue_job(conn, call.call_id, kind, payload)
 
@@ -81,6 +88,24 @@ def report_lines(message: dict[str, Any]) -> dict[str, list[str]]:
         if role is not None and isinstance(text, str) and text.strip():
             lines[f"{role}_lines"].append(text.strip())
     return lines
+
+
+def report_turns(message: dict[str, Any]) -> list[list[str]]:
+    """The full transcript from the report in the order it was spoken, as [role, text] pairs
+    (JSON has no tuples). The roles are the agent's and the business's, as in ``report_lines``.
+    The outcome job needs the order to match a plain "yes" to what it answered."""
+    artifact = message.get("artifact")
+    entries = artifact.get("messages") if isinstance(artifact, dict) else None
+    turns: list[list[str]] = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        vapi_role = entry.get("role")
+        role = ROLE_MAP.get(vapi_role) if isinstance(vapi_role, str) else None
+        text = entry.get("message")
+        if role in TURN_ROLES and isinstance(text, str) and text.strip():
+            turns.append([role, text.strip()])
+    return turns
 
 
 async def queue_job(

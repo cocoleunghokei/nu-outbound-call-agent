@@ -181,7 +181,8 @@ def shown_details(
         return OutcomeDetails()
     business = [line.text for line in transcript if line.role == "business"]
     call_days = call_days_for(call.created_at, call.ended_at or call.created_at)
-    return confirmed_details(report.details, business, call_days=call_days)
+    turns = [(line.role, line.text) for line in transcript]
+    return confirmed_details(report.details, business, call_days=call_days, turns=turns)
 
 
 async def _decisions(conn: AsyncConnection[Any], call_id: uuid.UUID) -> list[DecisionOut]:

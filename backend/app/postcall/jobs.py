@@ -34,8 +34,8 @@ from app.calls.gates import REFUSED_GIVE_UP
 from app.calls_lock import CallNotFound, lock_call
 from app.contracts.generated import ReportOutcomeArgs
 from app.events import append_event
-from app.postcall.decide import PAUSE_CAP, call_days_for, decide_outcome, spoken_fields
-from app.postcall.handlers import JOB_OUTCOME, JOB_SHARED_FIELDS
+from app.postcall.decide import PAUSE_CAP, Turn, call_days_for, decide_outcome, spoken_fields
+from app.postcall.handlers import JOB_OUTCOME, JOB_SHARED_FIELDS, TURN_ROLES
 from app.registry import AppContext
 
 logger = logging.getLogger(__name__)
@@ -159,8 +159,9 @@ async def run_outcome_job(
     pause_capped = await was_pause_capped(conn, call_id)
     business = await transcript_lines(conn, call_id, "business") + _lines(payload, "business")
     call_days = await possible_call_days(conn, call_id)
+    turns = await call_turns(conn, call_id, payload)
     decision = decide_outcome(
-        report, vapi_reason, business, pause_capped=pause_capped, call_days=call_days
+        report, vapi_reason, business, pause_capped=pause_capped, call_days=call_days, turns=turns
     )
     ended_reason = PAUSE_CAP if pause_capped and report is None else (vapi_reason or "unknown")
     outcome = await _store_outcome(conn, call_id, decision.outcome, ended_reason)
@@ -282,6 +283,50 @@ async def transcript_lines(conn: AsyncConnection[Any], call_id: UUID, role: str)
         )
     ).fetchall()
     return [text for (text,) in rows if isinstance(text, str) and text.strip()]
+
+
+_PAIR = 2  # a turn is a (role, text) pair
+
+
+async def call_turns(
+    conn: AsyncConnection[Any], call_id: UUID, payload: dict[str, Any]
+) -> list[Turn]:
+    """The whole call in the order it was spoken, as (role, text).
+
+    From the ``transcript.final`` events, or from the end-of-call report in the job payload
+    when that has more lines (a transcript webhook that arrived late or not at all). Roles
+    other than agent and business are left out.
+    """
+    rows = await (
+        await conn.execute(
+            "select payload->>'role', payload->>'text' from public.call_events"
+            " where call_id = %s and type = 'transcript.final' order by occurred_at, seq",
+            (call_id,),
+        )
+    ).fetchall()
+    from_events = [
+        (role, text.strip())
+        for role, text in rows
+        if role in TURN_ROLES and isinstance(text, str) and text.strip()
+    ]
+    from_report = payload_turns(payload)
+    return from_report if len(from_report) > len(from_events) else from_events
+
+
+def payload_turns(payload: dict[str, Any]) -> list[Turn]:
+    """The report's ordered ``turns`` from the job payload; malformed entries are skipped."""
+    raw = payload.get("turns")
+    turns: list[Turn] = []
+    for entry in raw if isinstance(raw, list) else []:
+        if (
+            isinstance(entry, list)
+            and len(entry) == _PAIR
+            and entry[0] in TURN_ROLES
+            and isinstance(entry[1], str)
+            and entry[1].strip()
+        ):
+            turns.append((entry[0], entry[1].strip()))
+    return turns
 
 
 async def was_pause_capped(conn: AsyncConnection[Any], call_id: UUID) -> bool:
