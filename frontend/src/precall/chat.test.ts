@@ -383,21 +383,32 @@ describe('phone number in the chat (PC-7)', () => {
   })
 })
 
-describe('starting a new call any time (PC-1)', () => {
-  it('drops an unfinished draft and goes back to the home chips', () => {
-    const s = run({ type: 'pick_custom' }, send('Hold a cake'), { type: 'new_call' })
-    expect(s.stage).toBe('home')
-    expect(s.draft).toEqual({})
-    expect(s.awaiting).toBeNull()
+describe('restarting any time (PC-1)', () => {
+  const home = () => initialChatState(ctx)
+
+  it('clears an unfinished draft back to the greeting', () => {
+    const s = run({ type: 'pick_custom' }, send('Hold a cake'), { type: 'restart' })
+    expect(s).toEqual(home())
     expect(s.chips.map((c) => c.label)).toContain('Custom call')
   })
 
-  it('keeps the chat history and shows no new-call chip once a draft is ready (the header button is the only one)', () => {
+  it('clears an open template form', () => {
+    expect(run(pickRestaurant, { type: 'restart' })).toEqual(home())
+  })
+
+  it('clears a finished plan and its history, so the next call starts clean', () => {
     const ready = run({ type: 'pick_template', templateKey: 'doctor_booking' }, submit(DOCTOR_FORM))
-    expect(ready.chips).toEqual([])
-    const again = reduce(ready, { type: 'new_call' })
-    expect(again.messages.length).toBeGreaterThan(ready.messages.length)
-    expect(again.stage).toBe('home')
+    expect(ready.messages.length).toBeGreaterThan(home().messages.length)
+    const again = reduce(ready, { type: 'restart' })
+    expect(again).toEqual(home())
+    expect(again.messages).toHaveLength(1)
+    expect(again.reviewAfterId).toBeNull()
+  })
+
+  it('clears a call that was already started', () => {
+    const started = run({ type: 'pick_template', templateKey: 'doctor_booking' }, submit(DOCTOR_FORM), { type: 'start' })
+    expect(started.stage).toBe('started')
+    expect(reduce(started, { type: 'restart' })).toEqual(home())
   })
 })
 
@@ -413,7 +424,7 @@ describe('ignored input', () => {
     expect(reduce(mid, { type: 'pick_custom' })).toBe(mid)
   })
 
-  it('points to the "+ New call" button when the user types after the draft is ready', () => {
+  it('points to the "Restart" button when the user types after the draft is ready', () => {
     const ready = run(
       { type: 'pick_custom' },
       send('Hold a cake'),
@@ -423,7 +434,7 @@ describe('ignored input', () => {
     )
     expect(ready.stage).toBe('draft_ready')
     const s = reduce(ready, send('hello?'))
-    expect(lastAgent(s)).toContain('+ New call')
+    expect(lastAgent(s)).toContain('Restart')
     expect(completedDraft(s)).toEqual(completedDraft(ready))
   })
 

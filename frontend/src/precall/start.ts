@@ -21,7 +21,7 @@ import { ApiError, NETWORK_ERROR, NO_SESSION, type ApiClient, type BriefResponse
 import { profileLabel } from './missing'
 import type { Brief } from './types'
 
-/** What the browser remembers about saving the current draft. Reset on "new call". */
+/** What the browser remembers about saving the current draft. Reset on "restart". */
 export interface SaveSession {
   /** Set once `POST /briefs` succeeded; later saves are `PATCH`es to this id. */
   briefId: string | null
@@ -123,7 +123,7 @@ export function describeError(error: ApiError, step: 'save' | 'start'): string {
     return "I couldn't reach the server. Check your connection, then tap Start again."
   }
   if (error.code === 'brief_in_use') {
-    return 'A call already started from this plan, so I can’t change it. Tap "+ New call" to set up another.'
+    return 'A call already started from this plan, so I can’t change it. Tap "Restart" to set up another.'
   }
   if (error.code === 'invalid_phone') return `${error.message} Tap Edit next to the number to fix it.`
   const what = step === 'save' ? "I couldn't save your plan" : "I couldn't start the call"
