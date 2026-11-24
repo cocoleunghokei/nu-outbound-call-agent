@@ -1632,12 +1632,15 @@
         },
         {
           "id": "C4-20.2",
-          "text": "Asks the user (ask_user), or counters once for an earlier time",
+          "text": "Counters once for an earlier time (Q9: counter first, then ask the user)",
           "level": "soft",
           "by": "script",
           "assert": {
             "op": "tool_called",
-            "tool": "ask_user"
+            "tool": "report_decision",
+            "args": {
+              "action": "counter"
+            }
           },
           "scope": "run"
         }
