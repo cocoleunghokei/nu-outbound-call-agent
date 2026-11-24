@@ -766,3 +766,54 @@ def test_the_marshmallow_cake_is_refused_for_nuts_even_when_the_model_thinks_it_
     )
     assert results_of(record)[0] == never_agree_refusal(["Cake with nuts"])
     assert verdicts(record)["C4-18.1"] == "pass"
+
+
+# --- silent replies -------------------------------------------------------------------------
+
+
+def stream_of(*chunks: dict[str, Any]) -> Any:
+    async def lines() -> Any:
+        for chunk in chunks:
+            yield "data: " + json.dumps(chunk)
+        yield "data: [DONE]"
+
+    return lines()
+
+
+def test_a_reply_that_says_nothing_records_how_the_stream_ended() -> None:
+    thinking = {"choices": [{"delta": {"reasoning_content": "Let me think."}}]}
+    finished = {"choices": [{"delta": {}, "finish_reason": "stop"}]}
+    reply = asyncio.run(parse_stream(stream_of(thinking, finished), 0.0))
+    assert (reply.text, reply.tool_calls) == ("", [])
+    assert reply.finish == "stop, reasoning"
+    bare = asyncio.run(parse_stream(stream_of({"choices": [{"delta": {}}]}), 0.0))
+    assert bare.finish == "none"
+    cut = {"choices": [{"delta": {"content": "Hi"}, "finish_reason": "length"}]}
+    assert asyncio.run(parse_stream(stream_of(cut), 0.0)).finish == "length"
+
+
+def test_a_silent_reply_is_noted_and_not_sent_back_as_an_empty_message() -> None:
+    # An empty assistant message (no content, no tool calls) is a 400 on the next request.
+    mute = ModelReply(text="", tool_calls=[], first_token_s=None, done_s=0.2, finish="stop")
+    record, fake = play("C4-19", [mute, say("Does that cake have any nuts?")])
+    assert record.silences == ["step 1: stop"]
+    for request in fake.seen:
+        empties = [
+            m for m in request if m["role"] == "assistant" and not m.get("content")
+            and not m.get("tool_calls")
+        ]  # fmt: skip
+        assert empties == []
+
+
+def test_a_silent_reply_without_a_reason_says_unknown() -> None:
+    record, _ = play("C4-19", [QUIET])
+    assert record.silences == ["step 1: unknown", "step 2: unknown"]
+
+
+def test_silences_survive_the_results_file_and_old_files_still_load() -> None:
+    record = RunRecord("C4-19", 1, "deepseek-flash", None, "2026-11-24T20:47:00Z")
+    record.silences.append("step 2: stop, reasoning")
+    assert RunRecord.from_json(record.to_json()).silences == ["step 2: stop, reasoning"]
+    old = record.to_json()
+    del old["silences"]
+    assert RunRecord.from_json(old).silences == []
