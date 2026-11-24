@@ -14,7 +14,8 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "still can't understand them after asking once to repeat; they ask for an ask-first "
         "field; or before agreeing to any payment, deposit or fee, or to a never-agree item, "
         "whatever your confidence. Call it before you speak, then tell the other side you "
-        "are checking. Never say you are checking without calling this."
+        "are checking. Never say you are checking without calling this. When it is about an "
+        "offer, fill offer with what they offered."
     ),
     "report_decision": (
         "Report every action you take on your own: accept, "
@@ -26,7 +27,8 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         "When you act at Medium (every check passes but a preference is missed), set "
         "missed_preference to the preference you could not meet, in plain language and without "
         'any score, for example "No window seat, patio only"; it is shown as a flag in the '
-        "live feed. Call it before you speak; say your words after its result."
+        "live feed. When it is about an offer, fill offer with what they offered. Call it "
+        "before you speak; say your words after its result."
     ),
     "report_outcome": (
         "Call once, before you end the call, to report how the call went. Set "

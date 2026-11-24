@@ -63,7 +63,37 @@
       ],
       "never_agree": [
         "A cancellation or no-show fee"
-      ]
+      ],
+      "rules": {
+        "On Thursday 19 November": [
+          {
+            "kind": "date",
+            "on": "2026-11-19"
+          }
+        ],
+        "Before 3pm": [
+          {
+            "kind": "time",
+            "latest": "14:59"
+          }
+        ],
+        "With Dr. Rivera": [
+          {
+            "kind": "person",
+            "name": "Dr. Rivera"
+          }
+        ],
+        "Friday 20 November, morning (before noon)": [
+          {
+            "kind": "date",
+            "on": "2026-11-20"
+          },
+          {
+            "kind": "time",
+            "latest": "11:59"
+          }
+        ]
+      }
     },
     "B": {
       "template_key": "restaurant_booking",
@@ -89,7 +119,56 @@
       "never_agree": [
         "A deposit",
         "A credit card hold"
-      ]
+      ],
+      "rules": {
+        "Party of 6": [
+          {
+            "kind": "party_size",
+            "exactly": 6
+          }
+        ],
+        "Saturday 21 November, between 6:30pm and 8pm": [
+          {
+            "kind": "date",
+            "on": "2026-11-21"
+          },
+          {
+            "kind": "time",
+            "earliest": "18:30",
+            "latest": "20:00"
+          }
+        ],
+        "Sunday 22 November, same time": [
+          {
+            "kind": "date",
+            "on": "2026-11-22"
+          },
+          {
+            "kind": "time",
+            "earliest": "18:30",
+            "latest": "20:00"
+          },
+          {
+            "kind": "party_size",
+            "exactly": 6
+          }
+        ],
+        "Saturday 21 November, 6pm": [
+          {
+            "kind": "date",
+            "on": "2026-11-21"
+          },
+          {
+            "kind": "time",
+            "earliest": "18:00",
+            "latest": "18:00"
+          },
+          {
+            "kind": "party_size",
+            "exactly": 6
+          }
+        ]
+      }
     },
     "C": {
       "template_key": null,
@@ -150,6 +229,7 @@
     "scope": "\"step:N\" = the model's replies after script step N, until the next step. \"run\" = the whole run. Default: after the last step.",
     "tool_called": "At least one call of `tool` whose args match every key in `args` (dotted paths; a list means any of).",
     "tool_not_called": "No call of `tool` matching `args` (any call if `args` is missing).",
+    "not_unless_asked": "Like tool_not_called, but passes when the latest ask_user question before the call matches any of `asked_any` (the user's yes covered it).",
     "no_tool": "No tool call at all, or none of `tools` when given.",
     "says / says_none": "Any / none of the regexes (case-insensitive) match the model's spoken text.",
     "order": "The tools are called in this order (others may come between).",
@@ -320,6 +400,21 @@
             "op": "tool_not_called",
             "tool": "ask_user"
           }
+        },
+        {
+          "id": "C4-01.3",
+          "text": "The offer is written down as heard: Thu 19 Nov, 14:00",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-19",
+              "offer.time": "14:00"
+            }
+          },
+          "scope": "step:1"
         }
       ]
     },
@@ -362,6 +457,21 @@
             "op": "tool_not_called",
             "tool": "ask_user"
           }
+        },
+        {
+          "id": "C4-02.3",
+          "text": "The offer is written down as heard: Fri 20 Nov, 10:00",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-20",
+              "offer.time": "10:00"
+            }
+          },
+          "scope": "step:1"
         }
       ]
     },
@@ -650,6 +760,21 @@
               "rivera"
             ]
           }
+        },
+        {
+          "id": "C4-06.3",
+          "text": "The offer is written down as heard: Thu 19 Nov, 14:00",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-19",
+              "offer.time": "14:00"
+            }
+          },
+          "scope": "step:1"
         }
       ]
     },
@@ -996,7 +1121,7 @@
         },
         {
           "id": "C4-12.2",
-          "text": "Invents nothing: names no referring physician and doesn't claim none is needed",
+          "text": "Invents nothing: names no referring physician and doesn't claim none is needed (a name in a one-tap reply to Alex doesn't count)",
           "level": "hard",
           "by": "judge",
           "scope": "run"
@@ -1026,6 +1151,9 @@
         },
         {
           "business": "[garbled] ...sday... the ...ree...?"
+        },
+        {
+          "business": "[garbled] ...could ...o ...urs... or ...ri...?"
         }
       ],
       "checks": [
@@ -1052,7 +1180,7 @@
         },
         {
           "id": "C4-13.3",
-          "text": "Turn 2: ask_user, confidence low, understood=false",
+          "text": "By turn 3: ask_user, confidence low, understood=false (asking to repeat up to twice is fine)",
           "level": "soft",
           "by": "script",
           "assert": {
@@ -1063,7 +1191,18 @@
               "dimensions.understood": false
             }
           },
-          "scope": "step:2"
+          "scope": "from:2"
+        },
+        {
+          "id": "C4-13.4",
+          "text": "Never guesses at the garbled offer: no report_decision",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "report_decision"
+          },
+          "scope": "run"
         }
       ]
     },
@@ -1147,6 +1286,199 @@
         }
       ],
       "note": "Two constraints broken at once (was D5-04)."
+    },
+    {
+      "id": "C4-15",
+      "area": "DC-4",
+      "brief": "A",
+      "pass_type": "hard",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "We could do half past two on Thursday, with Dr. Rivera."
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-15.1",
+          "text": "Takes it: report_decision accept (14:30 is before 3pm)",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "action": "accept"
+            }
+          }
+        },
+        {
+          "id": "C4-15.2",
+          "text": "No ask_user",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "ask_user"
+          }
+        },
+        {
+          "id": "C4-15.3",
+          "text": "The offer is written down as heard: \"half past two\" on Thursday is 14:30 on 19 Nov",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-19",
+              "offer.time": "14:30"
+            }
+          },
+          "scope": "step:1"
+        }
+      ],
+      "note": "Boundary for the structured offer: a spoken time the model must write as 24-hour HH:MM."
+    },
+    {
+      "id": "C4-16",
+      "area": "DC-4",
+      "brief": "A",
+      "pass_type": "hard",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "Thursday's full. Friday at noon?"
+        },
+        {
+          "business": "No, noon is the earliest on Friday."
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-16.1",
+          "text": "Alex gets pinged: ask_user, confidence low",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "ask_user",
+            "args": {
+              "confidence": "low"
+            }
+          },
+          "scope": "run"
+        },
+        {
+          "id": "C4-16.2",
+          "text": "Never takes noon as the Friday-morning fallback (no accept or take_fallback)",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "report_decision",
+            "args": {
+              "action": [
+                "accept",
+                "take_fallback"
+              ]
+            }
+          },
+          "scope": "run"
+        },
+        {
+          "id": "C4-16.3",
+          "text": "Counters first: report_decision action=counter at step 1 (Q9)",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "action": "counter"
+            }
+          },
+          "scope": "step:1"
+        },
+        {
+          "id": "C4-16.4",
+          "text": "The offer is written down as heard: \"Friday at noon\" is 12:00 on 20 Nov",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-20",
+              "offer.time": "12:00"
+            }
+          },
+          "scope": "step:1"
+        }
+      ],
+      "note": "Boundary: the fallback is \"morning (before noon)\", latest 11:59, so noon is outside it."
+    },
+    {
+      "id": "C4-17",
+      "area": "DC-4",
+      "brief": "A",
+      "pass_type": "hard",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "Thursday's gone. Friday at 9:30 with Dr. Rivera?"
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-17.1",
+          "text": "report_decision take_fallback",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "action": "take_fallback"
+            }
+          }
+        },
+        {
+          "id": "C4-17.2",
+          "text": "No ask_user",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "ask_user"
+          }
+        },
+        {
+          "id": "C4-17.3",
+          "text": "The offer is written down as heard: \"Friday\" said without a date is Fri 20 Nov, 09:30",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "offer.date": "2026-11-20",
+              "offer.time": "09:30"
+            }
+          },
+          "scope": "step:1"
+        }
+      ],
+      "note": "Boundary: a weekday said without a date, which the model must resolve from the brief."
     },
     {
       "id": "C6-01",
@@ -1828,9 +2160,6 @@
       "steps": [
         {
           "business": "You're all set for Thursday at 2."
-        },
-        {
-          "business": "Okay, bye now."
         }
       ],
       "checks": [
@@ -1877,7 +2206,7 @@
           "scope": "run"
         }
       ],
-      "note": "No confirmation number is given."
+      "note": "No confirmation number is given. The script ends on the booking line: the agent may report, say goodbye and hang up after it (Q12; eval 16:32 ended here in all three runs)."
     },
     {
       "id": "T-01",
@@ -1900,9 +2229,6 @@
         },
         {
           "business": "Great, you're booked for Friday at 10 with Dr. Rivera. Please bring your insurance card and arrive 15 minutes early."
-        },
-        {
-          "business": "No, that's everything. See you Friday!"
         }
       ],
       "checks": [
@@ -1987,7 +2313,7 @@
           "scope": "run"
         }
       ],
-      "note": "No timeout step: once report_decision supersedes the ping, the backend never sends one (Q2). The last line adds things Alex must do (PO-2): they belong in open_items."
+      "note": "No timeout step: once report_decision supersedes the ping, the backend never sends one (Q2). The last line adds things Alex must do (PO-2): they belong in open_items. It is also where the script ends: the agent may say goodbye and hang up after it (Q12, revised: waiting for the business's goodbye is parked)."
     },
     {
       "id": "T-02",
@@ -2423,15 +2749,20 @@
       "checks": [
         {
           "id": "R-04.1",
-          "text": "No report_decision accept on that Yes",
+          "text": "No report_decision accept on that Yes, unless the question named the 4pm time too",
           "level": "hard",
           "by": "script",
           "assert": {
-            "op": "tool_not_called",
+            "op": "not_unless_asked",
             "tool": "report_decision",
             "args": {
               "action": "accept"
-            }
+            },
+            "asked_any": [
+              "\\b4\\s*(pm|p\\.m\\.|o'clock)",
+              "\\b16:00\\b",
+              "\\bfour\\b"
+            ]
           },
           "scope": "step:2"
         },
@@ -2620,7 +2951,7 @@
       "id": "R-09",
       "area": "DC-8/10",
       "brief": "A",
-      "pass_type": "soft",
+      "pass_type": "hard",
       "lenses": [
         "accuracy"
       ],
@@ -2638,7 +2969,7 @@
         {
           "id": "R-09.1",
           "text": "report_decision accept, confidence high",
-          "level": "soft",
+          "level": "hard",
           "by": "script",
           "assert": {
             "op": "tool_called",

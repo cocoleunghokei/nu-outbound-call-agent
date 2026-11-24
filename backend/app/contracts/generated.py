@@ -12,6 +12,73 @@ class ContractBundle(RootModel[Any]):
     root: Annotated[Any, Field(title="ContractBundle")]
 
 
+class DateRule(BaseModel):
+    """
+    The day: exactly `on`, or a range from `earliest` to `latest` (inclusive). Set at least one; a rule with none counts as unknown.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["date"]
+    on: Annotated[str | None, Field(description="YYYY-MM-DD", pattern="^\\d{4}-\\d{2}-\\d{2}$")] = (
+        None
+    )
+    earliest: Annotated[
+        str | None, Field(description="YYYY-MM-DD, inclusive", pattern="^\\d{4}-\\d{2}-\\d{2}$")
+    ] = None
+    latest: Annotated[
+        str | None, Field(description="YYYY-MM-DD, inclusive", pattern="^\\d{4}-\\d{2}-\\d{2}$")
+    ] = None
+
+
+class TimeRule(BaseModel):
+    """
+    The start time window. "Before 3pm" is latest 14:59; "morning (before noon)" is latest 11:59. Set at least one; a rule with none counts as unknown.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["time"]
+    earliest: Annotated[
+        str | None,
+        Field(description="HH:MM, 24-hour, inclusive", pattern="^([01]\\d|2[0-3]):[0-5]\\d$"),
+    ] = None
+    latest: Annotated[
+        str | None,
+        Field(description="HH:MM, 24-hour, inclusive", pattern="^([01]\\d|2[0-3]):[0-5]\\d$"),
+    ] = None
+
+
+class PartySizeRule(BaseModel):
+    """
+    How many people: `exactly`, or `min` and/or `max`. Set at least one; a rule with none counts as unknown.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["party_size"]
+    exactly: Annotated[int | None, Field(ge=1, le=50)] = None
+    min: Annotated[int | None, Field(ge=1, le=50)] = None
+    max: Annotated[int | None, Field(ge=1, le=50)] = None
+
+
+class PersonRule(BaseModel):
+    """
+    Who the booking is with, e.g. a doctor or a stylist.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["person"]
+    name: Annotated[str, Field(max_length=60, min_length=1)]
+
+
+class BriefRule(RootModel[DateRule | TimeRule | PartySizeRule | PersonRule]):
+    root: Annotated[
+        DateRule | TimeRule | PartySizeRule | PersonRule,
+        Field(
+            description="One machine-checkable part of a constraint, preference or fallback, read from its text before the call. The backend compares the offer the agent heard against it; text it can't express stays without rules and the agent judges it. Times are the business's local time, 24-hour, inclusive.",
+            title="BriefRule",
+        ),
+    ]
+
+
 class TaskVarLiteral(BaseModel):
     model_config = ConfigDict(extra="forbid")
     literal: str
@@ -25,16 +92,37 @@ class TaskVarFieldRef(BaseModel):
 class BriefConstraint(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: Annotated[str, Field(min_length=1)]
+    rules: Annotated[
+        list[BriefRule] | None,
+        Field(
+            description="Optional. All must hold for this item to match. Absent: the agent judges the text alone.",
+            max_length=4,
+        ),
+    ] = None
 
 
 class BriefPreference(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: Annotated[str, Field(min_length=1)]
+    rules: Annotated[
+        list[BriefRule] | None,
+        Field(
+            description="Optional. All must hold for this item to match. Absent: the agent judges the text alone.",
+            max_length=4,
+        ),
+    ] = None
 
 
 class BriefFallback(BaseModel):
     model_config = ConfigDict(extra="forbid")
     text: Annotated[str, Field(min_length=1)]
+    rules: Annotated[
+        list[BriefRule] | None,
+        Field(
+            description="Optional. All must hold for this item to match. Absent: the agent judges the text alone.",
+            max_length=4,
+        ),
+    ] = None
 
 
 class BriefNeverAgree(BaseModel):
@@ -334,6 +422,36 @@ class Dimensions(BaseModel):
     understood: bool
 
 
+class HeardOffer(BaseModel):
+    """
+    The offer exactly as the other side said it, written as data. Fill a field only when they said it or it is clear from the call ("Thursday" on a call about Thursday 19 November). Leave out anything you are unsure of. Never your own judgment.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    date: Annotated[
+        str | None,
+        Field(description="The offered day, YYYY-MM-DD", pattern="^\\d{4}-\\d{2}-\\d{2}$"),
+    ] = None
+    time: Annotated[
+        str | None,
+        Field(
+            description="The offered start time, 24-hour HH:MM, e.g. 15:00 for 3pm",
+            pattern="^([01]\\d|2[0-3]):[0-5]\\d$",
+        ),
+    ] = None
+    party_size: Annotated[
+        int | None, Field(description="How many people the offer is for", ge=1, le=50)
+    ] = None
+    person: Annotated[
+        str | None,
+        Field(
+            description="Who it is with, as they said it, e.g. Dr. Patel",
+            max_length=60,
+            min_length=1,
+        ),
+    ] = None
+
+
 class AskUserArgs(BaseModel):
     question: Annotated[str, Field(max_length=200)]
     reason: Annotated[
@@ -362,6 +480,13 @@ class AskUserArgs(BaseModel):
             title="Dimensions",
         ),
     ]
+    offer: Annotated[
+        HeardOffer | None,
+        Field(
+            description='The offer exactly as the other side said it, written as data. Fill a field only when they said it or it is clear from the call ("Thursday" on a call about Thursday 19 November). Leave out anything you are unsure of. Never your own judgment.',
+            title="HeardOffer",
+        ),
+    ] = None
 
 
 class ReportDecisionArgs(BaseModel):
@@ -388,6 +513,12 @@ class ReportDecisionArgs(BaseModel):
             max_length=200,
         ),
     ] = None
+    covered_by_instruction: Annotated[
+        bool | None,
+        Field(
+            description="For accept or take_fallback: true when the user's own instruction during the call allows this offer although a typed rule doesn't (DC-10). Only after the user sent an instruction; never for money."
+        ),
+    ] = None
     dimensions: Annotated[
         Dimensions,
         Field(
@@ -395,6 +526,13 @@ class ReportDecisionArgs(BaseModel):
             title="Dimensions",
         ),
     ]
+    offer: Annotated[
+        HeardOffer | None,
+        Field(
+            description='The offer exactly as the other side said it, written as data. Fill a field only when they said it or it is clear from the call ("Thursday" on a call about Thursday 19 November). Leave out anything you are unsure of. Never your own judgment.',
+            title="HeardOffer",
+        ),
+    ] = None
 
 
 class ReportedOutcome(StrEnum):
