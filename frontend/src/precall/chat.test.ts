@@ -634,8 +634,8 @@ describe("the server's questions before Start", () => {
     expect(editing.clarify).toEqual([])
   })
 
-  it('a new call starts with no questions', () => {
+  it('a restart starts with no questions', () => {
     const asking = reduce(atReview(), { type: 'clarify', questions: [AT_7PM] })
-    expect(reduce(asking, { type: 'new_call' }).clarify).toEqual([])
+    expect(reduce(asking, { type: 'restart' }).clarify).toEqual([])
   })
 })
