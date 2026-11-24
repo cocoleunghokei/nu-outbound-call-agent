@@ -6,17 +6,25 @@ export interface TranscriptViewProps {
   businessName: string
 }
 
-/** Full call transcript (PO-4), collapsed by default so the summary stays on top. */
+/**
+ * Call transcript (PO-4). Always visible: beside the summary on wide screens, below it on
+ * narrow ones. Fragments of one sentence are joined into one turn by `transcriptRows`.
+ */
 export function TranscriptView({ lines, businessName }: TranscriptViewProps) {
   const rows = transcriptRows(lines, businessName)
 
   return (
-    <details className="cr-transcript">
-      <summary>Full transcript{rows.length > 0 ? ` (${rows.length} lines)` : ''}</summary>
+    <section className="cr-transcript" aria-labelledby="cr-transcript-title">
+      <header className="cr-transcript-head">
+        <h3 id="cr-transcript-title">Transcript</h3>
+        {rows.length > 0 && <span className="cr-muted">{rows.length} turns</span>}
+      </header>
       {rows.length === 0 ? (
-        <p className="cr-muted">No transcript for this call. Nobody spoke, or the call didn’t connect.</p>
+        <p className="cr-muted cr-transcript-empty">
+          No transcript for this call. Nobody spoke, or the call didn’t connect.
+        </p>
       ) : (
-        <ol className="cr-lines">
+        <ol className="cr-lines" tabIndex={0} aria-label="Transcript lines">
           {rows.map((row) => (
             <li key={row.seq} className={`cr-line cr-line-${row.role}`}>
               <span className="cr-who">
@@ -29,6 +37,6 @@ export function TranscriptView({ lines, businessName }: TranscriptViewProps) {
         </ol>
       )}
       <p className="cr-note">Audio is never stored. Only the transcript is kept.</p>
-    </details>
+    </section>
   )
 }

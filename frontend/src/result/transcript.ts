@@ -29,9 +29,16 @@ export interface TranscriptRow {
   clock: string | null
 }
 
+/** Lines from the same speaker this close together (ms) are one spoken turn. */
+export const TURN_GAP_MS = 5000
+
 /**
  * Turns stored transcript lines into display rows, with a speaker name and a
  * clock relative to the first timed line. Lines with only whitespace are left out.
+ * The speech-to-text service often splits one sentence across several lines, so
+ * consecutive lines from the same speaker that start within `TURN_GAP_MS` of each
+ * other are joined into one row (it keeps the first line's `seq` and clock).
+ * Lines without a readable time are never joined.
  *
  * Keeps the order it is given: the backend returns lines in spoken order
  * (`occurred_at`, then `seq`). `seq` is arrival order, so sorting by it would put
@@ -41,16 +48,34 @@ export function transcriptRows(lines: readonly TranscriptLine[], businessName: s
   const ordered = lines.filter((line) => line.text.trim() !== '')
   const start = firstTime(ordered)
 
-  return ordered.map((line) => {
+  const rows: TranscriptRow[] = []
+  let previous: { role: TranscriptLine['role']; time: number } | null = null
+
+  for (const line of ordered) {
     const time = line.startedAt === null ? NaN : Date.parse(line.startedAt)
-    return {
-      seq: line.seq,
-      role: line.role,
-      speaker: speakerName(line.role, businessName),
-      text: line.text.trim(),
-      clock: start === null || Number.isNaN(time) ? null : formatClock(time - start),
+    const text = line.text.trim()
+    const joinsPrevious =
+      previous !== null &&
+      !Number.isNaN(time) &&
+      previous.role === line.role &&
+      time - previous.time >= 0 &&
+      time - previous.time <= TURN_GAP_MS
+
+    if (joinsPrevious) {
+      const last = rows[rows.length - 1]
+      last.text = `${last.text} ${text}`
+    } else {
+      rows.push({
+        seq: line.seq,
+        role: line.role,
+        speaker: speakerName(line.role, businessName),
+        text,
+        clock: start === null || Number.isNaN(time) ? null : formatClock(time - start),
+      })
     }
-  })
+    previous = Number.isNaN(time) ? null : { role: line.role, time }
+  }
+  return rows
 }
 
 /** Display name for a speaker. Unknown roles show "Unknown" rather than failing. */
