@@ -14,7 +14,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from app.auth import JwksCache, current_user
+from app.auth import JwksCache, current_permanent_user, current_user
 from app.config import Settings
 from app.idempotency import idempotency_key
 from app.main import create_app
@@ -54,6 +54,12 @@ def make_client(jwks_cache: JwksCache | None = None) -> TestClient:
     @app.post("/needs-key")
     async def needs_key(key: Annotated[uuid.UUID, Depends(idempotency_key)]) -> dict[str, str]:
         return {"key": str(key)}
+
+    @app.get("/whoami-permanent")
+    async def whoami_permanent(
+        user_id: Annotated[uuid.UUID, Depends(current_permanent_user)],
+    ) -> dict[str, str]:
+        return {"user_id": str(user_id)}
 
     return TestClient(app)
 
@@ -234,6 +240,45 @@ def test_hs256_rejected_when_no_secret_configured() -> None:
     assert_unauthenticated(TestClient(app).get("/whoami", headers=bearer(make_token())))
 
 
+def test_anonymous_token_is_a_user_but_not_a_permanent_user() -> None:
+    """``current_user`` accepts an anonymous session (GET /me, briefs); ``current_permanent_user``
+    refuses it with 403 ``sign_in_required`` so the browser asks for an email first."""
+    client = make_client()
+    anonymous = make_token(is_anonymous=True)
+
+    ok = client.get("/whoami", headers=bearer(anonymous))
+    assert ok.status_code == 200
+    assert ok.json() == {"user_id": str(USER_ID)}
+
+    refused = client.get("/whoami-permanent", headers=bearer(anonymous))
+    assert refused.status_code == 403
+    assert refused.json() == {
+        "error": {
+            "code": "sign_in_required",
+            "message": "Add your email before placing a call",
+            "retryable": False,
+        }
+    }
+
+
+@pytest.mark.parametrize("claim", [False, None])
+def test_permanent_user_accepted_with_or_without_the_anonymous_claim(claim: bool | None) -> None:
+    # Tokens from before the claim existed, and permanent users' tokens (``is_anonymous: false``).
+    client = make_client()
+    response = client.get("/whoami-permanent", headers=bearer(make_token(is_anonymous=claim)))
+    assert response.status_code == 200
+    assert response.json() == {"user_id": str(USER_ID)}
+
+
+def test_permanent_user_still_needs_a_valid_token() -> None:
+    client = make_client()
+    assert_unauthenticated(client.get("/whoami-permanent"))
+    assert_unauthenticated(
+        client.get("/whoami-permanent", headers=bearer(make_token(exp=int(time.time()) - 1))),
+        "token_expired",
+    )
+
+
 def test_missing_idempotency_key_400() -> None:
     client = make_client()
     for headers in ({}, {"Idempotency-Key": "not-a-uuid"}):
@@ -243,6 +288,30 @@ def test_missing_idempotency_key_400() -> None:
     key = str(uuid.uuid4())
     ok = client.post("/needs-key", headers={"Idempotency-Key": key})
     assert ok.json() == {"key": key}
+
+
+@pytest.mark.db
+def test_anonymous_session_token_accepted(supabase_env: SupabaseEnv) -> None:
+    """An anonymous Supabase session (no sign-in screen yet) passes the verifier like any user.
+
+    The browser signs in anonymously on first use (frontend ``lib/session.ts``). GoTrue issues
+    those tokens with ``aud`` and ``role`` ``authenticated`` and ``is_anonymous: true``, so
+    ``current_user`` accepts them unchanged and ``GET /me`` creates the profile row.
+    """
+    response = httpx.post(f"{supabase_env.auth_url}/signup", json={}, timeout=15)
+    assert response.status_code == 200, f"anonymous signup failed: {response.text}"
+    body = response.json()
+    assert body["user"]["is_anonymous"] is True
+    settings = Settings(
+        database_url=supabase_env.db_url,
+        supabase_jwt_secret=supabase_env.jwt_secret,  # type: ignore[arg-type]
+        supabase_jwt_issuer=supabase_env.jwt_issuer,
+        supabase_jwks_url=f"{supabase_env.auth_url}/.well-known/jwks.json",
+    )
+    with TestClient(create_app(settings)) as client:
+        me = client.get("/me", headers=bearer(body["access_token"]))
+    assert me.status_code == 200, me.text
+    assert me.json() == {"user_id": body["user"]["id"], "onboarded": False}
 
 
 @pytest.mark.db

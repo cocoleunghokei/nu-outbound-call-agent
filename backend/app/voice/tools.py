@@ -38,6 +38,17 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
 }
 
 
+# The only keys Vapi's call API accepts at the top of ``function.parameters``. The contract
+# files are full JSON Schema documents (``title`` and so on); sending one as-is is a 400 from
+# POST /call, which the backend records as a failed call before anything rings.
+_PARAMETER_KEYS = ("type", "properties", "required")
+
+
+def _vapi_parameters(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return the OpenAI-style parameters object Vapi accepts, built from a contract schema."""
+    return {key: schema[key] for key in _PARAMETER_KEYS if key in schema}
+
+
 def tool_definitions() -> list[dict[str, Any]]:
     """Return the three async function tools plus Vapi's built-in ``endCall`` tool."""
     functions: list[dict[str, Any]] = [
@@ -47,7 +58,7 @@ def tool_definitions() -> list[dict[str, Any]]:
             "function": {
                 "name": name,
                 "description": description,
-                "parameters": load_schema(f"tools/{name}.args.v1.json"),
+                "parameters": _vapi_parameters(load_schema(f"tools/{name}.args.v1.json")),
             },
         }
         for name, description in _TOOL_DESCRIPTIONS.items()

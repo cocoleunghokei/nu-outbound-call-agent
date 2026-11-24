@@ -18,8 +18,14 @@ describe('historySource', () => {
     expect(historySource('real', 'http://localhost:8000/')).toEqual({ kind: 'real', apiBase: 'http://localhost:8000' })
   })
 
+  it('uses real calls with only the API URL set: the source flag is an opt-out', () => {
+    expect(historySource(undefined, 'http://localhost:8000')).toEqual({ kind: 'real', apiBase: 'http://localhost:8000' })
+    expect(historySource('', 'http://localhost:8000')).toEqual({ kind: 'real', apiBase: 'http://localhost:8000' })
+  })
+
   it('falls back to fake calls otherwise', () => {
-    expect(historySource(undefined, 'http://localhost:8000')).toEqual({ kind: 'fake' })
+    expect(historySource('fake', 'http://localhost:8000')).toEqual({ kind: 'fake' })
+    expect(historySource(undefined, undefined)).toEqual({ kind: 'fake' })
     expect(historySource('real', '')).toEqual({ kind: 'fake' })
     expect(historySource('real', 'localhost:8000')).toEqual({ kind: 'fake' })
   })
