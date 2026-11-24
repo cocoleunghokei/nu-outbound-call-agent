@@ -1,8 +1,9 @@
 /**
  * Chat home logic (PC-1, PC-3, PC-4, PC-5): pick a template or a custom call,
  * give the business name, number and goal, answer only the questions the
- * profile can't already answer, then set limits, preferences, ranked backups
- * and never-agree items. Pure functions only, so the whole flow is
+ * profile can't already answer, then ask for must-haves, nice-to-haves and what
+ * the user is OK with instead. Never-agree items start as "a deposit or fee" and
+ * are not asked; the review card can change them. Pure functions only, so the whole flow is
  * unit-tested without React. `ChatHome.tsx` just renders this state.
  *
  * At `stage: 'draft_ready'` the review card shows (PC-6). Each part can be
@@ -166,22 +167,22 @@ interface ListPrompt {
 
 const LIST_PROMPTS: Record<ListKey, ListPrompt> = {
   constraints: {
-    ask: 'Any limits I must stick to? For example, "before 3pm" or "not on Monday".',
-    again: () => 'Got it. Any other limits?',
-    none: 'No limits',
-    placeholder: 'A limit, e.g. before 3pm',
+    ask: 'What must be true for this to work? For example, "before 3pm" or "vegetarian options".',
+    again: () => 'Got it. Anything else that must be true?',
+    none: 'Nothing specific',
+    placeholder: 'A must-have, e.g. before 3pm',
   },
   preferences: {
-    ask: 'Anything you would like but can live without? For example, "a window seat".',
-    again: () => 'Noted. Anything else you would like?',
-    none: 'No preferences',
+    ask: 'Anything that would be nice to have, but is not required? For example, "a window seat".',
+    again: () => 'Noted. Anything else that would be nice?',
+    none: 'Nothing',
     placeholder: 'Something you would like',
   },
   fallbacks: {
-    ask: "If they can't do that, what should I accept instead? I'll take a match without bothering you.",
-    again: (n) => `Saved as backup #${n}. Another backup in case that's taken too?`,
-    none: 'No backup, ask me',
-    placeholder: 'A backup, e.g. Friday morning',
+    ask: "If a must-have isn't possible, what are you OK with instead? I'll take a match without bothering you.",
+    again: () => 'Saved. Anything else you would be OK with?',
+    none: 'Nothing, ask me',
+    placeholder: 'Something you are OK with, e.g. Friday morning',
   },
   never_agree: {
     ask: "Anything I should never agree to? I'll always check with you before any deposit or fee.",
@@ -191,6 +192,9 @@ const LIST_PROMPTS: Record<ListKey, ListPrompt> = {
     suggestions: ['A deposit or fee'],
   },
 }
+
+/** Pre-filled never-agree items; the chat does not ask for these. */
+const DEFAULT_NEVER_AGREE: ListItem[] = [{ text: 'A deposit or fee' }]
 
 const FALLBACK_NUDGE =
   "Without a backup, I'll have to ping you mid-call if they can't do your first choice. Want to add one?"
@@ -210,8 +214,6 @@ function homeChips(ctx: ChatContext): Chip[] {
     { label: 'Custom call', action: { type: 'pick_custom' } as const },
   ]
 }
-
-const NEW_CALL_CHIP: Chip = { label: 'Start a new call', action: { type: 'new_call' }, quiet: true }
 
 function say(state: ChatState, from: Speaker, text: string): ChatState {
   return {
@@ -345,14 +347,14 @@ function askNext(state: ChatState, ctx: ChatContext): ChatState {
     state = next
   }
 
-  // PC-5: limits, preferences, ranked backups and never-agree items, in that order.
+  // PC-5: must-haves, nice-to-haves and backups are asked; never-agree is pre-filled (its row can still be edited).
   const nextList = LIST_ORDER.find((key) => !(d.done_lists ?? []).includes(key))
   if (nextList) {
     const prefilled = d[nextList] ?? []
     // Template defaults (PC-2) are already in the list: say so instead of asking from scratch.
     const text =
       prefilled.length > 0
-        ? `I've added the usual limits for this call: ${prefilled.map((i) => i.text).join('; ')}. Any other limits?`
+        ? `I've added the usual must-haves for this call: ${prefilled.map((i) => i.text).join('; ')}. Anything else that must be true?`
         : LIST_PROMPTS[nextList].ask
     return waitForListItem(state, nextList, text)
   }
@@ -366,7 +368,7 @@ function askNext(state: ChatState, ctx: ChatContext): ChatState {
     fieldKey: null,
     listKey: null,
     placeholder: DEFAULT_PLACEHOLDER,
-    chips: [NEW_CALL_CHIP],
+    chips: [],
   }
 }
 
@@ -381,8 +383,10 @@ function startDraft(state: ChatState, ctx: ChatContext, userText: string, draft:
         constraints: [],
         preferences: [],
         fallbacks: [],
-        never_agree: [],
-        done_lists: [],
+        // Not asked: the agent already checks before any payment, so "a deposit or fee" is a
+        // default the user can change from the review card.
+        never_agree: DEFAULT_NEVER_AGREE.map((item) => ({ ...item })),
+        done_lists: ['never_agree'],
         ...draft,
       },
       knownAnnounced: false,
@@ -430,9 +434,9 @@ const EDIT_LABELS: Record<EditTarget, string> = {
   goal: 'Change the goal',
   details: 'Change the details',
   calling: 'Change who to call',
-  constraints: 'Change my limits',
-  preferences: 'Change my preferences',
-  fallbacks: 'Change my backups',
+  constraints: 'Change my must-haves',
+  preferences: 'Change my nice-to-haves',
+  fallbacks: 'Change what I am OK with',
   never_agree: 'Change what not to agree to',
 }
 
@@ -536,7 +540,7 @@ export function chatReducer(ctx: ChatContext) {
           'agent',
           `Calling ${review.brief.business_name} now. I'll ask you here if I need anything.`,
         )
-        return { ...started, stage: 'started', startOutcome: 'calling', chips: [NEW_CALL_CHIP] }
+        return { ...started, stage: 'started', startOutcome: 'calling', chips: [] }
       }
       case 'saved_not_connected': {
         const review = reviewOf(state, ctx)
@@ -546,7 +550,7 @@ export function chatReducer(ctx: ChatContext) {
           'agent',
           "Saved your brief. Calling isn't connected yet, so I haven't dialed.",
         )
-        return { ...saved, stage: 'started', startOutcome: 'saved', chips: [NEW_CALL_CHIP] }
+        return { ...saved, stage: 'started', startOutcome: 'saved', chips: [] }
       }
       case 'note': {
         const text = action.text.trim()
@@ -554,7 +558,7 @@ export function chatReducer(ctx: ChatContext) {
       }
       case 'new_call':
         // PC-1: the user can start a new call at any time; an unfinished draft is dropped.
-        return showHome({ ...say(state, 'user', 'Start a new call'), chips: [] }, ctx, 'Sure. Who should I call?')
+        return showHome({ ...say(state, 'user', 'New call'), chips: [] }, ctx, 'Sure. Who should I call?')
       case 'send': {
         const text = action.text.trim()
         if (text === '') return state
@@ -563,7 +567,7 @@ export function chatReducer(ctx: ChatContext) {
           // Typing at the home screen starts a custom call with that goal (PC-3).
           return startDraft(state, ctx, text, { template_key: null, goal: text.slice(0, GOAL_MAX) })
         }
-        return say(say(state, 'user', text), 'agent', 'Tap "Start a new call" to set up another call.')
+        return say(say(state, 'user', text), 'agent', 'Tap "+ New call" at the top to set up another call.')
       }
     }
   }

@@ -30,7 +30,7 @@ const RESTAURANT: ChatAction[] = [
   send('7pm'),
   send('Between 6:30pm and 8pm'),
   done("That's all"),
-  done('No preferences'),
+  done('Nothing'),
   send('Saturday same time'),
   done("That's all"),
   send('A deposit or fee'),
@@ -43,11 +43,10 @@ const CUSTOM: ChatAction[] = [
   send('Ask if they can hold a cake for pickup tomorrow'),
   send('Sunrise Bakery'),
   send('617 555 0122'),
-  done('No limits'),
-  done('No preferences'),
+  done('Nothing specific'),
+  done('Nothing'),
   send('Any cake they have ready'),
   done("That's all"),
-  done('Nothing else'),
 ]
 
 const run = (actions: ChatAction[], context: ChatContext = ctx) =>
@@ -159,6 +158,16 @@ describe('editing from the review card', () => {
     })
   })
 
+  it('never-agree starts as "A deposit or fee" and can still be changed from the card', () => {
+    const ready = run(RESTAURANT)
+    expect(completedDraft(ready)?.never_agree).toEqual([{ text: 'A deposit or fee' }])
+    let s = reduce(ready, { type: 'edit', target: 'never_agree' })
+    expect(s.listKey).toBe('never_agree')
+    s = [send('Paying in advance'), done("That's all")].reduce(reduce, s)
+    expect(s.stage).toBe('draft_ready')
+    expect(completedDraft(s)?.never_agree).toEqual([{ text: 'Paying in advance' }])
+  })
+
   it('ignores edits that do not apply, and edits outside the review', () => {
     const ready = run(RESTAURANT)
     expect(reduce(ready, { type: 'edit', target: 'goal' })).toBe(ready)
@@ -168,14 +177,14 @@ describe('editing from the review card', () => {
 })
 
 describe('Start (PC-6)', () => {
-  it('starts the call, keeps the draft and the card, and offers a new call', () => {
+  it('starts the call, keeps the draft and the card, with no new-call chip', () => {
     const ready = run(CUSTOM)
     const s = reduce(ready, { type: 'start' })
     expect(s.stage).toBe('started')
     expect(lastAgent(s)).toBe("Calling Sunrise Bakery now. I'll ask you here if I need anything.")
     expect(completedDraft(s)).toEqual(completedDraft(ready))
     expect(s.reviewAfterId).toBe(ready.reviewAfterId)
-    expect(s.chips.map((c) => c.label)).toEqual(['Start a new call'])
+    expect(s.chips).toEqual([])
   })
 
   it('ignores Start twice, and edits after Start', () => {

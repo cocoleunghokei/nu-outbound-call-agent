@@ -109,10 +109,9 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
       send('Check-up'),
       send('Before 3pm'),
       done("That's all"),
-      done('No preferences'),
+      done('Nothing'),
       send('Friday morning'),
       done("That's all"),
-      done('Nothing else'),
     ])
     const { brief, missing_fields } = buildBrief(d, template('doctor_booking'), fakeProfile)
     expectValidBrief(brief, fakeProfile)
@@ -120,7 +119,7 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
     expect(brief.task_vars).toEqual({ provider_name: { literal: 'Dr. Lee' } })
     expect(brief.share_freely_keys).toEqual(['calling_name', 'phone'])
     expect(brief.ask_first_keys).toEqual(['date_of_birth'])
-    expect(brief.never_agree).toEqual([])
+    expect(brief.never_agree).toEqual([{ text: 'A deposit or fee' }])
   })
 
   it('custom call: uses the tech doc task line with the goal as {goal_summary}', () => {
@@ -129,11 +128,10 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
       send('Ask if they can hold a cake for pickup tomorrow.'),
       send('Sunrise Bakery'),
       send('617 555 0122'),
-      done('No limits'),
-      done('No preferences'),
+      done('Nothing specific'),
+      done('Nothing'),
       send('Any cake they have ready'),
       done("That's all"),
-      done('Nothing else'),
     ])
     const { brief, missing_fields } = buildBrief(d, undefined, fakeProfile)
     expectValidBrief(brief, fakeProfile)

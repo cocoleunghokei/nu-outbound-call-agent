@@ -25,19 +25,18 @@ function run(...actions: ChatAction[]): ChatState {
 const send = (text: string): ChatAction => ({ type: 'send', text })
 const done = (label: string): ChatAction => ({ type: 'list_done', label })
 
-/** Skip all four PC-5 lists. The fallback list needs two taps: the chat nudges once. */
+/** Skip the three asked PC-5 lists (never-agree is pre-filled, not asked). The fallback list needs two taps: the chat nudges once. */
 const SKIP_LISTS: ChatAction[] = [
-  done('No limits'),
-  done('No preferences'),
-  done('No backup, ask me'),
-  done('No backup, ask me'),
-  done('Nothing else'),
+  done('Nothing specific'),
+  done('Nothing'),
+  done('Nothing, ask me'),
+  done('Nothing, ask me'),
 ]
 
 /** A draft's empty PC-5 lists and bookkeeping, before any list is finished. */
-const FRESH = { answers: {}, profile_additions: [], constraints: [], preferences: [], fallbacks: [], never_agree: [], done_lists: [] }
-/** The same, after all four lists were skipped. */
-const SKIPPED = { ...FRESH, done_lists: ['constraints', 'preferences', 'fallbacks', 'never_agree'] }
+const FRESH = { answers: {}, profile_additions: [], constraints: [], preferences: [], fallbacks: [], never_agree: [{ text: 'A deposit or fee' }], done_lists: ['never_agree'] }
+/** The same, after the three asked lists were skipped. */
+const SKIPPED = { ...FRESH, done_lists: ['never_agree', 'constraints', 'preferences', 'fallbacks'] }
 const lastAgent = (s: ChatState) => [...s.messages].reverse().find((m) => m.from === 'agent')?.text ?? ''
 
 describe('chat home (PC-1)', () => {
@@ -179,71 +178,66 @@ describe('constraints and fallbacks (PC-5)', () => {
   /** A custom call that has just reached the first PC-5 question. */
   const atLists = () => run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122'))
 
-  it('asks limits, preferences, backups and never-agree items, in that order', () => {
+  it('asks must-haves, nice-to-haves and what the user is OK with, in that order', () => {
     let s = atLists()
     const asked: string[] = []
     for (let i = 0; i < 10 && s.awaiting === 'list_item' && s.listKey; i++) {
       if (asked[asked.length - 1] !== s.listKey) asked.push(s.listKey)
       s = reduce(s, s.chips[s.chips.length - 1].action)
     }
-    expect(asked).toEqual(['constraints', 'preferences', 'fallbacks', 'never_agree'])
+    expect(asked).toEqual(['constraints', 'preferences', 'fallbacks'])
     expect(s.stage).toBe('draft_ready')
   })
 
   it('collects several items per list, in order, with a follow-up each time', () => {
     let s = reduce(atLists(), send('Pickup before 6pm'))
-    expect(lastAgent(s)).toBe('Got it. Any other limits?')
+    expect(lastAgent(s)).toBe('Got it. Anything else that must be true?')
     expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
     s = reduce(s, send('Not on Sunday'))
     expect(s.draft.constraints).toEqual([{ text: 'Pickup before 6pm' }, { text: 'Not on Sunday' }])
     s = reduce(s, done("That's all"))
     expect(s.listKey).toBe('preferences')
-    expect(s.chips.map((c) => c.label)).toEqual(['No preferences'])
+    expect(s.chips.map((c) => c.label)).toEqual(['Nothing'])
   })
 
-  it('keeps backups ranked best first and numbers them', () => {
-    let s = [done('No limits'), done('No preferences')].reduce(reduce, atLists())
+  it('keeps what the user is OK with in the order given', () => {
+    let s = [done('Nothing specific'), done('Nothing')].reduce(reduce, atLists())
     expect(s.listKey).toBe('fallbacks')
     s = reduce(s, send('Any cake they have ready'))
-    expect(lastAgent(s)).toBe("Saved as backup #1. Another backup in case that's taken too?")
+    expect(lastAgent(s)).toBe('Saved. Anything else you would be OK with?')
     s = reduce(s, send('Cupcakes'))
-    expect(lastAgent(s)).toContain('backup #2')
-    expect(s.draft.fallbacks).toEqual([{ text: 'Any cake they have ready' }, { text: 'Cupcakes' }])
+        expect(s.draft.fallbacks).toEqual([{ text: 'Any cake they have ready' }, { text: 'Cupcakes' }])
   })
 
   it('nudges once when the user skips backups, then accepts a second "no"', () => {
-    let s = [done('No limits'), done('No preferences')].reduce(reduce, atLists())
-    s = reduce(s, done('No backup, ask me'))
+    let s = [done('Nothing specific'), done('Nothing')].reduce(reduce, atLists())
+    s = reduce(s, done('Nothing, ask me'))
     expect(s.listKey).toBe('fallbacks')
     expect(s.fallbackNudged).toBe(true)
     expect(lastAgent(s)).toContain("I'll have to ping you mid-call")
-    s = reduce(s, done('No backup, ask me'))
-    expect(s.listKey).toBe('never_agree')
+    s = reduce(s, done('Nothing, ask me'))
+    expect(s.stage).toBe('draft_ready')
     expect(s.draft.fallbacks).toEqual([])
   })
 
   it('accepts a backup typed after the nudge', () => {
-    let s = [done('No limits'), done('No preferences'), done('No backup, ask me')].reduce(reduce, atLists())
+    let s = [done('Nothing specific'), done('Nothing'), done('Nothing, ask me')].reduce(reduce, atLists())
     s = reduce(s, send('Tomorrow morning instead'))
     expect(s.draft.fallbacks).toEqual([{ text: 'Tomorrow morning instead' }])
     expect(s.listKey).toBe('fallbacks')
   })
 
   it('does not nudge when at least one backup was given', () => {
-    let s = [done('No limits'), done('No preferences'), send('Cupcakes')].reduce(reduce, atLists())
+    let s = [done('Nothing specific'), done('Nothing'), send('Cupcakes')].reduce(reduce, atLists())
     s = reduce(s, done("That's all"))
-    expect(s.listKey).toBe('never_agree')
+    expect(s.stage).toBe('draft_ready')
     expect(s.fallbackNudged).toBe(false)
   })
 
-  it('offers "A deposit or fee" as a one-tap never-agree item, and hides it once added', () => {
-    let s = [done('No limits'), done('No preferences'), send('Cupcakes'), done("That's all")].reduce(reduce, atLists())
-    expect(s.listKey).toBe('never_agree')
-    expect(s.chips.map((c) => c.label)).toEqual(['A deposit or fee', 'Nothing else'])
-    s = reduce(s, s.chips[0].action)
-    expect(s.draft.never_agree).toEqual([{ text: 'A deposit or fee' }])
-    expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
-    s = reduce(s, done("That's all"))
+  it('pre-fills "A deposit or fee" as never-agree and does not ask about it', () => {
+    const s = [done('Nothing specific'), done('Nothing'), send('Cupcakes'), done("That's all")].reduce(reduce, atLists())
+    expect(s.stage).toBe('draft_ready')
+    expect(s.messages.some((m) => m.text.includes('never agree'))).toBe(false)
     expect(completedDraft(s)).toMatchObject({
       constraints: [],
       preferences: [],
@@ -272,7 +266,7 @@ describe('constraints and fallbacks (PC-5)', () => {
     expect(s.listKey).toBe('preferences')
   })
 
-  it('starts the limits with the template defaults and says so (PC-2)', () => {
+  it('starts the must-haves with the template defaults and says so (PC-2)', () => {
     const withDefaults: ChatContext = {
       ...ctx,
       templates: fakeTemplates.map((t) =>
@@ -290,13 +284,13 @@ describe('constraints and fallbacks (PC-5)', () => {
     ].reduce(r, initialChatState(withDefaults))
     expect(s.listKey).toBe('constraints')
     expect(s.draft.constraints).toEqual([{ text: 'Same day only' }])
-    expect(lastAgent(s)).toBe("I've added the usual limits for this call: Same day only. Any other limits?")
+    expect(lastAgent(s)).toBe("I've added the usual must-haves for this call: Same day only. Anything else that must be true?")
     expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
   })
 
   it('ignores "list_done" when no list is being asked', () => {
     const start = initialChatState(ctx)
-    expect(reduce(start, done('No limits'))).toBe(start)
+    expect(reduce(start, done('Nothing specific'))).toBe(start)
   })
 })
 
@@ -379,7 +373,7 @@ describe('starting a new call any time (PC-1)', () => {
     expect(s.chips.map((c) => c.label)).toContain('Custom call')
   })
 
-  it('offers a new call once a draft is ready, and keeps the chat history', () => {
+  it('keeps the chat history and shows no new-call chip once a draft is ready (the header button is the only one)', () => {
     const ready = run(
       { type: 'pick_template', templateKey: 'doctor_booking' },
       send('Back Bay Family Clinic'),
@@ -389,7 +383,7 @@ describe('starting a new call any time (PC-1)', () => {
       send('Check-up'),
       ...SKIP_LISTS,
     )
-    expect(ready.chips.map((c) => c.label)).toEqual(['Start a new call'])
+    expect(ready.chips).toEqual([])
     const again = reduce(ready, { type: 'new_call' })
     expect(again.messages.length).toBeGreaterThan(ready.messages.length)
     expect(again.stage).toBe('home')
@@ -408,7 +402,7 @@ describe('ignored input', () => {
     expect(reduce(mid, { type: 'pick_custom' })).toBe(mid)
   })
 
-  it('points to "Start a new call" when the user types after the draft is ready', () => {
+  it('points to the "+ New call" button when the user types after the draft is ready', () => {
     const ready = run(
       { type: 'pick_custom' },
       send('Hold a cake'),
@@ -418,7 +412,7 @@ describe('ignored input', () => {
     )
     expect(ready.stage).toBe('draft_ready')
     const s = reduce(ready, send('hello?'))
-    expect(lastAgent(s)).toContain('Start a new call')
+    expect(lastAgent(s)).toContain('+ New call')
     expect(completedDraft(s)).toEqual(completedDraft(ready))
   })
 
