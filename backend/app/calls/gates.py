@@ -47,6 +47,11 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
   item ("Does that cake have any nuts?" "No, none."), or unprompted ("all our cakes are nut
   free"). A yes isn't enough, because it could mean the item is there. The check reads words,
   it doesn't understand them.
+- **Named fallback** (``named_fallback_gate``): ``take_fallback`` is refused unless ``fallback``
+  names one of the user's fallbacks as typed, and refused when that fallback's own rules fail
+  against the offer or the offer lacks a value they need. A text-only sibling fallback leaves
+  Python unable to say that none matches, so without this the model's "it matches a fallback"
+  stood (noon taken for "11am pickup is fine"). A fallback with no rules is the model's call.
 - **Wrong day** (``report_day_gate``): ``report_outcome`` is refused when ``details.date`` is not
   the day the user typed ("Dec 23", read into 2026-12-23 by ``requested_day``), not a day a date
   rule in the brief allows, and not a day the business named. The requirement list anchors the
@@ -75,7 +80,7 @@ from psycopg import AsyncConnection
 
 from app.calls.prompt import one_line
 from app.calls.requested_day import business_named_day
-from app.calls.scoring import OfferScore
+from app.calls.scoring import OfferScore, check_item, fix_offer_year, missing_fields
 from app.calls.store import is_ending
 
 # The same words the in-call eval's G4 check counts as money (cases.json).
@@ -182,6 +187,25 @@ def never_agree_refusal(unconfirmed: Sequence[str]) -> str:
         '("No nuts", "None", "It\'s nut free"): a yes, or a vague answer, is not enough. Then call '
         "report_decision again with rule_evidence: one entry per item, rule exactly as the user "
         "typed it and business_said copied from their no. If they can't say, call ask_user."
+    )
+
+
+def fallback_not_named_refusal(options: Sequence[str]) -> str:
+    """The refusal for taking a fallback without naming which one. ``options`` are the user's
+    fallbacks as typed."""
+    listed = "; ".join(f'"{one_line(text)}"' for text in options)
+    return (
+        "Not done: say which of the user's fallbacks this offer is. Call report_decision again "
+        f"with fallback set to exactly one of: {listed}. If none of them fits, do not take "
+        "it as a fallback: counter once, or call ask_user."
+    )
+
+
+def fallback_breaks_refusal(text: str) -> str:
+    """The refusal for taking a fallback the offer doesn't fit."""
+    return (
+        f'Not done: the offer you heard breaks the fallback you named, "{one_line(text)}". Do '
+        "not take it as that fallback. Counter once, or call ask_user."
     )
 
 
@@ -490,6 +514,52 @@ def never_agree_gate(
         if not _answers_the_item(text, quotes.get(_normal(text), ""), facts.turns, brief)
     ]
     return never_agree_refusal(unconfirmed) if unconfirmed else None
+
+
+# A leading list number the agent may copy from <fallbacks> ("1. Friday morning").
+_LIST_NUMBER = re.compile(r"^\s*\d+\s*[.)]\s+")
+
+
+def named_fallback_gate(
+    action: str,
+    arguments: Mapping[str, Any],
+    brief: Mapping[str, Any] | None,
+    facts: CallFacts,
+    covered_by_instruction: object = None,
+) -> str | None:
+    """The refusal for taking a fallback that isn't named, or that the offer doesn't fit.
+
+    While any of the user's fallbacks is words only, Python can't say that *no* fallback
+    matches ("tea flavoured cake" might), so the model's "it matches a fallback" would stand:
+    noon was taken as a fallback for "11am pickup is fine". So ``take_fallback`` must name the
+    one fallback it takes (``fallback``, as the user typed it), and that fallback's own rules
+    are checked against the offer: refused when they fail, or when the offer leaves out a
+    value they need. A fallback with no rules is the model's call. A "yes" from the user to
+    the latest ping, or their own instruction, lets it through, as in ``low_offer_gate``.
+    """
+    if action != "take_fallback" or facts.latest_ping_approved:
+        return None
+    if instruction_covers(covered_by_instruction, facts):
+        return None
+    raw = brief.get("fallbacks") if brief else None
+    items = [i for i in raw if isinstance(i, Mapping)] if isinstance(raw, list) else []
+    texts = [str(i.get("text", "")).strip() for i in items if str(i.get("text", "")).strip()]
+    if not texts:
+        return None  # nothing to name: the other gates judge a fallback that doesn't exist
+    named = _normal(_LIST_NUMBER.sub("", str(arguments.get("fallback") or "")))
+    item = next((i for i in items if _normal(i.get("text", "")) == named and named), None)
+    if item is None:
+        return fallback_not_named_refusal(texts)
+    offer = arguments.get("offer")
+    offer = offer if isinstance(offer, Mapping) else {}
+    if brief is not None and offer:
+        offer = fix_offer_year(brief, offer)
+    text = str(item.get("text", ""))
+    check = check_item(item, offer)
+    if check == "fail":
+        return fallback_breaks_refusal(text)
+    missing = missing_fields(item, offer) if check == "unknown" else ()
+    return missing_detail_refusal(missing) if missing else None
 
 
 def report_day_gate(
