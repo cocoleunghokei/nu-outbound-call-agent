@@ -228,6 +228,8 @@ def transcript(run: RunRecord) -> list[str]:
         lines.append(f"    (stopped: {run.stopped})")
     if run.error:
         lines.append(f"    (error: {run.error})")
+    if run.silences:
+        lines.append(f"    (silent replies: {'; '.join(run.silences)})")
     return lines
 
 
