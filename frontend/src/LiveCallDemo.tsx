@@ -4,6 +4,7 @@ import { LOADING_CALL_NAME } from './postcall/notification'
 import { liveCallMode } from './live-call/backend'
 import { DR_LEE_SCRIPT, MOCK_CALL_ID, mockSummary, useMockCall } from './live-call/mockCall'
 import { useRealCall } from './live-call/useRealCall'
+import { navigate, resultPath } from './router'
 
 /** The scripted fake call (the default until the backend is deployed). */
 function MockLiveCall() {
@@ -39,6 +40,7 @@ function RealLiveCall({ callId, apiBase }: { callId: string; apiBase: string }) 
       sendCommand={sendCommand}
       notice={problem}
       historicalUpTo={historicalUpTo}
+      onOpenResult={() => navigate(resultPath(callId))}
     />
   )
 }
