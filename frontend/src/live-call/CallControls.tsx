@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  MAX_INSTRUCTION_LENGTH,
   PAUSE_CAP_MS,
   availableControls,
   type CommandResult,
@@ -7,6 +8,7 @@ import {
   type SendCallCommand,
 } from './controls'
 import { formatClock } from './format'
+import { sanitizeReplyText } from './ping'
 import type { CallStatus } from './types'
 
 interface CallControlsProps {
@@ -27,27 +29,64 @@ type Sending = { kind: 'idle' } | { kind: 'sending'; command: ControlCommand } |
 export function CallControls({ callId, status, ended, pausedAt, sendCommand }: CallControlsProps) {
   const [sending, setSending] = useState<Sending>({ kind: 'idle' })
   const [confirmEnd, setConfirmEnd] = useState(false)
+  const [draft, setDraft] = useState('')
   const allowed = availableControls(status, ended)
   const busy = sending.kind === 'sending'
 
   if (ended) return null
 
-  async function send(command: ControlCommand) {
+  async function send(command: ControlCommand, text?: string) {
     if (busy) return
     setSending({ kind: 'sending', command })
     try {
-      setSending(await sendCommand(callId, command))
+      const result = await sendCommand(callId, command, text)
+      setSending(result)
+      // Keep the typed text when it didn't go through, so it can be sent again.
+      if (command === 'instruction' && result.kind === 'accepted') setDraft('')
     } catch {
       setSending({ kind: 'error', message: 'Could not reach the call. Try again.' })
     }
     if (command === 'end') setConfirmEnd(false)
   }
 
+  const instruction = sanitizeReplyText(draft)
+
   return (
     <section className="lc-controls" aria-label="Call controls">
       {pausedAt !== null && <PausedBanner pausedAt={pausedAt} />}
 
-      {/* The instruction box (DC-10, pre-call owner) goes here, above the buttons. */}
+      <form
+        className="lc-instruct"
+        onSubmit={(event) => {
+          event.preventDefault()
+          if (instruction !== '' && allowed.instruct) void send('instruction', instruction)
+        }}
+      >
+        <label htmlFor="lc-instruction">Tell your agent something</label>
+        <div className="lc-instruct-row">
+          <input
+            id="lc-instruction"
+            type="text"
+            value={draft}
+            maxLength={MAX_INSTRUCTION_LENGTH}
+            placeholder="e.g. ask if they have Saturday"
+            autoComplete="off"
+            disabled={!allowed.instruct}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <button
+            type="submit"
+            className="lc-btn primary"
+            disabled={busy || !allowed.instruct || instruction === ''}
+            title={allowed.instruct ? undefined : 'You can send an instruction once they pick up'}
+          >
+            Send
+          </button>
+        </div>
+        <p className="lc-instruct-hint">
+          The agent works it in at its next natural turn. It never overrides your rules.
+        </p>
+      </form>
 
       {confirmEnd ? (
         <div className="lc-confirm" role="group" aria-label="Confirm ending the call">
@@ -91,7 +130,13 @@ export function CallControls({ callId, status, ended, pausedAt, sendCommand }: C
 
       {sending.kind === 'sending' && (
         <p className="lc-controls-fb" role="status">
-          {sending.command === 'pause' ? 'Pausing…' : sending.command === 'resume' ? 'Resuming…' : 'Ending…'}
+          {sending.command === 'instruction'
+            ? 'Sending…'
+            : sending.command === 'pause'
+              ? 'Pausing…'
+              : sending.command === 'resume'
+                ? 'Resuming…'
+                : 'Ending…'}
         </p>
       )}
       {sending.kind === 'error' && (

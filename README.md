@@ -34,6 +34,15 @@ Module by module: [docs/status.md#project-structure](docs/status.md#project-stru
 - Run `make setup` once, and `make check` before you push. CI runs the same checks on every PR. See [docs/devops.md](docs/devops.md).
 - AI agents follow [AGENTS.md](AGENTS.md).
 
+### Pull requests (humans and AI agents, every time)
+
+- **Title:** Conventional Commits, `type(scope): summary`, for example `feat(backend): add endpoint to start a call`. Scopes: `backend`, `frontend`, `db`, `ci`, `docs`, `spike`. CI checks it, and it becomes the commit on `main`.
+- **Description:** fill in every heading of [the PR template](.github/pull_request_template.md): "What does this change?", "How did you test it?" and "Checklist". Do not leave a heading empty or replace the template with a commit message.
+- **Testing section:** list the exact commands you ran and their results. Say plainly what you could not run (for example `make check` or `make db-check` without Docker) and what only CI will cover. Update the numbers if you merge `main` or push again.
+- **Checklist:** tick only what is true. Leave `make check` and "A teammate has reviewed it" unticked until they are.
+- **Before merging:** wait for every required check (`Hygiene and secret scan`, `Lint, test, build`, `Database migrations`, `Conventional Commits title`) to pass on the latest commit, and get one teammate's approval. Merge with **Squash and merge**.
+- One task per branch and PR. If the PR touches docs or conventions, update them in the same PR.
+
 ## Timeline
 
 | Phase | Dates |

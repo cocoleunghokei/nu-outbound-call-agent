@@ -479,6 +479,58 @@
   color: var(--lc-ink);
 }
 
+.lc-badge.you {
+  background: #e8f0fe;
+  color: #1d4ed8;
+}
+
+/* Instruction box (DC-10) */
+.lc-instruct {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.live-call .lc-instruct label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.lc-instruct-row {
+  display: flex;
+  gap: 8px;
+}
+
+.lc-instruct-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 14px;
+  border: 1.5px solid var(--lc-line);
+  border-radius: 999px;
+  padding: 10px 14px;
+  background: var(--lc-surface);
+  color: var(--lc-ink);
+}
+
+.lc-instruct-row input:focus-visible {
+  outline: 2px solid var(--lc-brand);
+  outline-offset: 2px;
+}
+
+.lc-instruct-row input:disabled {
+  opacity: 0.5;
+}
+
+.lc-instruct-row .lc-btn {
+  flex: 0 0 auto;
+}
+
+.live-call .lc-instruct-hint {
+  font-size: 12px;
+  color: var(--lc-muted);
+}
+
 /* Pause / Resume / End (DC-11) */
 .lc-controls {
   display: flex;

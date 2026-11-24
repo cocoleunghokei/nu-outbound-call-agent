@@ -113,12 +113,26 @@ def filler_line(calling_name: str) -> str:
     return f"Thanks for holding, I'm still checking with {calling_name}."
 
 
+def instruction_message(calling_name: str, text: str) -> str:
+    """The user's typed instruction (DC-10). The agent prompt looks for this exact prefix."""
+    return f"{calling_name}'s instruction: {text}. Work it in at the next natural turn."
+
+
 def add_message(content: str) -> dict[str, Any]:
     """A Vapi control message that adds a system message and lets the model respond to it."""
     return {
         "type": "add-message",
         "message": {"role": "system", "content": content},
         "triggerResponseEnabled": True,
+    }
+
+
+def add_message_quietly(content: str) -> dict[str, Any]:
+    """A Vapi control message that adds a system message without making the model speak now."""
+    return {
+        "type": "add-message",
+        "message": {"role": "system", "content": content},
+        "triggerResponseEnabled": False,
     }
 
 
