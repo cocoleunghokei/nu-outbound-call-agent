@@ -53,10 +53,16 @@ class DeepSeekChat:
         model: str,
         *,
         temperature: float | None = None,
+        max_tokens: int = MAX_TOKENS,
+        thinking: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.name = model
         self.temperature = temperature
+        self.max_tokens = max_tokens
+        # "enabled" or "disabled" (DeepSeek's `thinking.type`); None leaves the provider default,
+        # which is on: reasoning tokens count toward max_tokens and can use all of it.
+        self.thinking = thinking
         self._api_key = api_key
         self._url = f"{base_url.rstrip('/')}/chat/completions"
         self._transport = transport
@@ -71,10 +77,12 @@ class DeepSeekChat:
             "tools": list(tools),
             "stream": True,
             "stream_options": {"include_usage": True},
-            "max_tokens": MAX_TOKENS,
+            "max_tokens": self.max_tokens,
         }
         if self.temperature is not None:
             body["temperature"] = self.temperature
+        if self.thinking is not None:
+            body["thinking"] = {"type": self.thinking}
         return body
 
     async def reply(
