@@ -125,6 +125,8 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
     first_token: float | None = None
     usage: dict[str, int] = {}
     served = ""
+    finish_reason = ""
+    reasoned = False
     async for line in lines:
         if not line.startswith("data:"):
             continue
@@ -142,6 +144,10 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
             usage = {k: v for k, v in chunk["usage"].items() if isinstance(v, int)}
         for choice in chunk.get("choices") or []:
             delta = choice.get("delta") or {}
+            if isinstance(choice.get("finish_reason"), str):
+                finish_reason = choice["finish_reason"]
+            if delta.get("reasoning_content"):
+                reasoned = True
             content = delta.get("content")
             if isinstance(content, str) and content:
                 if first_token is None:
@@ -162,6 +168,7 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
         first_token_s=first_token,
         done_s=done,
         usage=usage,
+        finish=(finish_reason or "none") + (", reasoning" if reasoned else ""),
         served=served,
     )
 

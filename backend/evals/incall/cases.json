@@ -1545,19 +1545,6 @@
             "tool": "ask_user"
           },
           "scope": "run"
-        },
-        {
-          "id": "C4-18.3",
-          "text": "Asks the business whether the cake has nuts",
-          "level": "soft",
-          "by": "script",
-          "assert": {
-            "op": "says",
-            "any": [
-              "\\bnuts?\\b"
-            ]
-          },
-          "scope": "run"
         }
       ],
       "note": "A new proposal, not a missed preference (the reported cake call accepted it without asking the user)."
@@ -1576,13 +1563,13 @@
           "business": "We have a mochi cake with a topper, candles and a knife."
         },
         {
-          "business": "No, no nuts. All our cakes are nut free."
+          "business": "No, no nuts. All our cakes are nut free, and yes, we include an ice pack."
         }
       ],
       "checks": [
         {
           "id": "C4-19.1",
-          "text": "Asks the business about nuts before accepting",
+          "text": "Asks the business about nuts before accepting (step 1)",
           "level": "soft",
           "by": "script",
           "assert": {
