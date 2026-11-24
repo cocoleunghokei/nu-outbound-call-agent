@@ -7,15 +7,17 @@ const click = { button: 0, metaKey: false, ctrlKey: false, shiftKey: false, altK
 
 describe('NAV_ITEMS', () => {
   it('opens only screens the router knows, each on its own address', () => {
-    expect(NAV_ITEMS.map((item) => item.key)).toEqual(['chat', 'calls'])
+    expect(NAV_ITEMS.map((item) => item.key)).toEqual(['chat', 'calls', 'profile'])
     expect(routeOf(NAV_ITEMS[0].path, '')).toEqual({ name: 'home' })
     expect(routeOf(NAV_ITEMS[1].path, '')).toEqual({ name: 'history' })
+    expect(routeOf(NAV_ITEMS[2].path, '')).toEqual({ name: 'profile' })
   })
 })
 
 describe('activeNav', () => {
-  it('highlights Chat on the chat home and Calls on history and a live call', () => {
+  it('highlights Chat on the chat home, Profile on the profile and Calls on history and a live call', () => {
     expect(activeNav({ name: 'home' })).toBe('chat')
+    expect(activeNav({ name: 'profile' })).toBe('profile')
     expect(activeNav({ name: 'history' })).toBe('calls')
     expect(activeNav({ name: 'live', callId: CALL_ID })).toBe('calls')
     expect(activeNav({ name: 'live', callId: null })).toBe('calls')
