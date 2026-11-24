@@ -9,6 +9,8 @@ describe('routeOf', () => {
     expect(routeOf('/', '')).toEqual({ name: 'home' })
     expect(routeOf('/history', '')).toEqual({ name: 'history' })
     expect(routeOf('/history/', '')).toEqual({ name: 'history' })
+    expect(routeOf('/profile', '')).toEqual({ name: 'profile' })
+    expect(routeOf('/profile/', '?x=1')).toEqual({ name: 'profile' })
     expect(routeOf('/no-such-page', '?x=1')).toEqual({ name: 'home' })
   })
 

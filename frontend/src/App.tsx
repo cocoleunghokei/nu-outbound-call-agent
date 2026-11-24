@@ -1,6 +1,7 @@
 import { PrecallDemo } from './PrecallDemo'
 import { LiveCallDemo } from './LiveCallDemo'
 import { HistoryDemo } from './HistoryDemo'
+import { ProfileScreen } from './profile/ProfileScreen'
 import { livePath, navigate, useRoute, type Route } from './router'
 import { AppShell } from './shell/AppShell'
 
@@ -12,6 +13,8 @@ function Screen({ route }: { route: Route }) {
       return <LiveCallDemo key={route.callId ?? 'demo'} callId={route.callId} />
     case 'history':
       return <HistoryDemo />
+    case 'profile':
+      return <ProfileScreen />
     case 'home':
       return <PrecallDemo onCallStarted={(callId) => navigate(livePath(callId))} />
   }

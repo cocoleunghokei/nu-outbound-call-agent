@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * A small router on the browser's History API (no routing library: four screens don't
+ * A small router on the browser's History API (no routing library: five screens don't
  * need one). Screens never touch `window.history` themselves: they call `navigate`, and
  * `App.tsx` turns the current address into a screen with `routeOf`.
  *
@@ -9,6 +9,7 @@ import { useSyncExternalStore } from 'react'
  * - `/`                    chat home (pre-call)
  * - `/live?call=<call_id>` the live call; without `call`, the scripted demo call
  * - `/history`             past calls (`?open=<call_id>` opens one call's result)
+ * - `/profile`             the user's own profile and what the agent may share (ON-7)
  *
  * Old addresses from the `?screen=` switcher still work, because notifications already
  * shown and saved links carry them: `/?screen=history`, `/?screen=live&call=<id>` and
@@ -22,6 +23,7 @@ export type Route =
   | { name: 'home' }
   | { name: 'live'; callId: string | null }
   | { name: 'history' }
+  | { name: 'profile' }
 
 /** The address of a call's live screen. */
 export function livePath(callId: string | null): string {
@@ -41,6 +43,7 @@ export function routeOf(pathname: string, search: string): Route {
     return { name: 'live', callId: callId || null }
   }
   if (path === '/history') return { name: 'history' }
+  if (path === '/profile') return { name: 'profile' }
   if (path === '/') return legacyRoute(new URLSearchParams(search))
   return { name: 'home' }
 }
