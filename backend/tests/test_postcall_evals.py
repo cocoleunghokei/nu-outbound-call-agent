@@ -65,8 +65,11 @@ def _raw_case(**changes: object) -> dict[str, object]:
         _raw_case(transcript=[["Business", "Sorry, we're full."]]),
         _raw_case(transcipt=[]),
         _raw_case(expect={"outcome": "needs_follow_up", "spoken": [], "sumary": {}}),
+        _raw_case(
+            expect={"outcome": "needs_follow_up", "spoken": [], "summary": {"stafname": "M"}}
+        ),
     ],
-    ids=["role", "case key", "expect key"],
+    ids=["role", "case key", "expect key", "summary key"],
 )
 def test_a_typo_in_a_case_is_rejected(raw: dict[str, object]) -> None:
     with pytest.raises(ValueError, match="unknown"):
@@ -80,3 +83,14 @@ def test_a_wrong_cancelled_counts_like_a_wrong_booked() -> None:
     result = evaluate(wrongly_expected, PROFILE)
     assert result.results[0].status == "fail"
     assert result.wrong_booked
+
+
+def test_the_summary_check_catches_a_detail_that_shows_but_was_never_said() -> None:
+    # The checker itself: if the expected summary wrongly wanted the made-up staff name,
+    # item 11 must fail, because the page doesn't show it.
+    case = next(c for c in CASES if c.id == "summary_invented_details")
+    summary = {**case.expect["summary"], "staff_name": "Marco", "must_not_mention": []}
+    result = evaluate(replace(case, expect={**case.expect, "summary": summary}), PROFILE)
+    item = next(r for r in result.results if r.item == "11 summary")
+    assert item.status == "fail"
+    assert "staff_name shows None" in item.detail
