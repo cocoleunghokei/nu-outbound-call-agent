@@ -408,6 +408,18 @@ export interface RuleEvidence {
 
 export type ReportedOutcome =
   "booked" | "cancelled" | "rescheduled" | "needs_follow_up" | "refused_ai" | "wrong_number";
+/**
+ * extra: something the business added that the brief never mentioned, such as a fee. extra has no key or index.
+ */
+export type ResultItemRefKind = "task_var" | "constraint" | "preference" | "fallback" | "extra";
+/**
+ * as_asked: it matches the brief. changed: a different result the user accepted or a fallback allowed. not_met: not agreed, and the user must act. extra: a new cost or condition.
+ */
+export type ResultItemStatus = "as_asked" | "changed" | "not_met" | "extra";
+/**
+ * brief: the brief or a fallback the user wrote allowed it. user: the user said yes during the call. none: nobody approved it. Leave it out if unsure.
+ */
+export type ResultItemApproval = "brief" | "user" | "none";
 
 export interface ReportOutcomeArgs {
   outcome: ReportedOutcome;
@@ -416,7 +428,69 @@ export interface ReportOutcomeArgs {
    */
   business_confirmed: boolean;
   details?: OutcomeDetails;
+  /**
+   * Things the user must still act on or check. What changed on the call goes in result_items.
+   */
   open_items?: string[];
+  /**
+   * One row per thing the user asked for, or that the business added, saying what was actually agreed (asked vs. got). Include rows that match the brief too (status as_asked). Fill it when you report the outcome. Leave it out if the call ended before anything was discussed.
+   *
+   * @maxItems 12
+   */
+  result_items?:
+    | []
+    | [ResultItem]
+    | [ResultItem, ResultItem]
+    | [ResultItem, ResultItem, ResultItem]
+    | [ResultItem, ResultItem, ResultItem, ResultItem]
+    | [ResultItem, ResultItem, ResultItem, ResultItem, ResultItem]
+    | [ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem]
+    | [ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem]
+    | [ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem]
+    | [ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem, ResultItem]
+    | [
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem
+      ]
+    | [
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem
+      ]
+    | [
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem,
+        ResultItem
+      ];
+  /**
+   * One sentence on what the user must do next, e.g. Call to confirm the cake is nut-free. Leave it out when nothing is needed.
+   */
+  follow_up?: string;
 }
 export interface OutcomeDetails {
   /**
@@ -435,6 +509,45 @@ export interface OutcomeDetails {
    * The name of the person at the business you spoke with, exactly as they said it, e.g. Marco. Never the business's own name. Leave it out if they gave no name.
    */
   staff_name?: string;
+}
+export interface ResultItem {
+  ref: ResultItemRef;
+  /**
+   * One to three words naming the row, e.g. Cake, Pickup, Ice pack
+   */
+  label: string;
+  /**
+   * What was agreed, in plain words, not what was first offered
+   */
+  got: string;
+  status: ResultItemStatus;
+  /**
+   * Why, in plain words. Leave it out for as_asked.
+   */
+  reason?: string;
+  approved_by?: ResultItemApproval;
+  /**
+   * For a fee or price: the amount in whole cents, e.g. 300 for $3. Leave it out otherwise.
+   */
+  cost_cents?: number;
+  /**
+   * The business's own words that support this row, copied as they said them. The system checks that they really said it. A row with no matching words is shown less prominently or left out.
+   */
+  business_said?: string;
+}
+/**
+ * Which part of the brief this row is about. The system copies the user's own words from it for the Asked column, so do not write them yourself.
+ */
+export interface ResultItemRef {
+  kind: ResultItemRefKind;
+  /**
+   * For task_var: the task variable name, e.g. party_size
+   */
+  key?: string;
+  /**
+   * For constraint, preference or fallback: its position in that list in the brief, starting at 0
+   */
+  index?: number;
 }
 
 export interface CallEventBase {
