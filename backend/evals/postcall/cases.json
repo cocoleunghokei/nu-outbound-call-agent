@@ -1,5 +1,5 @@
 {
-  "_note": "Post-call eval cases (items 10-13 of the AI evaluation scope). Fake data only. Each case is one ended call: the agent's report_outcome (or null), Vapi's end reason, the transcript, and the agent's decisions and pings in call order. 'expect' is the right answer. Items 10 (outcome) and 12 (spoken fields) run against app/postcall/decide.py. Items 11 (summary) and 13 (money guardrail) are not built yet: their expectations are recorded so the evaluator and the future code can use them.",
+  "_note": "Post-call eval cases (items 10-13 of the AI evaluation scope). Fake data only. Each case is one ended call: the agent's report_outcome (or null), when the call happened (called_at, UTC, optional), Vapi's end reason, the transcript, and the agent's decisions and pings in call order. 'expect' is the right answer. Items 10 (outcome) and 12 (spoken fields) run against app/postcall/decide.py. Item 11 (summary) runs against confirmed_details in app/postcall/decide.py; its open-item expectations are judged in the in-call eval. Item 13 (money guardrail) is not built yet: its expectations are recorded so the evaluator and the future code can use them.",
   "profile": [
     {
       "key": "full_name",
@@ -268,7 +268,7 @@
     },
     {
       "id": "weekday_only",
-      "about": "The business says the time and a weekday but no date. Not enough evidence.",
+      "about": "The business says the time and a weekday but no date, and the case has no called_at, so the weekday can't be placed. Not enough evidence.",
       "report": {
         "outcome": "booked",
         "business_confirmed": true,
@@ -297,7 +297,7 @@
     },
     {
       "id": "confirmation_number",
-      "about": "The confirmation number alone is enough evidence.",
+      "about": "The confirmation number alone is enough evidence for Booked. The agent's date and time were never said on the call, so the summary doesn't show them.",
       "report": {
         "outcome": "booked",
         "business_confirmed": true,
@@ -324,9 +324,11 @@
           "calling_name"
         ],
         "summary": {
-          "date": "2026-11-12",
-          "time": "19:00",
-          "confirmation_number": "TB-1234"
+          "confirmation_number": "TB-1234",
+          "must_not_mention": [
+            "date",
+            "time"
+          ]
         }
       }
     },
@@ -1007,6 +1009,268 @@
       ],
       "expect": {
         "outcome": "booked",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "summary_invented_details",
+      "about": "The business confirms the date and time, so the call is Booked. The agent also reports a staff name and a confirmation number that nobody said: the summary must not show them.",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-10-24",
+          "time": "19:30",
+          "staff_name": "Marco",
+          "confirmation_number": "4417"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a table for 2 at 7:30 on Saturday, October 24th?"
+        ],
+        [
+          "business",
+          "You're all set for 7:30 on October 24th."
+        ]
+      ],
+      "expect": {
+        "outcome": "booked",
+        "spoken": [
+          "calling_name"
+        ],
+        "summary": {
+          "date": "2026-10-24",
+          "time": "19:30",
+          "must_not_mention": [
+            "staff name",
+            "confirmation number"
+          ]
+        }
+      }
+    },
+    {
+      "id": "weekday_this_week",
+      "about": "In-call G-11: called on Tue 17 Nov, the business says 'Thursday at 2'. Thursday can only be 19 Nov. Booked.",
+      "called_at": "2026-11-17T19:00:00Z",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-11-19",
+          "time": "14:00"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a check-up on Thursday before 3pm?"
+        ],
+        [
+          "business",
+          "You're all set for Thursday at 2."
+        ],
+        [
+          "business",
+          "Okay, bye now."
+        ]
+      ],
+      "expect": {
+        "outcome": "booked",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "weekday_after_counteroffer",
+      "about": "In-call T-01: Thursday 4pm is offered, then the business books Friday at 10 (20 Nov). Booked.",
+      "called_at": "2026-11-17T19:00:00Z",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-11-20",
+          "time": "10:00",
+          "staff_name": "Dr. Rivera"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a check-up on Thursday before 3pm?"
+        ],
+        [
+          "business",
+          "The only Thursday slot is 4pm."
+        ],
+        [
+          "business",
+          "If it helps, Friday 10am with Dr. Rivera is open too."
+        ],
+        [
+          "business",
+          "Great, you're booked for Friday at 10 with Dr. Rivera."
+        ]
+      ],
+      "expect": {
+        "outcome": "booked",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "weekday_same_as_call_day",
+      "about": "Called on a Tuesday, the business says 'Tuesday at 2': today or next week? Not enough evidence.",
+      "called_at": "2026-11-17T19:00:00Z",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-11-24",
+          "time": "14:00"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a check-up on Thursday before 3pm?"
+        ],
+        [
+          "business",
+          "You're booked for Tuesday at 2."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "weekday_next",
+      "about": "'Next Thursday' could be 19 or 26 Nov. Not enough evidence.",
+      "called_at": "2026-11-17T19:00:00Z",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-11-19",
+          "time": "14:00"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a check-up on Thursday before 3pm?"
+        ],
+        [
+          "business",
+          "You're booked for next Thursday at 2."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "weekday_wrong_week",
+      "about": "The agent reports 26 Nov, but 'Thursday' said on Tue 17 Nov is 19 Nov. Not enough evidence.",
+      "called_at": "2026-11-17T19:00:00Z",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-11-26",
+          "time": "14:00"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a check-up on Thursday before 3pm?"
+        ],
+        [
+          "business",
+          "You're booked for Thursday at 2."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "weekday_with_other_date",
+      "about": "The business says 'Thursday, November 26th': the named date wins, and it isn't the agent's 19 Nov.",
+      "called_at": "2026-11-17T19:00:00Z",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-11-19",
+          "time": "14:00"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a check-up on Thursday before 3pm?"
+        ],
+        [
+          "business",
+          "You're booked for Thursday, November 26th at 2."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
+        "spoken": [
+          "calling_name"
+        ]
+      }
+    },
+    {
+      "id": "weekday_near_midnight",
+      "about": "Called at 04:30 UTC: Tuesday 6:30pm in Hawaii, but already Wednesday 12:30am in Boston. 'Wednesday' could be today or next week. Not enough evidence.",
+      "called_at": "2026-11-18T04:30:00Z",
+      "report": {
+        "outcome": "booked",
+        "business_confirmed": true,
+        "details": {
+          "date": "2026-11-18",
+          "time": "14:00"
+        }
+      },
+      "ended_reason": "assistant-ended-call",
+      "transcript": [
+        [
+          "agent",
+          "Hi, I'm an AI assistant calling on behalf of Alex. This call is transcribed. Could I book a check-up on Thursday before 3pm?"
+        ],
+        [
+          "business",
+          "You're booked for Wednesday at 2."
+        ]
+      ],
+      "expect": {
+        "outcome": "needs_follow_up",
         "spoken": [
           "calling_name"
         ]

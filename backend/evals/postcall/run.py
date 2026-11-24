@@ -3,8 +3,10 @@
 Free: no API calls, no database.
 
 Prints every case's result per evaluation item, the number of wrong "booked" outcomes (the
-worst error; the target is 0), and the P50 / P95 time of the outcome decision. Items 11
-(summary) and 13 (money guardrail) are listed as "not built" with their expected answers.
+worst error; the target is 0), and the P50 / P95 time of the outcome decision. Item 11
+(summary) checks the details the result page would show; its open-items expectations are
+listed as "in-call" (judged in the in-call eval). Item 13 (money guardrail) is listed as
+"not built" with its expected answers.
 Exit 0 when nothing fails, 1 otherwise.
 
 The latency here is the rule itself, in-process. The end-to-end time from the call ending
@@ -27,17 +29,22 @@ def main() -> int:
         print(f"{case.id}: {case.about}")
         for result in report.results:
             counts[(result.item, result.status)] += 1
-            mark = {"pass": "PASS", "fail": "FAIL", "not_built": "TODO"}[result.status]
+            mark = {"pass": "PASS", "fail": "FAIL", "not_built": "TODO", "in_call": "INCALL"}[
+                result.status
+            ]
             print(f"    {mark} {result.item}: {result.detail}")
 
     print()
     for item in ("10 outcome", "12 shared", "11 summary", "13 guardrail"):
         passed, failed = counts[(item, "pass")], counts[(item, "fail")]
         pending = counts[(item, "not_built")]
+        in_call = counts[(item, "in_call")]
         if passed or failed:
             print(f"{item}: {passed}/{passed + failed} passed")
         if pending:
             print(f"{item}: {pending} cases ready, not built yet")
+        if in_call:
+            print(f"{item}: {in_call} open-item checks are judged in the in-call eval")
     wrong_booked = sum(report.wrong_booked for report in reports)
     print(f"wrong booked/cancelled/rescheduled outcomes: {wrong_booked} (target 0)")
     times = [report.outcome_ms for report in reports]
