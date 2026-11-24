@@ -293,19 +293,22 @@ describe('deriveLiveCall feed (DC-4, DC-5, DC-11)', () => {
     expect(view.feed[0]).toMatchObject({ action: 'negotiate' })
   })
 
-  it('shows pause, resume and end, but not instructions (DC-10 has its own owner)', () => {
+  it('shows pause, resume, end and instructions that carry their text', () => {
     const view = deriveLiveCall([
       ev(1, 'command.applied', { command: 'pause' }),
       ev(2, 'command.applied', { command: 'resume' }),
       ev(3, 'command.applied', { command: 'instruction' }),
-      ev(4, 'command.applied', { command: 'end' }),
-      ev(5, 'command.applied', { command: 7 }),
+      ev(4, 'command.applied', { command: 'instruction', text: '  ask about Saturday ' }),
+      ev(5, 'command.applied', { command: 'end' }),
+      ev(6, 'command.applied', { command: 7 }),
     ])
     expect(view.feed.map((f) => (f.kind === 'command' ? f.command : f.kind))).toEqual([
       'pause',
       'resume',
+      'instruction',
       'end',
     ])
+    expect(view.feed[2]).toMatchObject({ text: 'ask about Saturday' })
   })
 
   it('records when the pause started and clears it on resume', () => {

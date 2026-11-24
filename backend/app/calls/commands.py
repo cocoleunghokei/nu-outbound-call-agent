@@ -4,8 +4,7 @@ Each command changes the call's state in one transaction under the call lock and
 control-URL messages that make it happen on the line. ``200`` means the command was accepted
 and queued, not that the business has heard it yet; the screen follows the events.
 
-``instruction`` (DC-10) belongs to the pre-call owner and is answered ``422`` here until that
-handler lands.
+``instruction`` (DC-10) hands the agent a typed instruction to work in at its next natural turn.
 """
 
 import uuid
@@ -30,6 +29,7 @@ from app.calls.store import (
     CONTROL_GOODBYE,
     CONTROL_HANGUP,
     CONTROL_HOLD,
+    CONTROL_INSTRUCTION,
     CONTROL_MUTE,
     CONTROL_REASSURE,
     CONTROL_UNMUTE,
@@ -60,6 +60,8 @@ HANGUP_AFTER_S = 6
 
 TERMINAL_STATUSES = frozenset({"ended", "failed"})
 PAUSABLE_STATUSES = frozenset({"talking", "waiting_on_you", "in_phone_menu"})
+# An instruction can be sent whenever the line is up, including while paused.
+INSTRUCTABLE_STATUSES = PAUSABLE_STATUSES | {"on_hold"}
 
 
 def _call_state_error(message: str) -> ApiError:
@@ -186,10 +188,37 @@ async def end_by_user(conn: AsyncConnection[Any], call: CallRow) -> None:
     await begin_ending(conn, call, messages.goodbye_line(name))
 
 
+async def send_instruction(conn: AsyncConnection[Any], call: CallRow, text: str | None) -> None:
+    """Record the user's instruction and queue it for the agent, without making it speak now.
+
+    The text is cleaned like a free-text reply (control characters out, spaces collapsed,
+    200 characters). It goes to the model as a system message, never as speech, so it is used
+    at the next natural turn, also after Resume.
+    """
+    if call.status not in INSTRUCTABLE_STATUSES:
+        raise _call_state_error("You can send an instruction once they pick up")
+    cleaned = messages.sanitize_reply_text(text or "")
+    if not cleaned:
+        raise ApiError("invalid_instruction", 422, "The instruction is empty", False)
+    name = await calling_name(conn, call.id)
+    await append_event(
+        conn,
+        call_id=call.id,
+        type="command.applied",
+        source="user",
+        payload={"command": "instruction", "text": cleaned},
+        occurred_at=datetime.now(UTC),
+    )
+    await queue_control(
+        conn,
+        call.id,
+        CONTROL_INSTRUCTION,
+        {"message": messages.add_message_quietly(messages.instruction_message(name, cleaned))},
+    )
+
+
 async def apply_command(conn: AsyncConnection[Any], call: CallRow, command: CallCommand) -> None:
     """Apply one command to a locked call. Raises ApiError for a command the call can't take."""
-    if command.type == CallCommandType.instruction:
-        raise ApiError("unsupported_command", 422, "Instructions are not available yet", False)
     terminal = call.ended_at is not None or call.status in TERMINAL_STATUSES
     ending = terminal or await is_ending(conn, call.id)
     if command.type == CallCommandType.end:
@@ -198,7 +227,9 @@ async def apply_command(conn: AsyncConnection[Any], call: CallRow, command: Call
         return  # ending twice is harmless
     if ending:
         raise _call_state_error("The call is ending")
-    if command.type == CallCommandType.pause:
+    if command.type == CallCommandType.instruction:
+        await send_instruction(conn, call, command.text)
+    elif command.type == CallCommandType.pause:
         await pause_call(conn, call)
     else:
         await resume_call(conn, call)
@@ -212,7 +243,9 @@ async def send_command(
     key: Annotated[uuid.UUID, Depends(idempotency_key)],
     pool: Annotated[AsyncConnectionPool, Depends(get_pool)],
 ) -> dict[str, str]:
-    """Pause, Resume or End the call. Returns ``{"call_id", "command", "status": "accepted"}``.
+    """Pause, Resume or End the call, or send it an instruction (DC-10).
+
+    Returns ``{"call_id", "command", "status": "accepted"}``.
 
     Pause and Resume on a call that is already in that state, and End on a call that is
     already ending, change nothing and still answer ``200``.

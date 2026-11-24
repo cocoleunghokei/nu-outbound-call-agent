@@ -265,6 +265,26 @@ describe('MockCallEngine commands (DC-11)', () => {
     expect(view.feed.some((f) => f.kind === 'command' && f.command === 'end')).toBe(true)
   })
 
+  it('logs an instruction with its text, also while paused, and refuses bad ones', async () => {
+    const call = startCall()
+    expect((await call.engine.command(MOCK_CALL_ID, 'instruction', 'ask about Saturday')).kind).toBe(
+      'error',
+    )
+    await call.nextPing()
+    expect((await call.engine.command(MOCK_CALL_ID, 'instruction', '  ask about\nSaturday ')).kind).toBe(
+      'accepted',
+    )
+    await call.engine.command(MOCK_CALL_ID, 'pause')
+    expect((await call.engine.command(MOCK_CALL_ID, 'instruction', '4pm is fine too')).kind).toBe(
+      'accepted',
+    )
+    expect((await call.engine.command(MOCK_CALL_ID, 'instruction', '   ')).kind).toBe('error')
+    const texts = call
+      .view()
+      .feed.flatMap((f) => (f.kind === 'command' && f.command === 'instruction' ? [f.text] : []))
+    expect(texts).toEqual(['ask about Saturday', '4pm is fine too'])
+  })
+
   it('emits nothing after the call ends, and refuses pause afterwards', async () => {
     const call = startCall()
     await call.engine.command(MOCK_CALL_ID, 'end')

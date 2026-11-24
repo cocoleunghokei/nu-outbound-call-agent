@@ -10,7 +10,12 @@ describe('availableControls', () => {
   })
 
   it('offers Resume only while on hold', () => {
-    expect(availableControls('on_hold', false)).toEqual({ pause: false, resume: true, end: true })
+    expect(availableControls('on_hold', false)).toEqual({
+      pause: false,
+      resume: true,
+      end: true,
+      instruct: true,
+    })
     expect(availableControls('talking', false).resume).toBe(false)
   })
 
@@ -20,10 +25,24 @@ describe('availableControls', () => {
   })
 
   it('allows nothing once the call is over', () => {
-    const none = { pause: false, resume: false, end: false }
+    const none = { pause: false, resume: false, end: false, instruct: false }
     expect(availableControls('talking', true)).toEqual(none)
     expect(availableControls('ended', false)).toEqual(none)
     expect(availableControls('failed', false)).toEqual(none)
+  })
+})
+
+describe('availableControls instruct (DC-10)', () => {
+  it('allows an instruction whenever the line is up, also while paused', () => {
+    for (const status of ['talking', 'waiting_on_you', 'in_phone_menu', 'on_hold'] as const) {
+      expect(availableControls(status, false).instruct).toBe(true)
+    }
+  })
+
+  it('does not allow one before pickup or after the end', () => {
+    expect(availableControls('dialing', false).instruct).toBe(false)
+    expect(availableControls('creating', false).instruct).toBe(false)
+    expect(availableControls('talking', true).instruct).toBe(false)
   })
 })
 
@@ -44,6 +63,7 @@ describe('commandText', () => {
     expect(commandText('pause')).toMatch(/paused/)
     expect(commandText('resume')).toMatch(/resumed/)
     expect(commandText('end')).toMatch(/ended/)
+    expect(commandText('instruction')).toMatch(/instruction/)
     expect(commandText('mystery')).toBe('You sent a command.')
   })
 })
