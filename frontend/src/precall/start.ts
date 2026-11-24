@@ -128,7 +128,7 @@ export function describeError(error: ApiError, step: 'save' | 'start'): string {
     return "I couldn't reach the server. Check your connection, then tap Start again."
   }
   if (error.code === 'brief_in_use') {
-    return 'A call already started from this plan, so I can’t change it. Tap "+ New call" to set up another.'
+    return 'A call already started from this plan, so I can’t change it. Tap "Restart" to set up another.'
   }
   if (error.code === 'invalid_phone') return `${error.message} Tap Edit next to the number to fix it.`
   const what = step === 'save' ? "I couldn't save your plan" : "I couldn't start the call"

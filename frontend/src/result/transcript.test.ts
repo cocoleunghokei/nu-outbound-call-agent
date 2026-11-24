@@ -59,6 +59,45 @@ describe('transcriptRows', () => {
     expect(rows[0].text).toBe('Hi there.')
   })
 
+  it('joins fragments from the same speaker that start within a few seconds', () => {
+    const rows = transcriptRows(
+      [
+        line(1, 'agent', 'So that’s a marshmallow birthday cake with topper, candles,', '2026-11-24T18:02:21Z'),
+        line(2, 'agent', 'knife,', '2026-11-24T18:02:22Z'),
+        line(3, 'agent', 'and an ice pack.', '2026-11-24T18:02:23Z'),
+        line(4, 'business', 'Yes.', '2026-11-24T18:02:27Z'),
+      ],
+      'Shop',
+    )
+    expect(rows.map((r) => r.text)).toEqual([
+      'So that’s a marshmallow birthday cake with topper, candles, knife, and an ice pack.',
+      'Yes.',
+    ])
+    expect(rows[0].seq).toBe(1)
+    expect(rows[0].seqs).toEqual([1, 2, 3]) // a result row's evidence can point at any of them
+    expect(rows[1].seqs).toEqual([4])
+    expect(rows[0].clock).toBe('00:00')
+  })
+
+  it('keeps same-speaker lines apart when there is a longer pause between them', () => {
+    const rows = transcriptRows(
+      [
+        line(1, 'agent', 'One moment, please.', '2026-11-24T18:00:00Z'),
+        line(2, 'agent', 'Thanks for waiting.', '2026-11-24T18:00:30Z'),
+      ],
+      'Shop',
+    )
+    expect(rows).toHaveLength(2)
+  })
+
+  it('never joins lines without a readable time', () => {
+    const rows = transcriptRows(
+      [line(1, 'agent', 'Hi.', null), line(2, 'agent', 'Hello.', null), line(3, 'agent', 'Yes.', 'bad')],
+      'Shop',
+    )
+    expect(rows).toHaveLength(3)
+  })
+
   it('returns an empty list for an empty transcript', () => {
     expect(transcriptRows([], 'Shop')).toEqual([])
   })

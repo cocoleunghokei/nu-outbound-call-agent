@@ -41,7 +41,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
   const [runStarter] = useState(() =>
     singleFlight((run: Starter, ...args: Parameters<Starter>) => run(...args)),
   )
-  // What has been saved for this draft, and which draft it is; both reset on "new call".
+  // What has been saved for this draft, and which draft it is; both reset on "restart".
   const session = useRef<SaveSession>(emptySession)
   const draftGeneration = useRef(0)
   const feedEnd = useRef<HTMLDivElement>(null)
@@ -65,9 +65,9 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
     setText('')
   }
 
-  /** Dispatch a chat action; a new call also forgets what was saved for the old draft. */
+  /** Dispatch a chat action; a restart also forgets what was saved for the old draft. */
   function act(action: ChatAction) {
-    if (action.type === 'new_call') {
+    if (action.type === 'restart') {
       draftGeneration.current += 1
       session.current = emptySession
       setServer(null)
@@ -89,7 +89,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
     const out = await runStarter(starter, review.brief, session.current)
     if (out === null) return // a Start is already in flight; it clears `busy` itself
     setBusy(false)
-    if (generation !== draftGeneration.current) return // the user moved on to a new call
+    if (generation !== draftGeneration.current) return // the user restarted
     session.current = out.session
     const result = out.result
     if (result.server) setServer(result.server)
@@ -129,8 +129,8 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
             </span>
           )}
         </div>
-        <button type="button" className="precall-pill" onClick={() => act({ type: 'new_call' })}>
-          + New call
+        <button type="button" className="precall-pill" onClick={() => act({ type: 'restart' })}>
+          Restart
         </button>
       </header>
 

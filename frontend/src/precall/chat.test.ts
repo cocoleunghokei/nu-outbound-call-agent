@@ -430,20 +430,21 @@ describe('phone number in the chat (PC-7)', () => {
   })
 })
 
-describe('starting a new call any time (PC-1)', () => {
+describe('restarting any time (PC-1)', () => {
   it('drops an unfinished draft and goes back to the home chips', () => {
-    const s = run({ type: 'pick_custom' }, send('Hold a cake'), { type: 'new_call' })
+    const s = run({ type: 'pick_custom' }, send('Hold a cake'), { type: 'restart' })
     expect(s.stage).toBe('home')
     expect(s.draft).toEqual({})
     expect(s.awaiting).toBeNull()
     expect(s.chips.map((c) => c.label)).toContain('Custom call')
   })
 
-  it('keeps the chat history and shows no new-call chip once a draft is ready (the header button is the only one)', () => {
+  it('clears the chat back to the greeting once a draft is ready, so the old form does not pile up', () => {
     const ready = run({ type: 'pick_template', templateKey: 'doctor_booking' }, submit(DOCTOR_FORM))
     expect(ready.chips).toEqual([])
-    const again = reduce(ready, { type: 'new_call' })
-    expect(again.messages.length).toBeGreaterThan(ready.messages.length)
+    const again = reduce(ready, { type: 'restart' })
+    expect(again).toEqual(initialChatState(ctx))
+    expect(again.messages.length).toBeLessThan(ready.messages.length)
     expect(again.stage).toBe('home')
   })
 })
@@ -460,7 +461,7 @@ describe('ignored input', () => {
     expect(reduce(mid, { type: 'pick_custom' })).toBe(mid)
   })
 
-  it('points to the "+ New call" button when the user types after the draft is ready', () => {
+  it('points to the "Restart" button when the user types after the draft is ready', () => {
     const ready = run(
       { type: 'pick_custom' },
       send('Hold a cake'),
@@ -470,7 +471,7 @@ describe('ignored input', () => {
     )
     expect(ready.stage).toBe('draft_ready')
     const s = reduce(ready, send('hello?'))
-    expect(lastAgent(s)).toContain('+ New call')
+    expect(lastAgent(s)).toContain('Restart')
     expect(completedDraft(s)).toEqual(completedDraft(ready))
   })
 

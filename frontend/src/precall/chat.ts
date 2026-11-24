@@ -69,7 +69,8 @@ export type ChatAction =
   /** Review the plan: the template form was filled in (see `FormSubmission`). */
   | { type: 'submit_form'; form: FormSubmission }
   | { type: 'send'; text: string }
-  | { type: 'new_call' }
+  /** Start over: clears the chat back to the greeting, dropping any draft and the history. */
+  | { type: 'restart' }
   /** Finish the current PC-5 list. `label` is what the user tapped, shown as their reply. */
   | { type: 'list_done'; label: string }
   /** Change one part of the call from the review card (PC-6). */
@@ -207,7 +208,7 @@ const LIST_PROMPTS: Record<ListKey, ListPrompt> = {
     placeholder: 'Something you are OK with, e.g. Friday morning',
   },
   never_agree: {
-    ask: "Anything I should never agree to? I'll always check with you before any deposit or fee.",
+    ask: 'Anything I should never agree to?',
     again: () => 'Got it. Anything else I should never agree to?',
     none: 'Nothing else',
     placeholder: 'Something I should never agree to',
@@ -719,9 +720,10 @@ export function chatReducer(ctx: ChatContext) {
         const text = action.text.trim()
         return text === '' ? state : say(state, 'agent', text)
       }
-      case 'new_call':
-        // PC-1: the user can start a new call at any time; an unfinished draft is dropped.
-        return showHome({ ...say(state, 'user', 'New call'), chips: [] }, ctx, 'Sure. Who should I call?')
+      case 'restart':
+        // PC-1: the user can start over at any time. The chat goes back to the greeting, so a
+        // finished call's form and review do not pile up above the next one.
+        return initialChatState(ctx)
       case 'send': {
         const text = action.text.trim()
         if (text === '') return state
@@ -733,7 +735,7 @@ export function chatReducer(ctx: ChatContext) {
         if (state.stage === 'form') {
           return say(say(state, 'user', text), 'agent', 'Fill in the form above, then tap Review plan.')
         }
-        return say(say(state, 'user', text), 'agent', 'Tap "+ New call" at the top to set up another call.')
+        return say(say(state, 'user', text), 'agent', 'Tap "Restart" at the top to set up another call.')
       }
     }
   }
