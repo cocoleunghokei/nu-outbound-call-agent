@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+<defs><linearGradient id="bg-male" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5AA2FF"/><stop offset="1" stop-color="#1655EC"/></linearGradient>
+<clipPath id="sq-male"><rect width="1024" height="1024" rx="228"/></clipPath></defs>
+<g clip-path="url(#sq-male)">
+<rect width="1024" height="1024" fill="url(#bg-male)"/>
+<circle cx="512" cy="480" r="360" fill="#fff" opacity=".08"/>
+<circle cx="512" cy="480" r="452" fill="none" stroke="#fff" stroke-width="18" opacity=".1"/>
+<path d="M150 1060c14-170 160-280 362-280s348 110 362 280z" fill="#0E2C73"/>
+
+<rect x="452" y="640" width="120" height="150" rx="50" fill="#EEC2A2"/>
+<ellipse cx="512" cy="468" rx="190" ry="214" fill="#F6D4BE"/>
+<path d="M318 450c-8-140 76-226 194-226s206 80 194 222c-26-48-66-78-110-86-66 40-164 66-278 90z" fill="#262A33"/>
+<ellipse cx="444" cy="500" rx="17" ry="22" fill="#20160F"/><ellipse cx="580" cy="500" rx="17" ry="22" fill="#20160F"/>
+<circle cx="404" cy="564" r="28" fill="#F48B8B" opacity=".35"/><circle cx="620" cy="564" r="28" fill="#F48B8B" opacity=".35"/>
+<path d="M466 580q46 38 92 0" stroke="#A8553F" stroke-width="16" fill="none" stroke-linecap="round"/>
+<path d="M290 488a222 236 0 0 1 444 0" stroke="#14234B" stroke-width="38" fill="none" stroke-linecap="round"/>
+<rect x="262" y="420" width="80" height="150" rx="40" fill="#14234B"/><rect x="682" y="420" width="80" height="150" rx="40" fill="#14234B"/>
+<path d="M300 566q0 190 128 210" stroke="#14234B" stroke-width="26" fill="none" stroke-linecap="round"/>
+
+<circle cx="436" cy="780" r="58" fill="#14234B"/><path d="M436 736C443.48 772.52 443.48 772.52 480 780C443.48 787.48 443.48 787.48 436 824C428.52 787.48 428.52 787.48 392 780C428.52 772.52 428.52 772.52 436 736Z" fill="#FFD34D"/>
+<path d="M790 180C801.9 238.1 801.9 238.1 860 250C801.9 261.9 801.9 261.9 790 320C778.1 261.9 778.1 261.9 720 250C778.1 238.1 778.1 238.1 790 180Z" fill="#fff" /><path d="M866 320C871.1 344.9 871.1 344.9 896 350C871.1 355.1 871.1 355.1 866 380C860.9 355.1 860.9 355.1 836 350C860.9 344.9 860.9 344.9 866 320Z" fill="#fff" opacity=".75"/>
+</g></svg>
