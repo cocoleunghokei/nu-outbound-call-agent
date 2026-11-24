@@ -37,6 +37,11 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
   ``details.staff_name`` is a name the business never said (SM-06 put the restaurant's own
   name there). Dates, times and confirmation numbers are checked after the call instead
   (``app/postcall/decide.py``).
+- **Wrong day** (``report_day_gate``): ``report_outcome`` is refused when ``details.date`` is not
+  the day the user typed ("Dec 23", read into 2026-12-23 by ``requested_day``), not a day a date
+  rule in the brief allows, and not a day the business named. The requirement list anchors the
+  date, so a misheard transcript or a guessed month can't become the booking's date (a call
+  reported 2026-10-23 for December 23).
 - **Second counter** (``counter_gate``): ``report_decision`` counter is refused when the
   agent already countered and the user hasn't answered a ping since (Q9: counter once, then
   ask). C4-05 countered twice instead of pinging. After the user answers ("ask for Friday
@@ -50,14 +55,16 @@ without a database; ``load_facts`` reads that snapshot inside the ingress transa
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
 
 from app.calls.prompt import one_line
+from app.calls.requested_day import business_named_day
 from app.calls.scoring import OfferScore
 from app.calls.store import is_ending
 
@@ -143,6 +150,17 @@ def missing_detail_refusal(fields: tuple[str, ...]) -> str:
         f"If the business said it or it is clear from the call (for example the party size "
         f"you asked for and they didn't change), call again with it in offer. If not, ask "
         f"them for the {names} first. Never accept or take a fallback on a guess."
+    )
+
+
+def wrong_day_refusal(reported: date, asked_for: date) -> str:
+    """The refusal for a report whose date is not the day the user asked for."""
+    return (
+        f"Not done: details.date is {reported.isoformat()}, but the user asked for "
+        f"{asked_for:%A} {asked_for.day} {asked_for:%B %Y} ({asked_for.isoformat()}) and the "
+        f"business never said {reported.isoformat()}. The call is transcribed, so a misheard "
+        f"word is not another day. Call report_outcome again with date {asked_for.isoformat()}, "
+        "or leave date out if the business agreed to a different day."
     )
 
 
@@ -281,6 +299,32 @@ def unsaid_name_gate(arguments: Mapping[str, Any], facts: CallFacts) -> str | No
     if folded in " ".join(facts.business_said.split()):
         return None
     return REFUSED_UNSAID_NAME
+
+
+def report_day_gate(
+    arguments: Mapping[str, Any],
+    asked_for: date | None,
+    allowed_days: Collection[date],
+    facts: CallFacts,
+) -> str | None:
+    """The refusal for a ``details.date`` that contradicts the day the user asked for, else None.
+
+    The requirement list is the anchor: the date in the report must be the day the user typed
+    (``asked_for``), a day one of the brief's date rules allows, or a day the business itself
+    named on the call (``business_named_day``, which is generous on purpose). Nothing is checked
+    when the user's day couldn't be read from the brief, or when the report has no valid date.
+    """
+    details = arguments.get("details")
+    value = details.get("date") if isinstance(details, Mapping) else None
+    try:
+        reported = date.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        reported = None
+    if asked_for is None or reported is None or reported == asked_for:
+        return None
+    if reported in allowed_days or business_named_day(facts.business_said, reported):
+        return None
+    return wrong_day_refusal(reported, asked_for)
 
 
 def missing_detail_gate(

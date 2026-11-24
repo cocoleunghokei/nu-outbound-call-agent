@@ -616,3 +616,110 @@ def test_a_spoken_time_with_a_space_counts_with_am_or_pm() -> None:
     assert mentions_time("great. 7 30 p.m. then.", (19, 30))
     assert not mentions_time("a table for 7 30 people", (19, 30))
     assert not mentions_time("7 30 am", (19, 30))
+
+
+# --- the brief's day anchors the date --------------------------------------------------
+
+DEC_23 = date(2026, 12, 23)
+DEC_23_730 = report(outcome="booked", details={"date": "2026-12-23", "time": "19:30"})
+
+# The reported call, line for line: the user typed "Dec 23" and the agent said it, but the
+# speech-to-text wrote "deck 23", and the time was written "7 30".
+REPORTED_CALL: list[Turn] = [
+    ("agent", "Hi. I'm an AI assistant calling on behalf of Hokey."),
+    ("agent", "This call is transcribed. I'd like to book a table for"),
+    ("agent", "4 on deck 23 at 7 PM."),
+    ("business", "We don't have 7 PM. Does 8 work for you?"),
+    ("agent", "Let me check with Hokey on the time."),
+    ("agent", "I'm just checking with Hokey on the time."),
+    ("agent", "1 moment."),
+    ("agent", "Thanks for holding. I'm still checking with Ho K."),
+    ("agent", "Would 7 30 work instead?"),
+    ("business", "Yeah. Sure."),
+    ("agent", "Great. 7 30 PM then."),
+    ("agent", "Just to confirm, we'd need a window seat and vegetarian options."),
+    ("business", "We only have salad"),
+    ("business", "Is that okay?"),
+    ("agent", "Salad is fine. Thanks. And can you confirm the window seat?"),
+    ("business", "Yeah. We have went to the sea."),
+    ("agent", "Goodbye."),
+]
+
+
+def decide_anchored(
+    rep: ReportOutcomeArgs, turns: list[Turn], requested: date | None, **kwargs: Any
+) -> str:
+    return decide_outcome(
+        rep,
+        "assistant-ended-call",
+        business_of(turns),
+        turns=turns,
+        requested_day=requested,
+        **kwargs,
+    ).outcome
+
+
+def test_the_reported_call_is_booked_when_the_brief_says_december_23() -> None:
+    assert decide_anchored(DEC_23_730, REPORTED_CALL, DEC_23) == "booked"
+
+
+def test_the_reported_call_stays_follow_up_without_the_briefs_day() -> None:
+    assert decide_anchored(DEC_23_730, REPORTED_CALL, None) == "needs_follow_up"
+
+
+def test_the_agents_wrong_month_is_not_rescued_by_the_brief() -> None:
+    october = report(outcome="booked", details={"date": "2026-10-23", "time": "19:30"})
+    assert decide_anchored(october, REPORTED_CALL, DEC_23) == "needs_follow_up"
+
+
+def test_a_day_the_business_named_that_is_not_the_agreed_one_blocks_the_brief() -> None:
+    turns = [
+        *REPORTED_CALL[:4],
+        ("business", "Actually we only have December 24 open."),
+        *REPORTED_CALL[4:],
+    ]
+    assert decide_anchored(DEC_23_730, turns, DEC_23) == "needs_follow_up"
+    weekday = [*REPORTED_CALL[:4], ("business", "We are closed Thursday."), *REPORTED_CALL[4:]]
+    assert decide_anchored(DEC_23_730, weekday, DEC_23) == "needs_follow_up"
+
+
+def test_the_business_naming_the_agreed_day_does_not_block_the_brief() -> None:
+    turns = [*REPORTED_CALL[:4], ("business", "Okay, December 23, noted."), *REPORTED_CALL[4:]]
+    assert decide_anchored(DEC_23_730, turns, DEC_23) == "booked"
+
+
+def test_the_brief_never_replaces_the_business_agreeing_to_the_time() -> None:
+    no_yes = [turn for turn in REPORTED_CALL if turn != ("business", "Yeah. Sure.")]
+    assert decide_anchored(DEC_23_730, no_yes, DEC_23) == "needs_follow_up"
+    refused = [*REPORTED_CALL[:10], ("business", "Sorry, 7:30 is actually full.")]
+    assert decide_anchored(DEC_23_730, refused, DEC_23) == "needs_follow_up"
+    other_time = report(outcome="booked", details={"date": "2026-12-23", "time": "21:00"})
+    assert decide_anchored(other_time, REPORTED_CALL, DEC_23) == "needs_follow_up"
+
+
+def test_a_proposal_that_names_another_day_is_not_the_briefs_day() -> None:
+    turns: list[Turn] = [
+        ("agent", "Would December 24 at 7:30 work?"),
+        ("business", "Yes."),
+    ]
+    assert decide_anchored(DEC_23_730, turns, DEC_23) == "needs_follow_up"
+
+
+def test_the_result_page_shows_the_day_and_time_the_business_agreed_to() -> None:
+    shown = confirmed_details(
+        DEC_23_730.details, business_of(REPORTED_CALL), turns=REPORTED_CALL, requested_day=DEC_23
+    )
+    assert shown.date == "2026-12-23"
+    assert shown.time == "19:30"
+    unanchored = confirmed_details(
+        DEC_23_730.details, business_of(REPORTED_CALL), turns=REPORTED_CALL
+    )
+    assert unanchored.date is None
+    assert unanchored.time == "19:30"
+
+
+def test_a_spoken_time_without_am_or_pm_counts_only_for_what_was_agreed_to() -> None:
+    assert mentions_time("would 7 30 work instead?", (19, 30), spoken=True)
+    assert not mentions_time("would 7 30 work instead?", (19, 30))
+    assert not mentions_time("would 8 30 work instead?", (19, 30), spoken=True)
+    assert not mentions_time("a table for 17 30", (19, 30), spoken=True)

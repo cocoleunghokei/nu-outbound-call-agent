@@ -30,7 +30,9 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
 
-from app.calls.gates import REFUSED_GIVE_UP
+from app.calls.gates import REFUSED_GIVE_UP, load_brief
+from app.calls.prompt import us_today
+from app.calls.requested_day import requested_day
 from app.calls_lock import CallNotFound, lock_call
 from app.contracts.generated import ReportOutcomeArgs
 from app.events import append_event
@@ -160,8 +162,15 @@ async def run_outcome_job(
     business = await transcript_lines(conn, call_id, "business") + _lines(payload, "business")
     call_days = await possible_call_days(conn, call_id)
     turns = await call_turns(conn, call_id, payload)
+    asked_for = await requested_day_of(conn, call_id)
     decision = decide_outcome(
-        report, vapi_reason, business, pause_capped=pause_capped, call_days=call_days, turns=turns
+        report,
+        vapi_reason,
+        business,
+        pause_capped=pause_capped,
+        call_days=call_days,
+        turns=turns,
+        requested_day=asked_for,
     )
     ended_reason = PAUSE_CAP if pause_capped and report is None else (vapi_reason or "unknown")
     outcome = await _store_outcome(conn, call_id, decision.outcome, ended_reason)
@@ -256,6 +265,20 @@ async def latest_report(conn: AsyncConnection[Any], call_id: UUID) -> ReportOutc
     except ValidationError:
         logger.warning("postcall: call %s has an unreadable report_outcome", call_id)
         return None
+
+
+async def requested_day_of(conn: AsyncConnection[Any], call_id: UUID) -> date | None:
+    """The day the user typed for this call in the brief ("Dec 23"), read into a date, or None.
+
+    The year is resolved from the day the call started, not from today, so a job that runs late
+    reads "Dec 23" the same way the call did.
+    """
+    row = await (
+        await conn.execute("select created_at from public.calls where id = %s", (call_id,))
+    ).fetchone()
+    if row is None:
+        return None
+    return requested_day(await load_brief(conn, call_id), us_today(row[0]))
 
 
 async def possible_call_days(conn: AsyncConnection[Any], call_id: UUID) -> frozenset[date]:

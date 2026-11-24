@@ -5,13 +5,22 @@ and must not call the network. The slow part, deciding the outcome and checking 
 said, is queued on the outbox ``jobs`` lane and done by the worker in ``jobs.py``.
 """
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
-from app.calls.gates import give_up_gate, load_facts, unsaid_name_gate
+from app.calls.gates import (
+    give_up_gate,
+    load_brief,
+    load_facts,
+    report_day_gate,
+    unsaid_name_gate,
+)
+from app.calls.prompt import us_today
+from app.calls.requested_day import requested_day, rule_days
 from app.calls_lock import end_call_transition
 from app.webhooks.bind import BoundCall, message_of
 from app.webhooks.normalise import ROLE_MAP
@@ -35,14 +44,21 @@ async def handle_report_outcome(conn: AsyncConnection[Any], ctx: ToolCallContext
 
     The validated arguments are already stored on the ``tool_calls`` receipt; the outcome
     job reads them after the call, checks them against the transcript and decides. A
-    ``needs_follow_up`` before the user was ever asked, or a staff name the business never
-    said, is refused (``app/calls/gates.py``):
+    ``needs_follow_up`` before the user was ever asked, a staff name the business never
+    said, or a date that contradicts the day the user asked for, is refused
+    (``app/calls/gates.py``):
     the receipt keeps the refusal as its result, and ``jobs.latest_report`` skips it.
     """
     outcome = ctx.arguments.get("outcome")
     if isinstance(outcome, str):
         facts = await load_facts(conn, ctx.call_id)
-        refusal = give_up_gate(outcome, facts) or unsaid_name_gate(ctx.arguments, facts)
+        brief = await load_brief(conn, ctx.call_id)
+        asked_for = requested_day(brief, us_today(datetime.now(UTC)))
+        refusal = (
+            give_up_gate(outcome, facts)
+            or unsaid_name_gate(ctx.arguments, facts)
+            or report_day_gate(ctx.arguments, asked_for, rule_days(brief), facts)
+        )
         if refusal is not None:
             return refusal
     return NOTED
