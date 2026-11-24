@@ -116,7 +116,21 @@ The `evidence` numbers are illustrative. The UI headline "3 changes · +$3" come
 
 ## 5. Open questions
 
-1. **Who fills it: the agent or a post-call job?** This proposal has the agent do it inside `report_outcome` because that's already the "final answer" call and is already gated. The alternative is a separate post-call summarising job reading the transcript and decisions, which is more work but keeps the live prompt shorter.
-2. **Unverified items.** Should an item with no valid `evidence` be hidden, or shown with a small "unverified" mark? Hiding is safer for the user's trust, showing is more complete.
+1. **Who fills it: decided, the agent, inside `report_outcome`.** It is already the final, gated answer, so no separate post-call job is needed.
+2. **Unverified items.** An item is unverified when, after the server strips invalid `evidence`, no transcript line is left to back it. Example: the agent reports
+
+   ```json
+   { "label": "Delivery", "got": "Free delivery", "status": "changed",
+     "reason": "They waived the fee.", "approved_by": "brief", "evidence": [99] }
+   ```
+
+   but the call has 47 lines and nobody mentioned delivery. Line 99 doesn't exist, so `evidence` becomes `[]`. The page can then:
+
+   | Option | What the user sees | Trade-off |
+   |---|---|---|
+   | Hide it | Nothing. The row is gone. | Safest: no claim without proof. A real change might be missing from the table. |
+   | Show it, marked | `Delivery  →  Free delivery` with a gray "Not found in transcript" tag, no jump link | Complete, and the user can judge. A wrong claim is still on screen. |
+
+   Recommendation: show it marked when `status` is `as_asked`, and hide it when it claims a `changed` result, a fee or a waived cost, because a false claim there costs the user more. Undecided.
 3. **Total cost.** Is a sum of `cost_cents` enough, or does the page need a currency? The product is US-only today, so USD is assumed.
 4. **Separate data bug.** On the Nov 24 call the page said "Nothing was shared" although the agent said the name and phone number aloud. `shared_fields` seems not to record spoken disclosures. It is independent of this proposal and worth its own issue.
