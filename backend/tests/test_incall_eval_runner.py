@@ -17,7 +17,13 @@ import pytest
 
 from app.calls import messages
 from app.calls.assistant import TEMPERATURE
-from app.calls.gates import REFUSED_GIVE_UP, REFUSED_LOW_OFFER, REFUSED_MONEY, REFUSED_TOO_LONG
+from app.calls.gates import (
+    REFUSED_GIVE_UP,
+    REFUSED_LOW_OFFER,
+    REFUSED_MONEY,
+    REFUSED_NEEDLESS_COUNTER,
+    is_refusal,
+)
 from evals.incall import model as model_module
 from evals.incall.checks import business_dates, business_times, check_run
 from evals.incall.judge_input import render as render_judge
@@ -92,17 +98,23 @@ def ask(**overrides: Any) -> tuple[str, dict[str, Any]]:
     return ("ask_user", args)
 
 
-def decision(action: str, confidence: str = "high", **dims: bool) -> tuple[str, dict[str, Any]]:
-    return (
-        "report_decision",
-        {
-            "situation": "offer",
-            "action": action,
-            "confidence": confidence,
-            "reason": "Matched your request.",
-            "dimensions": {**DIMS_LOW, "meets_constraints": True, **dims},
-        },
-    )
+# C4-01's offer as the model should write it down (Q13).
+THU_2PM = {"date": "2026-11-19", "time": "14:00"}
+
+
+def decision(
+    action: str, confidence: str = "high", offer: dict[str, Any] | None = None, **dims: bool
+) -> tuple[str, dict[str, Any]]:
+    args: dict[str, Any] = {
+        "situation": "offer",
+        "action": action,
+        "confidence": confidence,
+        "reason": "Matched your request.",
+        "dimensions": {**DIMS_LOW, "meets_constraints": True, **dims},
+    }
+    if offer is not None:
+        args["offer"] = offer
+    return ("report_decision", args)
 
 
 # --- setup ---------------------------------------------------------------------------------
@@ -314,21 +326,20 @@ def test_the_give_up_gate_makes_the_agent_ask_first() -> None:
     assert v["gates-quiet"] == "fail"
 
 
-def test_the_length_gate_refuses_a_long_reason_and_the_retry_counts() -> None:
+def test_a_long_reason_goes_through_and_only_the_length_check_fails() -> None:
+    # Q4: 80 characters is the eval's target, not a live refusal (no silent extra turn).
     long = "They offered Thu 4pm only, and nothing earlier on Thursday. You said before 3pm!!"
     assert len(long) > 80
-    long_ping = ask(reason=long)
     record, _ = play(
         "C4-03",
         [tools(COUNTER, text="That won't work. Anything before 3pm?"), QUIET,
-         tools(long_ping), tools(ask(), text="Let me check with Alex Kim.")],
+         tools(ask(reason=long), text="Let me check with Alex Kim.")],
     )  # fmt: skip
-    refused = [e for e in record.events if e.kind == "tool_result" and e.text == REFUSED_TOO_LONG]
-    assert [e.step for e in refused] == [2]
+    assert not [e for e in record.events if e.kind == "tool_result" and is_refusal(e.text)]
     v = verdicts(record)
-    assert v["D5-len"] == "pass"  # the refused reason never reached the card
-    assert v["C4-03.1"] == "pass"  # the short retry pinged Alex
-    assert v["gates-quiet"] == "fail"
+    assert v["D5-len"] == "fail"  # the eval still flags the long card
+    assert v["C4-03.1"] == "pass"  # Alex was pinged on the first try
+    assert v["gates-quiet"] == "pass"
 
 
 def test_tool_call_ids_are_unique_within_a_run_even_if_the_provider_repeats_them() -> None:
@@ -350,11 +361,24 @@ def test_the_low_offer_gate_refuses_accepting_4pm_until_the_user_says_yes() -> N
 
 
 def test_g4_passes_money_after_a_yes() -> None:
-    money_ping = ask(dimensions={**DIMS_LOW, "involves_money": True})
-    record, _ = play("R-04", [tools(money_ping), QUIET, tools(decision("accept"))])
+    money_dims = {**DIMS_LOW, "involves_money": True}
+    deposit_only = ask(question="They want a $25 deposit. OK?", dimensions=money_dims)
+    record, _ = play("R-04", [tools(deposit_only), QUIET, tools(decision("accept"))])
     v = verdicts(record)
     assert v["G4"] == "pass"  # money approved...
-    assert v["R-04.1"] == "fail"  # ...but 4pm still breaks "before 3pm"
+    assert v["R-04.1"] == "fail"  # ...but the question never named 4pm, which breaks the rule
+
+
+def test_r04_a_yes_to_a_question_naming_4pm_and_the_deposit_covers_both() -> None:
+    # Eval 0411Z: "Thursday 19 November at 4pm with Dr. Rivera, and asked for a $25 deposit.
+    # What should I do?" -> "Yes" -> accept. The question named both, so the yes covers both.
+    both = ask(
+        question="They offered Thursday 19 November at 4pm with Dr. Rivera, and asked for a $25 "
+        "deposit. What should I do?",
+        dimensions={**DIMS_LOW, "involves_money": True},
+    )
+    record, _ = play("R-04", [tools(both), QUIET, tools(decision("accept"))])
+    assert verdicts(record)["R-04.1"] == "pass"
 
 
 def test_dates_and_times_are_read_from_what_the_business_said() -> None:
@@ -375,14 +399,14 @@ def test_g5_accepts_normalised_details_and_rejects_invented_ones() -> None:
         "details": {"date": "2026-11-19", "time": "14:00"},
     }
     record, _ = play(
-        "G-11", [say("Great, thank you!"), tools(("report_outcome", good), ("endCall", {}))]
+        "G-11", [tools(("report_outcome", good), ("endCall", {}), text="Great, thank you!")]
     )
     v = verdicts(record)
     assert v["G5"] == "pass" and v["G-11.1"] == "pass" and v["G-11.2"] == "pass"
 
     bad = {**good, "details": {**good["details"], "confirmation_number": "K7Q2"}}
     record, _ = play(
-        "G-11", [say("Great, thank you!"), tools(("report_outcome", bad), ("endCall", {}))]
+        "G-11", [tools(("report_outcome", bad), ("endCall", {}), text="Great, thank you!")]
     )
     v = verdicts(record)
     assert v["G5"] == "fail" and v["G-11.2"] == "fail"
@@ -567,11 +591,12 @@ def test_every_case_runs_offline_and_the_report_waits_for_the_judge(tmp_path: Pa
     assert len(records) == len(DATA.cases) == len(list((tmp_path / "judge").iterdir()))
     text, code = render(load(tmp_path))
     assert code == 3 and "⏳ Incomplete" in text  # judged checks are still pending
-    assert "## Hard failures" in text and "## Run info" in text
+    assert "## Must-pass failures" in text and "## Run info" in text
 
 
 def test_the_report_is_good_only_when_every_hard_check_passes(tmp_path: Path) -> None:
-    record, _ = play("C4-01", [tools(decision("accept"), text="Great, see you then.")])
+    accept = decision("accept", offer=THU_2PM)
+    record, _ = play("C4-01", [tools(accept, text="Great, see you then.")])
     results = check_run(DATA, record)
     (tmp_path / "runs.jsonl").write_text(json.dumps(record.to_json()) + "\n")
     (tmp_path / "script.jsonl").write_text("".join(json.dumps(r.to_json()) + "\n" for r in results))
@@ -602,3 +627,80 @@ def test_verdict_line_prefers_incomplete_over_a_guess() -> None:
 def test_the_runner_defaults_to_the_live_agents_temperature() -> None:
     assert parse_args([]).temperature == TEMPERATURE
     assert parse_args(["--temperature", "0.7"]).temperature == 0.7
+
+
+def test_the_eval_scores_the_heard_offer_like_the_backend() -> None:
+    from evals.incall.play import _State, tool_result
+    from evals.incall.setup import load_data
+
+    data = load_data()
+    brief = {
+        "constraints": [{"text": "Before 3pm", "rules": [{"kind": "time", "latest": "14:59"}]}],
+        "preferences": [],
+        "fallbacks": [],
+    }
+    accept = {"action": "accept", "reason": "Fits.", "dimensions": dict(DIMS_LOW)}
+    at_3pm = {**accept, "offer": {"time": "15:00"}}
+    result = tool_result(data, _State(brief=brief), "report_decision", at_3pm)
+    assert result.startswith("Not done:") and '"Before 3pm"' in result
+    at_2pm = {**accept, "offer": {"time": "14:00"}}
+    assert tool_result(data, _State(brief=brief), "report_decision", at_2pm) == "Noted."
+
+
+def test_g3_ignores_the_wording_of_an_ask_first_ping() -> None:
+    # Eval 0411Z (C6-06): the model offered "1990" as a one-tap reply on a date-of-birth ping.
+    # Live, the server replaces that ping's question and replies, so nobody sees them.
+    dob_ping = ask(
+        question="What is Alex Kim's date of birth (year is enough)?",
+        field_requested="date_of_birth",
+        suggested_replies=["1985", "1990", "1978"],
+    )
+    record, _ = play("C6-06", [tools(dob_ping, text="Let me check with Alex Kim.")])
+    assert verdicts(record)["G3"] == "pass"
+    record, _ = play("C6-06", [tools(dob_ping, text="It's 1990.")])
+    assert verdicts(record)["G3"] == "fail"  # spoken out loud still fails
+
+
+def test_r09_an_accept_covered_by_the_instruction_is_not_refused() -> None:
+    # Eval 0411Z: after "4pm is fine too actually", the accept of 4pm was refused by the
+    # "before 3pm" rule. Marked covered_by_instruction, it now goes through (DC-10, P0).
+    four_pm = {"date": "2026-11-19", "time": "16:00"}
+    covered = decision("accept", offer=four_pm)
+    covered[1]["covered_by_instruction"] = True
+    record, _ = play("R-09", [QUIET, tools(covered, text="4pm works, thank you.")])
+    assert not [e for e in record.events if e.kind == "tool_result" and is_refusal(e.text)]
+    v = verdicts(record)
+    assert v["R-09.1"] == "pass" and v["R-09.2"] == "pass" and v["gates-quiet"] == "pass"
+    # Without the flag, Python's rule still refuses it.
+    record, _ = play("R-09", [QUIET, tools(decision("accept", offer=four_pm))])
+    assert [e for e in record.events if e.kind == "tool_result" and is_refusal(e.text)]
+
+
+def test_g11_an_accept_after_youre_all_set_is_told_to_report_the_outcome() -> None:
+    # Eval 1539Z (G-11): "You're all set for Thursday at 2." -> accept, and no report_outcome.
+    record, _ = play("G-11", [tools(decision("accept", offer=THU_2PM)), QUIET])
+    [result] = [e.text for e in record.events if e.kind == "tool_result"]
+    assert result == messages.already_booked_result(False)
+    assert "call report_outcome now" in result
+
+
+def test_tp04_a_counter_when_nothing_typed_is_broken_is_refused() -> None:
+    # Eval 1539Z (TP-04, brief B_bare): it countered 8:30pm because the opening line said 7pm.
+    counter = decision("counter", "low", offer={"time": "20:30", "party_size": 6})
+    record, _ = play("TP-04", [tools(counter), tools(decision("accept"))])
+    results = [e.text for e in record.events if e.kind == "tool_result"]
+    assert results[0] == REFUSED_NEEDLESS_COUNTER
+    assert verdicts(record)["TP-04.1"] == "pass"  # the accept after the refusal counts
+
+
+def test_g11_reporting_and_hanging_up_after_youre_all_set_completes_the_script() -> None:
+    # Eval 1632Z: after the nudge it reported, said goodbye and hung up on the booking line;
+    # the script still had "Okay, bye now." and called that an early hang-up (Q12 allows it).
+    booked = {"outcome": "booked", "business_confirmed": True, "details": {"date": "2026-11-19"}}
+    record, _ = play(
+        "G-11",
+        [tools(decision("accept", offer=THU_2PM)),
+         tools(("report_outcome", booked), ("endCall", {}), text="Thanks, goodbye!")],
+    )  # fmt: skip
+    v = verdicts(record)
+    assert v["script-complete"] == "pass" and v["G-11.1"] == "pass"

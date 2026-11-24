@@ -181,10 +181,17 @@ def verdict_line(m: Metrics) -> tuple[str, int]:
     hard = m.hard / m.runs if m.runs else 0.0
     soft = m.soft[0] / m.soft[1] if m.soft[1] else 1.0
     if m.pending:
-        return f"⏳ Incomplete: {m.pending} checks still need the judge (Hard so far {hard:.1%})", 3
+        return (
+            f"⏳ Incomplete: {m.pending} checks still need the judge (must-pass so far {hard:.1%})",
+            3,
+        )
     if hard >= HARD_TARGET and soft >= SOFT_TARGET:
         return "✅ MVP good", 0
-    return f"❌ Not yet (Hard {hard:.1%}, target 100%; Soft {soft:.1%}, target 85%)", 1
+    return (
+        f"❌ Not yet (must-pass rate {hard:.1%}, target 100%; quality score {soft:.1%}, "
+        "target 85%)",
+        1,
+    )
 
 
 def cost(runs: Iterable[RunRecord]) -> tuple[dict[str, int], float]:
@@ -206,7 +213,7 @@ def cost(runs: Iterable[RunRecord]) -> tuple[dict[str, int], float]:
 
 
 def transcript(run: RunRecord) -> list[str]:
-    """A run as readable lines, for the Hard-failure section."""
+    """A run as readable lines, for the must-pass failures section."""
     lines = []
     for e in run.events:
         if e.kind == "business":
@@ -248,11 +255,11 @@ def render(results: Results, notes: str | None = None) -> tuple[str, int]:
             + (f"  dead air: {v['dead_air']}" if v["dead_air"] else "")
         )
     out.append(
-        f"4. Hard pass              {_pct(m.hard, m.runs):>6}   "
+        f"4. Must-pass rate         {_pct(m.hard, m.runs):>6}   "
         f"({m.hard} of {m.runs} runs)   target 100%"
     )
     out.append(
-        f"5. Soft pass              {_pct(*m.soft):>6}   "
+        f"5. Quality score          {_pct(*m.soft):>6}   "
         f"({m.soft[0]} of {m.soft[1]} checks)  target 85%"
     )
     out += ["```", ""]
@@ -262,7 +269,7 @@ def render(results: Results, notes: str | None = None) -> tuple[str, int]:
     hard_fails = [
         c for c in results.checks if c.level == "hard" and c.verdict in ("fail", "unclear")
     ]
-    out.append(f"## Hard failures ({len(hard_fails)})")
+    out.append(f"## Must-pass failures ({len(hard_fails)})")
     out.append("")
     for c in hard_fails:
         out += [f"**{c.case_id} run {c.run}** · {c.text} · {c.by} · {c.verdict}", ""]
@@ -360,7 +367,7 @@ def _soft_failures(results: Results) -> list[str]:
     for c in results.checks:
         if c.level == "soft" and c.verdict in ("fail", "unclear"):
             groups[c.text].append(f"{c.case_id}/{c.run}")
-    out = ["## Soft failures, grouped by check", ""]
+    out = ["## Quality failures, grouped by check", ""]
     for text, where in sorted(groups.items(), key=lambda kv: -len(kv[1])):
         out.append(
             f"- {text}: {len(where)} times "

@@ -90,6 +90,14 @@
           "text": {
             "type": "string",
             "minLength": 1
+          },
+          "rules": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "$ref": "brief-rule.v1.json"
+            },
+            "description": "Optional. All must hold for this item to match. Absent: the agent judges the text alone."
           }
         }
       }
@@ -107,6 +115,14 @@
           "text": {
             "type": "string",
             "minLength": 1
+          },
+          "rules": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "$ref": "brief-rule.v1.json"
+            },
+            "description": "Optional. All must hold for this item to match. Absent: the agent judges the text alone."
           }
         }
       }
@@ -124,6 +140,14 @@
           "text": {
             "type": "string",
             "minLength": 1
+          },
+          "rules": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "$ref": "brief-rule.v1.json"
+            },
+            "description": "Optional. All must hold for this item to match. Absent: the agent judges the text alone."
           }
         }
       },

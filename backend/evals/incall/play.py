@@ -17,7 +17,8 @@ The tool results follow the backend:
 - ``report_outcome`` returns the post-call acknowledgement; ``endCall`` ends the run.
 - The action gates (``app/calls/gates.py``) run first, from the same facts the backend reads:
   an accept or take_fallback after unapproved money, a Low offer accepted without a "yes",
-  ``needs_follow_up`` before the user was asked, a card reason over 80 characters, a ping
+  an accept or take_fallback whose offer leaves out a value the rules need,
+  ``needs_follow_up`` before the user was asked, a second counter, a ping
   about an offer the model scored High, or a staff name the business never said, gets the
   refusal instead and changes nothing.
 
@@ -35,18 +36,22 @@ from app.calls.decisions import NOTED
 from app.calls.gates import (
     SETTLING_ACTIONS,
     CallFacts,
+    business_said_booked,
+    counter_gate,
     facts_from_timeline,
     give_up_gate,
-    length_gate,
     low_offer_gate,
+    missing_detail_gate,
     money_gate,
+    needless_counter_gate,
     needless_ping_gate,
     unsaid_name_gate,
 )
+from app.calls.scoring import score_tool_call
 from app.postcall.handlers import NOTED as OUTCOME_NOTED
 from evals.incall.model import ChatModel, ModelError
 from evals.incall.records import Event, ModelReply, RunRecord, Turn, TurnType
-from evals.incall.setup import EvalData, call_setup
+from evals.incall.setup import EvalData, build_case_brief, call_setup
 
 # Our server's share of a decision turn's silence (CASES.md, latency: decision turns).
 SERVER_S = 0.5
@@ -64,6 +69,8 @@ class _Ping:
 
 @dataclass
 class _State:
+    # The case's brief.v1 brief, which the backend reads to score the heard offer.
+    brief: dict[str, Any] | None = None
     ping: _Ping | None = None
     ended: bool = False
     # What the gates read, as the backend reads it from call_events: business lines and
@@ -112,13 +119,19 @@ def system_text(data: EvalData, step: dict[str, Any], ping: _Ping | None) -> str
     return messages.field_declined_message(name, question, label)
 
 
-def _needless_ping(args: dict[str, Any]) -> str | None:
-    """``needless_ping_gate`` as the live ingress calls it: scores passed separately."""
+def _dims(args: dict[str, Any]) -> dict[str, Any] | None:
     dims = args.get("dimensions")
+    return dims if isinstance(dims, dict) else None
+
+
+def _needless_ping(state: _State, args: dict[str, Any]) -> str | None:
+    """``needless_ping_gate`` as the live ingress calls it: scores passed separately."""
     return needless_ping_gate(
         args.get("confidence"),
-        dims if isinstance(dims, dict) else None,
+        _dims(args),
         args.get("field_requested"),
+        score_tool_call(state.brief, args),
+        state.facts(),
     )
 
 
@@ -131,24 +144,39 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
         key = args.get("field_requested")
         if isinstance(key, str) and key in data.ask_first_values():
             state.ping = _Ping(messages.field_approval_question(key)[0], "field_approval")
-        elif (refusal := length_gate(args) or _needless_ping(args)) is not None:
+        elif (refusal := _needless_ping(state, args)) is not None:
             return refusal
         else:
             state.ping = _Ping(str(args.get("question", "")).strip(), "decision")
         state.latest_answer = None  # a new question: no answer to it yet
         return messages.ask_user_result(data.calling_name)
     if name == "report_decision":
-        if (too_long := length_gate(args)) is not None:
-            return too_long
         action = args.get("action")
+        if action == "counter":
+            score = score_tool_call(state.brief, args)
+            refused = counter_gate(action, state.facts()) or needless_counter_gate(
+                _dims(args), score
+            )
+            if refused is not None:
+                return refused
+            state.timeline.append(("countered", ""))  # agent.decision, as the backend logs it
         if action in SETTLING_ACTIONS:
             facts = state.facts()
-            dims = args.get("dimensions") if isinstance(args.get("dimensions"), dict) else None
-            refusal = money_gate(str(action), facts) or low_offer_gate(str(action), dims, facts)
+            score = score_tool_call(state.brief, args)
+            covered = args.get("covered_by_instruction")
+            refusal = (
+                money_gate(str(action), facts)
+                or low_offer_gate(str(action), _dims(args), facts, score, covered)
+                or missing_detail_gate(str(action), facts, score, covered)
+            )
             if refusal is not None:
                 return refusal
-            if state.ping is not None and state.ping.kind == "decision":
+            withdrawn = state.ping is not None and state.ping.kind == "decision"
+            if withdrawn:
                 state.ping = None
+            if business_said_booked(facts):
+                return messages.already_booked_result(withdrawn)
+            if withdrawn:
                 return messages.question_withdrawn_result()
         return NOTED
     if name == "report_outcome":
@@ -247,7 +275,7 @@ async def play_case(
         {"role": "assistant", "content": setup.first_message},
     ]
     record.events.append(Event(step=0, kind="agent", text=setup.first_message))
-    state = _State()
+    state = _State(brief=build_case_brief(data, case))
 
     for number, step in enumerate(case["steps"], start=1):
         if "business" in step:
@@ -262,6 +290,8 @@ async def play_case(
             if step["system"] in ("answer", "field_shared", "field_declined", "timeout"):
                 state.ping = None  # the backend closes the ping it answers
                 state.resolve(step)
+            elif step["system"] == "instruction":
+                state.timeline.append(("instructed", ""))  # command.applied, as DC-10 logs it
             convo.append({"role": "system", "content": text})
             record.events.append(
                 Event(step=number, kind="system", text=text, system_kind=step["system"])

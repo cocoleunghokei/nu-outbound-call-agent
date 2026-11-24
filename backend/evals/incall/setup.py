@@ -103,7 +103,25 @@ def build_case_brief(data: EvalData, case: dict[str, Any]) -> dict[str, Any]:
     brief = dict(built.brief)
     for key, value in case.get("brief_overrides", {}).items():
         brief[key] = [{"text": v} for v in value] if isinstance(value, list) else value
-    return brief
+    return with_rules(brief, spec.get("rules", {}))
+
+
+def with_rules(brief: dict[str, Any], rules: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    """The brief with each item's structured ``rules`` attached, matched by its text.
+
+    Stands in for the pre-call parser (PR 4 of the structured-offers plan): ``cases.json``
+    gives the rules by hand, under ``briefs.<name>.rules``, keyed by item text.
+    """
+    out = dict(brief)
+    for key in ("constraints", "preferences", "fallbacks"):
+        items = out.get(key)
+        if not isinstance(items, list):
+            continue
+        out[key] = [
+            {**item, "rules": rules[item["text"]]} if item.get("text") in rules else item
+            for item in items
+        ]
+    return out
 
 
 def model_tools() -> list[dict[str, Any]]:

@@ -18,7 +18,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from evals.incall.records import CheckResult
+from evals.incall.records import CheckResult, level_label
 
 NOTES_DIR = Path(__file__).with_name("notes")
 
@@ -134,7 +134,7 @@ def issues_markdown(issues: Sequence[Issue], notes: str | None) -> list[str]:
     if not issues:
         out.append("No failed checks.")
     for issue in issues:
-        level = "Hard" if issue.hard else "Soft"
+        level = "Must-pass" if issue.hard else "Quality"
         cases = ", ".join(issue.cases[:10]) + (", ..." if len(issue.cases) > 10 else "")
         out.append(f"- **[{level}] {issue.title}**: {issue.checks} checks in {cases}.")
         out.append(f"  {issue.hint}")
@@ -152,12 +152,36 @@ def _inline(text: str) -> str:
     return re.sub(r"`(.+?)`", r"<code>\1</code>", escaped)
 
 
+def _cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def _table_html(rows: list[str]) -> str:
+    """A pipe table: the first row is the header, a ``| --- |`` row is skipped."""
+    body = [r for r in rows if not re.fullmatch(r"\|?[\s:|-]+\|?", r.strip())]
+    if not body:
+        return ""
+    head = "".join(f"<th>{_inline(c)}</th>" for c in _cells(body[0]))
+    cells = (
+        "<tr>" + "".join(f"<td>{_inline(c)}</td>" for c in _cells(r)) + "</tr>" for r in body[1:]
+    )
+    return f'<div class="scroll"><table><tr>{head}</tr>{"".join(cells)}</table></div>'
+
+
 def notes_html(notes: str) -> str:
-    """A small Markdown subset as HTML: headings, bullets, paragraphs, **bold**, `code`."""
+    """A small Markdown subset as HTML: headings, bullets, pipe tables, paragraphs, **bold**,
+    `code`."""
     out: list[str] = []
     in_list = False
-    for raw in notes.strip().splitlines():
+    table: list[str] = []
+    for raw in [*notes.strip().splitlines(), ""]:
         line = raw.rstrip()
+        if line.lstrip().startswith("|"):
+            table.append(line)
+            continue
+        if table:
+            out.append(_table_html(table))
+            table = []
         bullet = re.match(r"^\s*[-*]\s+(.*)$", line)
         if bullet:
             if not in_list:
@@ -183,9 +207,10 @@ def issues_html(issues: Sequence[Issue], notes: str | None) -> str:
     rows = []
     for i in issues:
         level = "hard" if i.hard else "soft"
+        label = level_label(level)
         example = f"<br>Example: {html.escape(i.example[:200])}" if i.example else ""
         rows.append(
-            f'<li><span class="lvl {level}">{level}</span> <b>{html.escape(i.title)}</b>: '
+            f'<li><span class="lvl {level}">{label}</span> <b>{html.escape(i.title)}</b>: '
             f"{i.checks} checks in {html.escape(', '.join(i.cases))}."
             f'<br><span class="muted small">{html.escape(i.hint)}{example}</span></li>'
         )
