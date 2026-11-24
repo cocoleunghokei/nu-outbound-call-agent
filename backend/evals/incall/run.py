@@ -30,7 +30,7 @@ from app.calls.assistant import TEMPERATURE
 from app.config import Settings
 from evals.incall.checks import check_run
 from evals.incall.judge_input import render
-from evals.incall.model import ChatModel, DeepSeekChat
+from evals.incall.model import MAX_TOKENS, ChatModel, DeepSeekChat
 from evals.incall.play import play_case
 from evals.incall.records import CheckResult, RunRecord, level_label
 from evals.incall.setup import EvalData, load_data
@@ -55,6 +55,21 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         type=float,
         default=TEMPERATURE,
         help=f"default: {TEMPERATURE}, the live agent's (app/calls/assistant.py)",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=MAX_TOKENS,
+        help=(
+            f"most tokens one reply may use, reasoning included (default: {MAX_TOKENS}). A reply "
+            'that hits it says nothing and is recorded as a silence ("length, reasoning").'
+        ),
+    )
+    parser.add_argument(
+        "--thinking",
+        choices=("enabled", "disabled"),
+        default=None,
+        help="DeepSeek thinking mode (default: the provider's, which is on)",
     )
     parser.add_argument("--out", default="", help="results folder (default: results/<UTC time>)")
     return parser.parse_args(argv)
@@ -126,10 +141,16 @@ async def main(argv: Sequence[str]) -> int:
         settings.deepseek_base_url,
         args.model or settings.deepseek_model,
         temperature=args.temperature,
+        max_tokens=args.max_tokens,
+        thinking=args.thinking,
     )
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H%MZ")
     folder = Path(args.out) if args.out else RESULTS_DIR / stamp
-    print(f"model {model.name}, {len(cases)} cases x {runs} runs, results in {folder}")
+    thinking = args.thinking or "provider default (on)"
+    print(
+        f"model {model.name}, max_tokens {args.max_tokens}, thinking {thinking}, "
+        f"{len(cases)} cases x {runs} runs, results in {folder}"
+    )
     _, results = await run_eval(data, cases, model, runs, folder)
     failed = sum(c.verdict in ("fail", "unclear") for c in results)
     pending = sum(c.verdict == "pending" for c in results)

@@ -333,7 +333,12 @@ async def _respond(
         record.usage.append(reply.usage)
         if reply.served and reply.served not in record.served:
             record.served.append(reply.served)
-        convo.append(_assistant_message(reply))
+        if reply.text or reply.tool_calls:
+            # An empty assistant message (no content, no tool calls) is a 400 from the provider
+            # on the next request, and Vapi sends none: a silent reply adds nothing.
+            convo.append(_assistant_message(reply))
+        else:
+            record.silences.append(f"step {step}: {reply.finish or 'unknown'}")
         if reply.text:
             record.events.append(Event(step=step, kind="agent", text=reply.text))
             state.timeline.append(("agent", reply.text))  # the backend stores the agent's lines too

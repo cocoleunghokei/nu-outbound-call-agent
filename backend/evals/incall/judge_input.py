@@ -116,6 +116,8 @@ def render(data: EvalData, record: RunRecord, results: Sequence[CheckResult]) ->
         lines.append(f"  <stopped>{esc(record.stopped)}</stopped>")
     if record.error:
         lines.append(f"  <error>{esc(record.error)}</error>")
+    for silence in record.silences:
+        lines.append(f"  <silent>{esc(silence)}</silent>")
     lines += ["</run_record>", "", f'<script_results case="{record.case_id}" run="{record.run}">']
     for r in results:
         if r.by == "judge" or r.verdict in ("pending", "n/a"):
