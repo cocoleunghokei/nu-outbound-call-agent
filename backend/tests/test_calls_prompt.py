@@ -6,8 +6,8 @@ from typing import Any
 
 import pytest
 
-from app.calls.assistant import build_assistant_config
-from app.calls.prompt import GUARDRAIL_RULES, build_system_prompt
+from app.calls.assistant import TEMPERATURE, build_assistant_config
+from app.calls.prompt import GUARDRAIL_RULES, build_system_prompt, opening_request
 from app.contracts.generated import Brief
 from app.voice.fake import FakeVoicePlatform
 from app.voice.port import prepare_assistant
@@ -61,7 +61,7 @@ def config(brief: Brief | None = None, snapshot: Snapshot = SNAPSHOT) -> dict[st
 def test_prompt_carries_the_brief() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     assert "Brookline Family Medicine" in prompt and "on behalf of Alex" in prompt
-    assert "Your goal: Move the Thursday appointment with Dr. Lee to before 3pm" in prompt
+    assert "<goal>Move the Thursday appointment with Dr. Lee to before 3pm</goal>" in prompt
     assert "- Before 3pm" in prompt
     assert "- In person, not a video visit" in prompt
     assert "1. Fri morning\n2. Tue afternoon" in prompt  # ranked, best first
@@ -113,11 +113,99 @@ def test_prompt_has_the_dc4_rubric() -> None:
         assert text in prompt, text
 
 
+def test_a_low_offer_gets_one_counter_before_a_ping() -> None:
+    # Q9 in evals/incall/CASES.md: counter once inside the rules, then ping; never accept Low.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "Never accept a Low offer on your own." in prompt
+    assert "counter once first" in prompt
+    assert "call report_decision with action counter and confidence low" in prompt
+    assert "Counter only once per offer." in prompt
+    # Found by the eval: the counter was logged a turn late (C4-03), and the agent asked
+    # again after "we can't seat 6 at all this weekend" (C4-11).
+    assert "call report_decision with action counter and confidence low. Counter" in prompt
+    assert "call ask_user straight away; do not ask the business again" in prompt
+    assert "neither gate applies, counter once first" in prompt  # money and ask-first still ping
+
+
+def test_every_action_is_logged_and_checking_always_pings() -> None:
+    # Found by the in-call eval: it countered or accepted without report_decision, and said
+    # "Let me check with Alex" without calling ask_user, so the user was never pinged.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "call report_decision.\nHow to call a tool: call it first, before you say anything." in (
+        prompt
+    )
+    assert "Never say the words of an action" in prompt
+    assert "Never say you are checking with Alex unless you called ask_user first." in prompt
+    assert "under 80 characters" in prompt
+
+
+def test_tools_are_called_before_speaking() -> None:
+    # Found by the eval (C4-03, C4-12, C4-13): DeepSeek either talks or calls a tool in one
+    # reply, never both, so "in the same reply as your words" left every counter unlogged.
+    # It does call a tool first and then speak after the result, as it already did for pings.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "same reply" not in prompt
+    assert "You speak right after its result" in prompt
+
+
+def test_missing_info_and_unclear_speech_ping_instead_of_asking_again() -> None:
+    # Found by the eval: after "we need a referral" it asked the clinic again (C4-12), and it
+    # asked a garbled caller to repeat a second time (C4-13), never pinging Alex.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "If the business needs it to go on, call ask_user." in prompt
+    assert "say so or call ask_user" not in prompt
+    assert "call ask_user with understood false; do not ask them a third time" in prompt
+    assert "(for example a referral), or after your one counter, call ask_user straight away" in (
+        prompt.replace("\n", " ")
+    )
+
+
+def test_it_confirms_and_waits_for_goodbye_before_hanging_up() -> None:
+    # Found by the eval (C4-10): "Saturday 7pm works" and the agent booked it and hung up,
+    # before the business said "Sorry, 7 just went". Decided in Q12 (CASES.md).
+    prompt = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
+    assert '"7 works" is not a booking yet' in prompt
+    # Found by the eval (SM-06): after "You're booked under Alex Kim for Saturday at 7" it read
+    # everything back again and waited, so the call never got its outcome.
+    assert "If they have said them all, the booking is confirmed: do not read it back again" in (
+        prompt
+    )
+    assert "read back only what they haven't said" in prompt
+    assert "Call report_outcome once, before your goodbye." in prompt
+    assert "End the call only after the business says goodbye" in prompt
+    assert 'a clear wrap-up ("You\'re all set", "Anything else?")' in prompt
+    assert "You may end without waiting only when the business hangs up" in prompt
+
+
+def test_inventing_includes_saying_a_detail_does_not_exist() -> None:
+    assert any('"no referral"' in rule and "inventing too" in rule for rule in GUARDRAIL_RULES)
+
+
+def test_a_refusal_to_talk_to_an_ai_gets_one_polite_ask_then_refused_ai() -> None:
+    # Q10 in evals/incall/CASES.md.
+    rule = next(r for r in GUARDRAIL_RULES if "refused_ai" in r)
+    assert "say once, politely, that you are an AI" in rule
+    assert "If they refuse again, or refuse outright" in rule
+
+
 def test_prompt_explains_waiting_and_the_no_reply_rule() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
-    assert "WHILE YOU WAIT FOR ALEX" in prompt
+    assert "<while_you_wait>" in prompt and "</while_you_wait>" in prompt
     assert "quotes your question" in prompt
     assert "did not reply in time" in prompt and "Never guess." in prompt
+
+
+def test_finishing_says_what_goes_in_the_report() -> None:
+    """PO-2: the report is the call's summary, so the agent is told what each part holds."""
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    finishing = prompt.split("<finishing>")[1].split("</finishing>")[0]
+    assert "only what the business said" in finishing
+    assert "YYYY-MM-DD" in finishing and "24-hour HH:MM" in finishing
+    assert "staff member's name" in finishing
+    assert "Never fill a detail from the brief" in finishing
+    assert "In open_items" in finishing and "unresolved" in finishing
+    assert "bring" in finishing and "anything special" in finishing
+    assert "{name}" not in finishing  # the calling name is filled in
 
 
 def test_prompt_includes_the_guardrail_rules() -> None:
@@ -129,11 +217,24 @@ def test_prompt_includes_the_guardrail_rules() -> None:
 def test_empty_lists_say_none() -> None:
     brief = make_brief(preferences=[], fallbacks=[], never_agree=[])
     prompt = build_system_prompt(brief, SNAPSHOT)
-    assert (
-        "PREFERENCES (try to meet them; missing one is allowed but must be reported):\n- (none)"
-        in prompt
-    )
-    assert "FALLBACKS (acceptable alternatives, best first):\n- (none)" in prompt
+    assert "<preferences>\n- (none)\n</preferences>" in prompt
+    assert "<fallbacks>\n- (none)\n</fallbacks>" in prompt
+    assert "<never_agree>\n- (none)\n</never_agree>" in prompt
+
+
+def test_every_section_has_one_xml_tag_and_the_brief_holds_the_typed_lists() -> None:
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    sections = (
+        "brief", "goal", "first_sentence_asked_for", "share_freely", "call_details",
+        "ask_first", "hard_constraints", "preferences", "fallbacks", "never_agree",
+        "using_the_brief", "deciding", "while_you_wait", "finishing", "rules",
+    )  # fmt: skip
+    for tag in sections:
+        # Prose may name a tag ("<rules>"), but only the section itself closes it.
+        assert f"<{tag}>" in prompt and prompt.count(f"</{tag}>") == 1, tag
+    brief = prompt[prompt.index("<brief>") : prompt.index("</brief>")]
+    assert "- Before 3pm" in brief and "1. Fri morning" in brief
+    assert prompt.index("</brief>") < prompt.index("</using_the_brief>") < prompt.index("</rules>")
 
 
 # --- the assistant config ---------------------------------------------------------------------
@@ -158,6 +259,13 @@ def test_config_is_transcribed_never_recorded_and_passes_the_port_checks() -> No
     assert names == ["ask_user", "report_decision", "report_outcome", "endCall"]
 
 
+def test_config_pins_a_low_temperature_that_survives_the_port() -> None:
+    built = config()
+    assert built["model"]["temperature"] == TEMPERATURE
+    assert 0 <= TEMPERATURE <= 0.3
+    assert prepare_assistant(built, SNAPSHOT)["model"]["temperature"] == TEMPERATURE
+
+
 def test_config_points_vapi_at_our_webhook_with_the_secret() -> None:
     built = config()
     assert built["server"] == {
@@ -168,7 +276,9 @@ def test_config_points_vapi_at_our_webhook_with_the_secret() -> None:
     assert built["maxDurationSeconds"] == 900
     assert {k: built["model"][k] for k in ("provider", "model")} == {
         "provider": "deep-seek",
-        "model": "deepseek-chat",
+        # DeepSeek retired ``deepseek-chat`` on 2026-07-24; Vapi refuses an assistant that
+        # still names it. ``deepseek-flash`` is the current alias (V4 Flash).
+        "model": "deepseek-flash",
     }
     assert built["monitorPlan"] == {"listenEnabled": True, "controlEnabled": True}
 
@@ -204,3 +314,60 @@ def test_an_ask_first_value_typed_into_the_brief_blocks_the_call() -> None:
     brief = make_brief(constraints=[{"text": f"Patient born {FAKE_DOB}"}])
     with pytest.raises(AskFirstInPrompt):
         config(brief)
+
+
+# --- Q2 and Q8 (backend/evals/incall/CASES.md) ----------------------------------------------
+
+
+def test_the_opening_line_is_quoted_but_sets_no_priority() -> None:
+    # Q8, revised: only the typed lists say what is a must or a nice to have. The opening line
+    # used to count as a hard constraint, which overruled "With Dr. Rivera" typed as a
+    # preference (C4-06).
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert (
+        "<first_sentence_asked_for>I'd like to reschedule an appointment with Dr. Lee."
+        "</first_sentence_asked_for>"
+    ) in prompt
+    assert "is also a hard constraint" not in prompt
+    assert "It is not a rule: it never makes anything a must or a nice to have." in (
+        prompt.replace("\n", " ")
+    )
+    assert "say what changed in the reason" in prompt.replace("\n", " ")
+
+
+def test_opening_request_resolves_share_freely_field_refs() -> None:
+    brief = make_brief(
+        task_line="Book a table for {party_size} under {full_name}.",
+        task_vars={"party_size": {"literal": "6"}, "full_name": {"field_ref": "full_name"}},
+    )
+    assert opening_request(brief, SNAPSHOT) == "Book a table for 6 under Alex Chen."
+
+
+def test_opening_request_is_left_out_when_a_variable_is_missing() -> None:
+    brief = make_brief(task_line="Book a table for {party_size}.", task_vars={})
+    assert opening_request(brief, SNAPSHOT) is None
+    prompt = build_system_prompt(brief, SNAPSHOT)
+    assert "Your first sentence has already been said for you.\n" in prompt
+    assert "It asked for" not in prompt
+
+
+def test_opening_request_never_resolves_an_ask_first_field() -> None:
+    brief = make_brief(
+        task_line="Born {date_of_birth}.",
+        task_vars={"date_of_birth": {"field_ref": "date_of_birth"}},
+    )
+    with pytest.raises(AskFirstInPrompt):
+        opening_request(brief, SNAPSHOT)
+
+
+def test_low_pings_must_carry_everything_needed_to_decide() -> None:
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "everything needed to decide from the card alone" in prompt
+    assert "what they offered (day, time, who, price) and what Alex asked for" in prompt
+
+
+def test_a_better_offer_while_waiting_is_taken_right_away() -> None:
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "If the business speaks without a new offer, say only" in prompt
+    assert "take it right away and call report_decision: that withdraws your question" in prompt
+    assert "If it is still Low, call ask_user again" in prompt

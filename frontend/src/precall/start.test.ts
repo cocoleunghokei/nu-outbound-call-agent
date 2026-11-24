@@ -10,9 +10,9 @@ import {
   describeError,
   emptySession,
   isCallRouteMissing,
+  isDefiniteRefusal,
   reviewView,
-  SIGN_IN_REQUIRED,
-  signInRequired,
+  profileRequired,
   singleFlight,
   type SaveSession,
 } from './start'
@@ -54,24 +54,8 @@ describe('apiStarter (Start in API mode)', () => {
     expect(session.briefId).toBe(BRIEF_ID)
   })
 
-  // ON-1: an anonymous session may save the brief but not place the call.
-  it('a 403 sign_in_required from POST /calls asks for an email and keeps the saved brief and its key', async () => {
-    const refused = new ApiError(SIGN_IN_REQUIRED, 'Add your email before placing a call', 403, false)
-    const startCall = vi.fn<ApiClient['startCall']>(async () => Promise.reject(refused))
-    const client = fakeClient({ startCall })
-    const start = apiStarter(client, keys())
-    const first = await start(contractExampleBrief, emptySession)
-    expect(first.result).toMatchObject({ kind: 'sign_in_required', message: /Add your email/, server: { missing_fields: [] } })
-    expect(first.session.briefId).toBe(BRIEF_ID)
-
-    // After the email is linked (same user id), Start again: no second save, same call key.
-    startCall.mockResolvedValueOnce({ call_id: 'call-1' })
-    const second = await start(contractExampleBrief, first.session)
-    expect(second.result).toMatchObject({ kind: 'started', callId: 'call-1' })
-    expect(client.createBrief).toHaveBeenCalledTimes(1)
-    expect(startCall).toHaveBeenNthCalledWith(1, BRIEF_ID, 'key-2')
-    expect(startCall).toHaveBeenNthCalledWith(2, BRIEF_ID, 'key-2')
-    expect(signInRequired()).toMatchObject({ kind: 'sign_in_required', server: null })
+  it('profileRequired is the result for Start before onboarding; nothing is sent', () => {
+    expect(profileRequired()).toMatchObject({ kind: 'profile_required', server: null, message: /Set up your profile/ })
   })
 
   it("blocks Start when the server says something is missing, even if the local check didn't", async () => {
@@ -269,7 +253,27 @@ describe('isCallRouteMissing and describeError', () => {
     expect(describeError(new ApiError('unauthenticated', 'Missing or invalid credentials', 401, false), 'save')).toMatch(/signed out/)
     expect(describeError(new ApiError(NETWORK_ERROR, 'x', 0, true), 'save')).toMatch(/couldn't reach the server/)
     expect(describeError(new ApiError('brief_in_use', 'A call already started from this brief', 409, false), 'save')).toMatch(/Start a new call/)
-    expect(describeError(new ApiError(SIGN_IN_REQUIRED, 'Add your email before placing a call', 403, false), 'start')).toMatch(/Add your email/)
+  })
+
+  it('tells a definite server refusal apart from a lost answer on Start', () => {
+    // A 503 the server chose, with its own code and retryable: false: nothing was dialed.
+    const notConfigured = new ApiError('calls_not_configured', "Calling isn't set up on the server yet", 503, false)
+    expect(isDefiniteRefusal(notConfigured)).toBe(true)
+    const message = describeError(notConfigured, 'start')
+    expect(message).toMatch(/nothing was dialed/)
+    expect(message).not.toMatch(/may have started/)
+    // Any other definite 5xx keeps the server's words instead of the "may have started" hedge.
+    expect(describeError(new ApiError('unsafe_assistant_config', 'The assistant config failed a safety check.', 500, false), 'start'))
+      .toBe("I couldn't start the call: The assistant config failed a safety check.")
+    // A proxy error or a retryable failure still may have started the call: keep the hedge.
+    for (const lost of [
+      new ApiError('http_502', 'The server answered with an error (HTTP 502).', 502, true),
+      new ApiError('database_unavailable', 'Database is not configured', 503, true),
+      new ApiError(NETWORK_ERROR, 'x', 0, true),
+    ]) {
+      expect(isDefiniteRefusal(lost)).toBe(false)
+      expect(describeError(lost, 'start')).toMatch(/may have started/)
+    }
   })
 })
 

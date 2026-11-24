@@ -39,6 +39,19 @@ export interface Brief {
   never_agree: BriefNeverAgree[]
   share_freely_keys: ShareFreelyKey[]
   ask_first_keys: AskFirstKey[]
+  /**
+   * Answers the user gave in the pre-call chat for this call's template fields with
+   * source 'call' (e.g. patient_status), in template order, so the agent can answer when
+   * asked (PC-4). Never profile values. Optional: briefs stored before it existed don't have it.
+   */
+  call_details?: BriefCallDetail[]
+}
+export interface BriefCallDetail {
+  key: string
+  /** The template's question, e.g. 'Are you a new or existing patient?' Max 200 chars. */
+  question: string
+  /** Max 200 chars. */
+  value: string
 }
 export interface TaskVarLiteral {
   literal: string

@@ -3,8 +3,8 @@
  *
  * API mode needs both a FastAPI URL (`VITE_API_URL`) and a Supabase session. There is no
  * sign-in screen, so the app signs the browser in anonymously on first use
- * (`lib/session.ts`): the chat and saved briefs then belong to this browser. Placing a call
- * needs an email-verified user, which `EmailStep.tsx` adds when Start is tapped (ON-1).
+ * (`lib/session.ts`): the chat, the profile and saved briefs then belong to this browser.
+ * The profile is collected on the first visit (`OnboardingStep.tsx`, `lib/profile.ts`).
  * Without a URL, without Supabase, or when the anonymous sign-in fails, the app runs fully
  * on fake data, as before, and Start only logs the brief.
  *
@@ -13,6 +13,7 @@
  * missing).
  */
 import { accessToken } from '../lib/accessToken'
+import { fieldValue, isOnboarded, type LoadedProfile } from '../lib/profile'
 import { ensureSession, SignInFailedError, type Account } from '../lib/session'
 import { createApiClient, normaliseBaseUrl } from './api'
 import { apiStarter, demoStarter, type Starter } from './start'
@@ -42,16 +43,12 @@ export const loadSupabaseTokenSource: LoadTokenSource = async () => {
 }
 
 /** Small top-bar note: why the app is in demo mode, or, in API mode, whose data this is. */
-export function modeNote(mode: DataMode | null): { text: string; title: string } | null {
+export function modeNote(mode: DataMode | null, profile: LoadedProfile | null = null): { text: string; title: string } | null {
   if (!mode) return null
   if (mode.kind === 'api') {
-    if (mode.account.anonymous || !mode.account.email) {
-      return {
-        text: 'This browser only',
-        title: 'Your profile and calls stay in this browser. Add your email when you place a call to keep them.',
-      }
-    }
-    return { text: mode.account.email, title: 'Signed in. Your profile and calls follow this email.' }
+    const email = profile && isOnboarded(profile) ? fieldValue(profile.fields, 'email') : null
+    if (!email) return { text: 'This browser only', title: 'Set up your profile to place a call. It stays in this browser.' }
+    return { text: email, title: 'Your profile and calls stay in this browser.' }
   }
   const why: Record<DemoReason, string> = {
     no_api_url: 'VITE_API_URL is not set, so nothing is saved and no call is placed.',

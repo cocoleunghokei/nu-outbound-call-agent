@@ -18,9 +18,9 @@ interface ChatHomeProps {
    * mode). The app opens the live screen from it.
    */
   onCallStarted?: (callId: string | null) => void
-  /** Called when Start needs an email-verified user first (ON-1); the app opens the email step. */
-  onSignInRequired?: () => void
-  /** Rendered over the chat (the email step), inside this screen's styles. */
+  /** Called when Start needs the profile first (ON-8); the app opens the onboarding form. */
+  onProfileRequired?: () => void
+  /** Rendered over the chat (the onboarding form), inside this screen's styles. */
   overlay?: ReactNode
 }
 
@@ -30,7 +30,7 @@ interface ChatHomeProps {
  * the state and sends user actions. Visual design follows Harper's prototype
  * (`public/prototype/`).
  */
-export function ChatHome({ context, starter, modeNote = null, onCallStarted, onSignInRequired, overlay }: ChatHomeProps) {
+export function ChatHome({ context, starter, modeNote = null, onCallStarted, onProfileRequired, overlay }: ChatHomeProps) {
   const [reducer] = useState(() => chatReducer(context))
   const [state, dispatch] = useReducer(reducer, context, initialChatState)
   const [text, setText] = useState('')
@@ -97,9 +97,9 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onS
       case 'saved_not_connected':
         dispatch({ type: 'saved_not_connected' })
         break
-      case 'sign_in_required':
+      case 'profile_required':
         dispatch({ type: 'note', text: result.message })
-        onSignInRequired?.()
+        onProfileRequired?.()
         break
       case 'blocked':
       case 'error':

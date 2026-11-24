@@ -26,9 +26,11 @@ from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
 
+from app.calls.gates import REFUSED_GIVE_UP
 from app.calls_lock import CallNotFound, lock_call
 from app.contracts.generated import ReportOutcomeArgs
 from app.events import append_event
@@ -235,13 +237,15 @@ async def latest_report(conn: AsyncConnection[Any], call_id: UUID) -> ReportOutc
 
     A receipt still ``pending`` counts too: the ingress has already validated its
     arguments, and only the acknowledgement is outstanding (for example during a deploy).
+    A report the give-up gate refused (its result is the refusal) never counts.
     """
     row = await (
         await conn.execute(
             "select arguments from public.tool_calls"
             " where call_id = %s and name = 'report_outcome' and state in ('handled', 'pending')"
+            " and (result is null or result <> %s)"
             " order by source_ts desc nulls last, created_at desc limit 1",
-            (call_id,),
+            (call_id, Jsonb(REFUSED_GIVE_UP)),
         )
     ).fetchone()
     if row is None or not isinstance(row[0], dict):

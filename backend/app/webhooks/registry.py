@@ -37,6 +37,9 @@ class ToolCallContext:
 
     ``arguments`` is redacted and has ``confidence`` and ``dimensions`` removed (DC-5): the
     ingress stores those in ``agent_scores``. ``source_ts`` is Vapi's message timestamp.
+    ``dimensions`` and ``confidence`` are read-only copies of the model's six checks and its
+    tier, for the action gates in ``app/calls/gates.py`` only: a handler may read them to
+    refuse an action, and must never write them to an event or any other row (DC-5).
     """
 
     call_id: UUID
@@ -45,6 +48,8 @@ class ToolCallContext:
     name: str
     arguments: dict[str, Any] = field(repr=False)
     source_ts: datetime | None
+    dimensions: dict[str, Any] | None = field(default=None, repr=False)
+    confidence: str | None = field(default=None, repr=False)
 
 
 ToolHandler = Callable[[AsyncConnection[Any], ToolCallContext], Awaitable[str]]

@@ -4,20 +4,17 @@
  * command endpoints of the backend API.
  *
  * Returns the same shape as `useMockCall`, so `LiveCall` doesn't change.
- * The Supabase client is loaded only here, on first use, so the fake-call
- * mode never needs Supabase settings.
+ * The sequence itself (sign in, subscribe, load, reload on reconnect) is
+ * `followCall` in `follow.ts`; this hook only builds its data source over the
+ * shared Supabase client and keeps its results in state. The client is loaded
+ * only here, on first use, so the fake-call mode never needs Supabase settings.
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import {
-  CALL_EVENT_COLUMNS,
-  postCommand,
-  postReply,
-  toCallEvent,
-  toCallSummary,
-} from './backend'
-import { accessToken } from '../lib/accessToken'
+import { CALL_EVENT_COLUMNS, postCommand, postReply, toCallSummary } from './backend'
+import { accessToken, ensureSignedIn } from '../lib/accessToken'
 import type { SendCallCommand } from './controls'
+import { followCall, markHistory, problemOf, type CallSource, type FollowIo } from './follow'
 import type { SendPingReply } from './ping'
 import { mergeEvents } from './state'
 import type { CallEvent, LiveCallSummary } from './types'
@@ -37,64 +34,29 @@ export interface RealCall {
   historicalUpTo: number | null
 }
 
-/**
- * The new `historicalUpTo` after a load of the call's events: `loaded` is what came back,
- * or null when the load failed.
- * - Only the first successful load marks history; reloads after a reconnect don't move it.
- * - A failed load leaves it null (still unknown), so the call-ended notification waits for
- *   a load that works instead of treating every stored event as live.
- */
-export function markHistory(first: number | null, loaded: CallEvent[] | null): number | null {
-  if (first !== null || loaded === null) return first
-  return loaded.reduce((max, e) => Math.max(max, e.seq), 0)
-}
-
-async function loadClient(): Promise<SupabaseClient> {
-  const { supabase } = await import('../lib/supabase')
-  return supabase
-}
-
-/** Follows one call. `apiBase` is the backend URL (see `apiBase()` in backend.ts). */
-export function useRealCall(callId: string, apiBase: string): RealCall {
-  const [summary, setSummary] = useState<LiveCallSummary | null>(null)
-  const [events, setEvents] = useState<CallEvent[]>([])
-  const [problem, setProblem] = useState<string | null>(null)
-  const [historicalUpTo, setHistoricalUpTo] = useState<number | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    let unsubscribe: (() => void) | null = null
-
-    const take = (rows: unknown[]) => {
-      const checked = rows.map(toCallEvent).filter((e): e is CallEvent => e !== null)
-      if (!cancelled && checked.length) setEvents((held) => mergeEvents(held, checked))
-    }
-
-    void (async () => {
-      let client: SupabaseClient
-      try {
-        client = await loadClient()
-      } catch {
-        if (!cancelled) setProblem('The app is missing its Supabase settings, so the call can’t load.')
-        return
-      }
-
-      // Load (or reload after a reconnect) everything so far; merging by seq
-      // makes overlap with live inserts harmless.
-      const loadAll = async () => {
-        const { data, error } = await client
-          .from('call_events')
-          .select(CALL_EVENT_COLUMNS)
-          .eq('call_id', callId)
-          .order('seq')
-        if (cancelled) return
-        if (error) setProblem('Couldn’t load the call. It may not exist, or you may be signed out.')
-        else take(data ?? [])
-        const loaded = error ? null : (data ?? []).map(toCallEvent).filter((e): e is CallEvent => e !== null)
-        setHistoricalUpTo((first) => markHistory(first, loaded))
-      }
-
-      // Subscribe first, then load, so nothing between the two is missed.
+/** The call's data over the shared client: the same three queries as before, behind `CallSource`. */
+function sourceOver(client: SupabaseClient): CallSource {
+  return {
+    async events(callId) {
+      const { data, error } = await client
+        .from('call_events')
+        .select(CALL_EVENT_COLUMNS)
+        .eq('call_id', callId)
+        .order('seq')
+      if (error) return { kind: 'error' }
+      return { kind: 'rows', rows: (data ?? []) as unknown[] }
+    },
+    async summary(callId) {
+      const { data, error } = await client
+        .from('calls')
+        .select('id, created_at, max_duration_s, briefs(business_name, phone_e164, goal)')
+        .eq('id', callId)
+        .maybeSingle()
+      if (error) return { kind: 'error' }
+      // No row without an error: RLS shows this user no such call.
+      return data === null ? { kind: 'none' } : { kind: 'row', row: data as unknown }
+    },
+    subscribe(callId, onInsert, onStatus) {
       // A unique name per subscription: React may start this effect twice, and
       // Supabase hands back an already-subscribed channel for a reused name.
       const channel = client
@@ -102,32 +64,47 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'call_events', filter: `call_id=eq.${callId}` },
-          (change) => take([change.new]),
+          (change) => onInsert(change.new),
         )
-        .subscribe((status) => {
-          if (cancelled) return
-          if (status === 'SUBSCRIBED') {
-            setProblem(null)
-            void loadAll()
-          } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-            setProblem('Live updates paused. Reconnecting…')
-          }
-        })
-      unsubscribe = () => void client.removeChannel(channel)
+        .subscribe((status) => onStatus(status))
+      return () => void client.removeChannel(channel)
+    },
+  }
+}
 
-      const { data: callRow } = await client
-        .from('calls')
-        .select('id, created_at, max_duration_s, briefs(business_name, phone_e164, goal)')
-        .eq('id', callId)
-        .maybeSingle()
-      if (!cancelled) setSummary(toCallSummary(callRow))
-    })()
-
-    return () => {
-      cancelled = true
-      unsubscribe?.()
+const io: FollowIo = {
+  async open() {
+    try {
+      const { supabase } = await import('../lib/supabase')
+      return { kind: 'ok', source: sourceOver(supabase) }
+    } catch {
+      return { kind: 'failed', message: 'The app is missing its Supabase settings, so the call can’t load.' }
     }
-  }, [callId])
+  },
+  signIn: ensureSignedIn,
+}
+
+/** Follows one call. `apiBase` is the backend URL (see `apiBase()` in backend.ts). */
+export function useRealCall(callId: string, apiBase: string): RealCall {
+  const [summary, setSummary] = useState<LiveCallSummary | null>(null)
+  const [events, setEvents] = useState<CallEvent[]>([])
+  const [missing, setMissing] = useState(false)
+  const [connection, setConnection] = useState<string | null>(null)
+  const [detail, setDetail] = useState<string | null>(null)
+  const [historicalUpTo, setHistoricalUpTo] = useState<number | null>(null)
+
+  useEffect(
+    () =>
+      followCall(callId, io, {
+        events: (rows) => setEvents((held) => mergeEvents(held, rows)),
+        historical: (loaded) => setHistoricalUpTo((first) => markHistory(first, loaded)),
+        summary: (row) => setSummary(toCallSummary(row)),
+        missing: setMissing,
+        connection: setConnection,
+        detail: setDetail,
+      }),
+    [callId],
+  )
 
   const sendReply = useCallback<SendPingReply>(
     async (id, pingId, reply) => {
@@ -147,5 +124,5 @@ export function useRealCall(callId: string, apiBase: string): RealCall {
     [apiBase],
   )
 
-  return { summary, events, sendReply, sendCommand, problem, historicalUpTo }
+  return { summary, events, sendReply, sendCommand, problem: problemOf(missing, connection, detail), historicalUpTo }
 }
