@@ -67,21 +67,21 @@ The agent can't see transcript line numbers, so it quotes the business's own wor
 
 The model's summary is a claim, so the backend verifies what it can before the page shows it, and drops or downgrades what it can't:
 
-1. **`business_said`** must be found in a business turn of this call's transcript (compared the way `rule_evidence` is). If it is, the matching `seq` values become `evidence`; if it isn't, `evidence` is empty. An item with no evidence left is unverified: shown marked if `as_asked`, otherwise hidden (see open question 2).
-2. **`cost_cents`** must match an amount a business turn actually said. Otherwise it is dropped. This extends the existing money gate in `gates.py`.
+1. **`business_said`** must be found in one run of consecutive business lines of this call's transcript (never across an agent line), with case and punctuation ignored. Every quoted word must appear in order, with at most 3 other words between two of them, so a quote can leave out a stumble ("Is there... is marshmallow okay?") but not reorder or invent words. A quote of one word never counts. If it is found, the matching `seq` values become `evidence`; if it isn't, `evidence` is empty. An item with no evidence left is unverified: shown marked if `as_asked`, otherwise hidden (see open question 2).
+2. **`cost_cents`** must match an amount a business turn actually said (digits or words: `$3`, "three dollars"). Otherwise `cost_cents` is dropped and the row counts as unverified, because its `got` text carries the same amount.
 3. **`status` against the brief's rules.** When the referenced item has `rules` (date and time rules in `brief-rule.v1`) and the agreed `details.date` or `details.time` break them, force `changed`, whatever the model said. In the example, "by 10 AM" is `latest: "10:00"` and the agreed time is 12:00, so the pickup row is `changed` even if the model had written `as_asked`.
-4. **`approved_by: "user"`** requires a ping reply from the user in this call. Otherwise it becomes `none`.
-5. Items for refused or ungated reports are skipped, the same way `latest_report` already skips a refused `report_outcome`.
+4. **`approved_by: "user"`** requires that the user answered a ping or sent an instruction during the call. Otherwise it becomes `none`.
+5. Items of a refused report are skipped, the same way `latest_report` already skips a refused `report_outcome`. The outcome job's downgrade (booked to needs_follow_up) does not hide rows, since they are checked on their own.
 
 ### API response
 
-`GET /calls/{call_id}/result` gets two new fields, both optional, and the existing ones stay exactly as they are:
+`GET /calls/{call_id}/result` gets two new fields, always present (`[]` and `null` when there are none), and the existing ones stay exactly as they are. Each row also has `verified` (false only for an unverified `as_asked` row):
 
 ```jsonc
 "result_items": [
   { "label": "Cake", "asked": "Mochi cake", "got": "Marshmallow cake",
     "status": "changed", "reason": "Mochi isn't available.",
-    "approved_by": "user", "cost_cents": null, "evidence": [4, 5] }
+    "approved_by": "user", "cost_cents": null, "evidence": [4, 5], "verified": true }
 ],
 "follow_up": null
 ```
@@ -111,9 +111,9 @@ The `evidence` numbers are illustrative; the server fills them from `business_sa
 
 | Where | Change |
 |---|---|
-| `contracts/tools/report_outcome.args.v1.json` | Add `result_items`. Add valid and invalid examples. Run `make -C contracts gen`. |
-| `backend/app/calls/prompt.py` | Tell the agent to fill `result_items` when it reports the outcome, and to use `extra` for anything the brief didn't mention. |
-| `backend/app/postcall/history.py` | Join each item to the brief for `asked`, run the checks above, return `result_items` and `follow_up`. Tests next to `tests/test_postcall_history.py`. |
+| `contracts/tools/report_outcome.args.v1.json` | **Done.** Added `result_items` and `follow_up`, examples and tests. Ran `make -C contracts gen`. |
+| `backend/app/calls/prompt.py` | **Done.** A `<result_refs>` list numbers the brief's constraints, preferences and fallbacks from 0 (the fallbacks in the prompt are counted from 1) and lists the task variable keys, and the finishing steps tell the agent how to fill each field. |
+| `backend/app/postcall/result_items.py`, `history.py` | **Done.** Join each item to the brief for `asked`, run the checks above, return `result_items` and `follow_up`. Unit tests in `tests/test_postcall_result_items.py`, one end-to-end test in `tests/test_postcall_history.py` (needs the local Supabase stack). |
 | `backend/evals/postcall` | Add a check that `status` and `got` agree with the transcript. |
 | `frontend/src/result/` | Add `items` and `followUp` to `CallResult`, render the table when `items` is non-empty, and fall back to the current layout for older calls. |
 | `docs/requirements.md` | Extend PO-2 to name this. |
