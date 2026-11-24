@@ -29,7 +29,8 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
         'any score, for example "No window seat, patio only"; it is shown as a flag in the '
         "live feed. When it is about an offer, fill offer with what they offered. Before "
         "accept or take_fallback, fill rule_evidence with the business's own words for each "
-        "never-agree item that is not about money. Call it "
+        "never-agree item that is not about money. For take_fallback, set fallback to the one "
+        "fallback the offer matches, exactly as the user typed it. Call it "
         "before you speak; say your words after its result."
     ),
     "report_outcome": (
