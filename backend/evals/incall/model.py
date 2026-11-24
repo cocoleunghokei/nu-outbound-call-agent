@@ -18,10 +18,10 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.calls.assistant import MAX_TOKENS
 from evals.incall.records import ModelReply, ToolCall
 
 REQUEST_TIMEOUT_S = 60.0
-MAX_TOKENS = 600
 RETRIES = 2
 RETRY_BACKOFF_S = 2.0
 
@@ -53,10 +53,16 @@ class DeepSeekChat:
         model: str,
         *,
         temperature: float | None = None,
+        max_tokens: int = MAX_TOKENS,
+        thinking: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.name = model
         self.temperature = temperature
+        self.max_tokens = max_tokens
+        # "enabled" or "disabled" (DeepSeek's `thinking.type`); None leaves the provider default,
+        # which is on: reasoning tokens count toward max_tokens and can use all of it.
+        self.thinking = thinking
         self._api_key = api_key
         self._url = f"{base_url.rstrip('/')}/chat/completions"
         self._transport = transport
@@ -71,10 +77,12 @@ class DeepSeekChat:
             "tools": list(tools),
             "stream": True,
             "stream_options": {"include_usage": True},
-            "max_tokens": MAX_TOKENS,
+            "max_tokens": self.max_tokens,
         }
         if self.temperature is not None:
             body["temperature"] = self.temperature
+        if self.thinking is not None:
+            body["thinking"] = {"type": self.thinking}
         return body
 
     async def reply(
@@ -125,6 +133,8 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
     first_token: float | None = None
     usage: dict[str, int] = {}
     served = ""
+    finish_reason = ""
+    reasoned = False
     async for line in lines:
         if not line.startswith("data:"):
             continue
@@ -142,6 +152,10 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
             usage = {k: v for k, v in chunk["usage"].items() if isinstance(v, int)}
         for choice in chunk.get("choices") or []:
             delta = choice.get("delta") or {}
+            if isinstance(choice.get("finish_reason"), str):
+                finish_reason = choice["finish_reason"]
+            if delta.get("reasoning_content"):
+                reasoned = True
             content = delta.get("content")
             if isinstance(content, str) and content:
                 if first_token is None:
@@ -162,6 +176,7 @@ async def parse_stream(lines: Any, start: float) -> ModelReply:
         first_token_s=first_token,
         done_s=done,
         usage=usage,
+        finish=(finish_reason or "none") + (", reasoning" if reasoned else ""),
         served=served,
     )
 

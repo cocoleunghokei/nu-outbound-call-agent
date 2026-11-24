@@ -23,6 +23,20 @@ export const fakeResults: Record<string, CallResult> = {
     businessConfirmed: false,
     details: {},
     openItems: ['They only take reservations for 8 or more. Call again with a walk-in time, or try another place.'],
+    items: [
+      {
+        label: 'Table',
+        asked: 'Table for 6 at 7pm Friday',
+        got: 'No reservation',
+        status: 'not_met',
+        reason: 'They only take reservations for 8 or more.',
+        approvedBy: 'none',
+        costCents: null,
+        evidence: [3],
+        verified: true,
+      },
+    ],
+    followUp: 'Call again with a walk-in time, or try another place.',
     decisions: [
       {
         situation: 'Parties under 8 are walk-in only',
@@ -44,6 +58,31 @@ export const fakeResults: Record<string, CallResult> = {
     businessConfirmed: true,
     details: { date: '2026-10-24', time: '19:30', staffName: 'Marco' },
     openItems: [],
+    items: [
+      {
+        label: 'Time',
+        asked: 'Saturday at 7pm',
+        got: 'Sat 7:30 PM',
+        status: 'changed',
+        reason: '7 is full, but 7:30 is open.',
+        approvedBy: 'brief',
+        costCents: null,
+        evidence: [3],
+        verified: true,
+      },
+      {
+        label: 'Party size',
+        asked: 'Table for 2',
+        got: 'Table for 2',
+        status: 'as_asked',
+        reason: null,
+        approvedBy: null,
+        costCents: null,
+        evidence: [5],
+        verified: true,
+      },
+    ],
+    followUp: null,
     decisions: [
       {
         situation: '7pm is full, 7:30 is open',
@@ -69,6 +108,8 @@ export const fakeResults: Record<string, CallResult> = {
     businessConfirmed: true,
     details: {},
     openItems: ['The office wants to talk to you directly. Call them yourself at (617) 555-0160.'],
+    items: [],
+    followUp: null,
     decisions: [
       {
         situation: 'They don’t book with automated callers',
@@ -89,6 +130,20 @@ export const fakeResults: Record<string, CallResult> = {
     businessConfirmed: true,
     details: { date: '2026-10-23', time: '20:00', confirmationNumber: 'EP-5521', staffName: 'Jen' },
     openItems: [],
+    items: [
+      {
+        label: 'Reservation',
+        asked: 'Cancel Friday at 8, party of 4',
+        got: 'Cancelled',
+        status: 'as_asked',
+        reason: null,
+        approvedBy: null,
+        costCents: null,
+        evidence: [3],
+        verified: true,
+      },
+    ],
+    followUp: null,
     decisions: [
       {
         situation: 'They confirmed the cancellation',

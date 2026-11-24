@@ -1,4 +1,4 @@
-import type { DecisionAction, DisclosureState, OutcomeDetails } from './types'
+import type { DecisionAction, DisclosureState, OutcomeDetails, ResultItem } from './types'
 
 /**
  * `labels[key]` if `key` is one of the map's own keys, else undefined. Keys come from
@@ -82,4 +82,48 @@ export function agreedRows(details: OutcomeDetails): Array<[label: string, value
   if (details.confirmationNumber) rows.push(['Confirmation', details.confirmationNumber])
   if (details.staffName) rows.push(['Staff', details.staffName])
   return rows
+}
+
+/** 300 cents as "$3.00". */
+export function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+/** True if the row differs from what the user asked. A status this version doesn't know counts. */
+export function isChange(item: Pick<ResultItem, 'status'>): boolean {
+  return item.status !== 'as_asked'
+}
+
+/** The table's headline numbers: how many rows changed, and the fees and prices in all rows. */
+export function changeSummary(items: readonly ResultItem[]): { changes: number; extraCents: number } {
+  let extraCents = 0
+  for (const item of items) extraCents += item.costCents ?? 0
+  return { changes: items.filter(isChange).length, extraCents }
+}
+
+/** "3 changes · +$3", "1 change", or "As you asked" when nothing changed. */
+export function summaryLabel(items: readonly ResultItem[]): string {
+  const { changes, extraCents } = changeSummary(items)
+  if (changes === 0) return 'As you asked'
+  const parts = [`${changes} ${changes === 1 ? 'change' : 'changes'}`]
+  if (extraCents > 0) parts.push(`+${formatCents(extraCents).replace('.00', '')}`)
+  return parts.join(' · ')
+}
+
+/**
+ * A short note on who allowed a changed row, or null when there is nothing to add. Only rows
+ * that differ from the brief get one: "as asked" was allowed by definition.
+ */
+export function approvalNote(item: Pick<ResultItem, 'status' | 'approvedBy'>): string | null {
+  if (!isChange(item)) return null
+  switch (item.approvedBy) {
+    case 'user':
+      return 'You approved this on the call.'
+    case 'brief':
+      return 'Within your brief.'
+    case 'none':
+      return 'Not approved. Check it.'
+    default:
+      return null
+  }
 }
