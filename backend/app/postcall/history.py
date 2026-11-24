@@ -2,8 +2,8 @@
 
 - ``GET /calls``: the caller's calls, newest first.
 - ``GET /calls/{call_id}/result``: outcome, what was agreed (only the details the business
-  said, see ``shown_details``), open items, decisions, what was shared and the final
-  transcript.
+  said, see ``shown_details``), open items, asked-vs-got rows (``result_items``), decisions,
+  what was shared and the final transcript.
 
 These go through the backend, not straight to Supabase, because the agent's outcome report
 lives in ``tool_calls``, which the browser can't read. The backend connects as the database
@@ -20,11 +20,13 @@ from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 
 from app.auth import current_user
+from app.calls.gates import load_brief
 from app.contracts.generated import OutcomeDetails, ReportOutcomeArgs
 from app.db import get_pool
 from app.errors import ApiError
 from app.postcall.decide import call_days_for, confirmed_details
 from app.postcall.jobs import latest_report, requested_day_of
+from app.postcall.result_items import ResultItemOut, shown_result_items
 
 router = APIRouter()
 
@@ -90,6 +92,11 @@ class CallResultResponse(BaseModel):
     business_confirmed: bool
     details: OutcomeDetails
     open_items: list[str]
+    #: Asked vs. got rows (PO-2), already checked against the transcript. Empty for calls
+    #: whose report has none.
+    result_items: list[ResultItemOut]
+    #: One sentence on what the user must do next, or None.
+    follow_up: str | None
     decisions: list[DecisionOut]
     shared_fields: list[SharedFieldOut]
     transcript: list[TranscriptLineOut]
@@ -158,11 +165,20 @@ async def get_call_result(
         accepted = claims_accepted(report, call.outcome)
         transcript = await _transcript(conn, call_id)
         asked_for = await requested_day_of(conn, call_id)
+        details = shown_details(report, accepted, call, transcript, asked_for)
         return CallResultResponse(
             call=call,
             business_confirmed=report.business_confirmed if report and accepted else False,
-            details=shown_details(report, accepted, call, transcript, asked_for),
+            details=details,
             open_items=list(report.open_items or []) if report else [],
+            result_items=shown_result_items(
+                report,
+                await load_brief(conn, call_id),
+                [(line.seq, line.role, line.text) for line in transcript],
+                details,
+                await _user_replied(conn, call_id),
+            ),
+            follow_up=(report.follow_up or "").strip() or None if report else None,
             decisions=await _decisions(conn, call_id),
             shared_fields=await _shared_fields(conn, call_id),
             transcript=transcript,
@@ -187,6 +203,19 @@ def shown_details(
     return confirmed_details(
         report.details, business, call_days=call_days, turns=turns, requested_day=requested_day
     )
+
+
+async def _user_replied(conn: AsyncConnection[Any], call_id: uuid.UUID) -> bool:
+    """True if the user answered a ping or sent an instruction during the call."""
+    row = await (
+        await conn.execute(
+            "select exists (select 1 from public.call_events where call_id = %s and ("
+            "(type = 'ping.resolved' and payload->>'state' = 'answered')"
+            " or (type = 'command.applied' and payload->>'command' = 'instruction')))",
+            (call_id,),
+        )
+    ).fetchone()
+    return bool(row and row[0])
 
 
 async def _decisions(conn: AsyncConnection[Any], call_id: uuid.UUID) -> list[DecisionOut]:

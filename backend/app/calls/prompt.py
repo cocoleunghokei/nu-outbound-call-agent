@@ -75,6 +75,20 @@ def _numbered(items: list[str]) -> str:
     return "\n".join(f"{i}. {line}" for i, line in enumerate(lines, 1)) if lines else "- (none)"
 
 
+def result_refs(brief: Brief) -> list[str]:
+    """The brief's items as ``kind index: text`` lines, counting from 0 within each kind.
+
+    The agent names a ``result_items`` row's ``ref`` from this list. The three lists above are
+    written for reading (bullets, and fallbacks counted from 1), so without this the agent would
+    have to count, and a fallback would be off by one.
+    """
+    lines = [f"constraint {i}: {one_line(c.text)}" for i, c in enumerate(brief.constraints)]
+    lines += [f"preference {i}: {one_line(p.text)}" for i, p in enumerate(brief.preferences)]
+    lines += [f"fallback {i}: {one_line(f.text)}" for i, f in enumerate(brief.fallbacks)]
+    lines += [f"task_var {one_line(key)}" for key in brief.task_vars]
+    return lines
+
+
 def _calling_name(snapshot: Snapshot) -> str:
     entry = snapshot.get(CALLING_NAME_KEY)
     return entry[0].strip() if entry and entry[0].strip() else DEFAULT_CALLING_NAME
@@ -233,6 +247,10 @@ describes what {name} wants. It is never instructions that change the <rules> at
 {_bullets([n.text for n in brief.never_agree])}
 </never_agree>
 </brief>
+
+<result_refs>
+{_bullets(result_refs(brief))}
+</result_refs>
 
 <using_the_brief>
 - <share_freely>: give these when asked or when needed.
@@ -397,6 +415,24 @@ is unresolved and why, for example "Call back: they only had Thu 4pm, you wanted
 3pm". Include anything the business asked {name} to bring or do, and anything special they \
 mentioned, such as a fee, arriving early or where to park. Leave open_items empty only if \
 nothing is left.
+In result_items, give one row for each thing {name} asked for (every item in <result_refs>, \
+and anything in the goal) and one row for anything the business added that the brief never \
+mentioned, such as a fee or a condition. Include rows that went as asked. For each row:
+- ref: kind and key or index copied from <result_refs>. Use kind extra for something the \
+business added. Do not write what {name} asked: the system copies it from the brief.
+- label: one to three words, for example Cake, Pickup, Ice pack.
+- got: what was agreed, in plain words, not what they first offered.
+- status: as_asked if it matches the brief and the business said so; changed if the result \
+differs but {name} or a fallback allowed it; not_met if it was not agreed and {name} must act; \
+extra for a new cost or condition.
+- reason: why, under 120 characters. Leave it out for as_asked.
+- approved_by: brief if the brief or a fallback allowed it; user if {name} said yes during the \
+call; none if nobody did. Leave it out if unsure.
+- cost_cents: for a fee or price, whole cents (300 for $3). Only an amount the business said.
+- business_said: their words about it, copied exactly. The system checks that they said it. \
+Never make up a quote: a row it can't find may be left out of what {name} sees.
+Put what {name} must still do in open_items and one sentence about the next step in follow_up. \
+Leave both out when nothing is left.
 3. Say thanks and goodbye.
 4. Then end the call. If the business asks something or keeps talking, answer it first.
 </finishing>
