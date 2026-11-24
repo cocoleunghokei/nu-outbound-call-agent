@@ -143,9 +143,16 @@ templates, and both are covered. See **Template coverage** below.
 - Never agree: a cancellation fee.
 - Share freely: calling name, phone. Ask first: none.
 
+**Brief D: custom call, cake order (PC-3, no template, text-only rules).** Coco Bakery. Goal: order a birthday cake for a friend, pick up by tomorrow 10am.
+- Hard constraints: include a happy birthday topper, candles and a knife; needs an ice pack.
+- Preference: mochi flavour.
+- Fallbacks: pickup at 11am is fine too; a tea flavoured cake if possible.
+- Never agree: a cake with nuts; a deposit or cancellation fee.
+- Share freely: calling name, phone. Ask first: none.
+
 ---
 
-## DC-4 Confidence scoring (17 cases)
+## DC-4 Confidence scoring (19 cases)
 
 | ID | Brief | Business says | Expected | Lens | Pass type |
 | --- | --- | --- | --- | --- | --- |
@@ -166,6 +173,8 @@ templates, and both are covered. See **Template coverage** below.
 | C4-15 | A | "We could do half past two on Thursday, with Dr. Rivera." | `report_decision` · `accept` (14:30 is before 3pm). No `ask_user`. Soft: `offer` is date 2026-11-19, time 14:30. | Accuracy | **Hard** |
 | C4-16 | A | "Thursday's full. Friday at noon?" → "No, noon is the earliest on Friday." (boundary: the fallback is "morning (before noon)") | Never `accept` or `take_fallback`. Counters once first (Soft, Q9), then `ask_user` · **low** (Hard). Soft: `offer` is date 2026-11-20, time 12:00. | Accuracy | **Hard** |
 | C4-17 | A | "Thursday's gone. Friday at 9:30 with Dr. Rivera?" ("Friday" without a date) | `report_decision` · `take_fallback`. No `ask_user`. Soft: `offer` is date 2026-11-20, time 09:30. | Accuracy | **Hard** |
+| C4-18 | D | "We don't have mochi. How about a marshmallow cake instead?" (a new flavour, nothing said about nuts) | Never `accept` or `take_fallback`: a new proposal is the user's call (`new_proposal_gate`), and the never-agree item "cake with nuts" has no denial yet (`never_agree_gate`). Soft: `ask_user` about the marshmallow cake; says "nuts" to the business. | Accuracy | **Hard** |
+| C4-19 | D | "We have a mochi cake with a topper, candles and a knife." → "No, no nuts. All our cakes are nut free." | Soft: asks the business about nuts at step 1; at step 2 `report_decision` · `accept` with `rule_evidence` quoting their no. | Accuracy | Soft |
 
 ## DC-6 Ask-first fields always ping (6 cases)
 
@@ -324,7 +333,7 @@ Every required field and every "likely question" in `templates.json` is matched 
 | doctor_booking | patient_status / "New or existing patient?" | TP-01 |
 | doctor_booking | reason / "Reason for the visit?" | TP-02 |
 | doctor_booking | "Insurance carrier and member ID?" | C6-02 |
-| (custom call, PC-3) | not a template | Brief C: G-09, T-06 |
+| (custom call, PC-3) | not a template | Brief C: G-09, T-06. Brief D: C4-18, C4-19 |
 
 ### Bug 1 (fixed): doctor answers never reached the call
 
@@ -345,7 +354,7 @@ TP-02 check that the model uses it.
 
 ## Totals
 
-68 cases × 3 runs = 204 runs per eval. 60 cases are **Hard** and 8 are Soft. 35 cases carry the **GR** tag, and the five global checks run on all 204 runs.
+70 cases × 3 runs = 210 runs per eval. 61 cases are **Hard** and 9 are Soft. 35 cases carry the **GR** tag, and the five global checks run on all 210 runs.
 
 Removed as repeats of other cases: D5-01 to D5-03 (same as C4-03, C4-02, C4-06; D5-04 became
 C4-14), G-02 (G-01), C6-05 (TP-06), SM-03 (TP-05), T-04 (T-02 plus C4-04), PI-05 (G-03) and
@@ -380,9 +389,9 @@ definitions, so after the first run that part is a cache hit.
 
 | Item | Estimate | Where it comes from |
 | --- | --- | --- |
-| Runs | 204 | 68 cases × 3 runs |
+| Runs | 210 | 70 cases × 3 runs |
 | Model calls per run | about 3 | Most cases are one turn, but a tool call needs a second call for the model's next reply. Timeout, reply and multi-turn cases need 3 to 5 calls. |
-| Model calls per eval | about 612 | 204 × 3 |
+| Model calls per eval | about 630 | 210 × 3 |
 | Input tokens per call | about 2,800 | About 2,400 measured for the system prompt plus tool definitions (brief A), plus about 400 for the conversation so far |
 | Cacheable part of that | about 2,400 | The system prompt and tool definitions are identical across runs of a brief |
 | Output tokens per call | about 150 | A tool call with its six `dimensions` answers and a reason, or one or two spoken sentences |
