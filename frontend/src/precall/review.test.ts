@@ -219,8 +219,8 @@ describe('Start (PC-6)', () => {
     expect(reduce(mid, { type: 'start' })).toBe(mid)
   })
 
-  it('can start a new call afterwards', () => {
-    const s = reduce(reduce(run(CUSTOM), { type: 'start' }), { type: 'new_call' })
+  it('can restart afterwards, and the chat is cleared', () => {
+    const s = reduce(reduce(run(CUSTOM), { type: 'start' }), { type: 'restart' })
     expect(s.stage).toBe('home')
     expect(s.reviewAfterId).toBeNull()
   })
