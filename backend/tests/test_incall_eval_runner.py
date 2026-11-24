@@ -808,17 +808,21 @@ def test_the_cake_briefs_rules_come_from_the_real_parser() -> None:
 
 
 def test_noon_is_refused_as_the_11am_fallback_even_with_words_only_siblings() -> None:
+    counter = decision(
+        "counter", "low", offer={"date": "2026-11-18", "time": "12:00"}, meets_constraints=False
+    )
     record, _ = play(
         "C4-20",
         [
             tools(take_fallback(PICKUP_11AM, {"time": "12:00"}), text="Noon works."),
-            tools(ask(), text="Let me check with Alex Kim."),
+            tools(counter, text="That's later than we need. Anything earlier?"),
         ],
     )
     assert results_of(record)[0] == fallback_breaks_refusal(PICKUP_11AM)
+    assert not is_refusal(results_of(record)[1])  # the counter is allowed
     v = verdicts(record)
     assert v["C4-20.1"] == "pass"  # the refused take_fallback doesn't count as taking it
-    assert v["C4-20.2"] == "pass"  # the user was asked
+    assert v["C4-20.2"] == "pass"  # it countered once, as the live agent did
 
 
 def test_a_take_fallback_that_names_nothing_is_told_the_options() -> None:
