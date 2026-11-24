@@ -15,6 +15,7 @@ import {
   type ChatState,
   type FormSubmission,
 } from './chat'
+import { SKIP_LABEL, type Clarification } from './clarify'
 import { fakeProfile, fakeTemplates } from './fakeBriefs'
 
 const ctx: ChatContext = { profile: fakeProfile, templates: fakeTemplates }
@@ -519,5 +520,122 @@ describe('splitListItems', () => {
     expect(splitListItems('really?? ok')).toEqual(['really??', 'ok'])
     expect(splitListItems(' ; ;; \n ')).toEqual([])
     expect(splitListItems('')).toEqual([])
+  })
+})
+
+
+describe("the server's questions before Start", () => {
+  const AT_7PM: Clarification = {
+    item: 'at 7pm',
+    list: 'constraints',
+    question: 'You wrote "at 7pm". Is 7pm the latest you would accept, or the only time that works?',
+    answers: [
+      { label: '7pm or earlier', rules: [{ kind: 'time', latest: '19:00' }], text: null },
+      { label: 'Only 7pm', rules: [{ kind: 'time', earliest: '19:00', latest: '19:00' }], text: null },
+    ],
+  }
+  const BEFORE_3: Clarification = {
+    item: 'Cupcakes before 3',
+    list: 'fallbacks',
+    question: 'You wrote "Cupcakes before 3". Did you mean before 3 in the morning or in the evening?',
+    answers: [
+      { label: 'Morning (am)', rules: null, text: 'Cupcakes before 3am' },
+      { label: 'Afternoon or evening (pm)', rules: null, text: 'Cupcakes before 3pm' },
+    ],
+  }
+
+  /** A custom call at the review card, with "at 7pm" as a must-have and "Cupcakes before 3" as a backup. */
+  const atReview = () =>
+    [
+      send('at 7pm'),
+      done("That's all"),
+      done('Nothing'),
+      send('Cupcakes before 3'),
+      done("That's all"),
+    ].reduce(reduce, run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122')))
+
+  const answer = (choice: number | 'skip'): ChatAction => ({ type: 'clarify_answer', choice })
+
+  it('asks the first question with one chip per answer and a not-sure chip', () => {
+    const review = atReview()
+    expect(review.stage).toBe('draft_ready')
+    const s = reduce(review, { type: 'clarify', questions: [AT_7PM, BEFORE_3] })
+    expect(lastAgent(s)).toBe(`Before I call, one thing I want to check. ${AT_7PM.question}`)
+    expect(s.chips.map((c) => c.label)).toEqual(['7pm or earlier', 'Only 7pm', SKIP_LABEL])
+    expect(s.clarify).toHaveLength(2)
+  })
+
+  it('an answer settles the item with its rules and asks the next question', () => {
+    let s = reduce(atReview(), { type: 'clarify', questions: [AT_7PM, BEFORE_3] })
+    s = reduce(s, answer(0))
+    expect(s.draft.constraints).toEqual([{ text: 'at 7pm', rules: [{ kind: 'time', latest: '19:00' }] }])
+    expect(s.messages.some((m) => m.from === 'user' && m.text === '7pm or earlier')).toBe(true)
+    expect(lastAgent(s)).toBe(BEFORE_3.question) // no lead-in the second time
+    expect(s.clarify).toEqual([BEFORE_3])
+  })
+
+  it('an am or pm answer rewrites the item, and the draft shows the new words', () => {
+    let s = reduce(atReview(), { type: 'clarify', questions: [BEFORE_3] })
+    s = reduce(s, answer(1))
+    expect(s.draft.fallbacks).toEqual([{ text: 'Cupcakes before 3pm' }])
+  })
+
+  it('"not sure" marks the item decided, with no rules, and keeps its words', () => {
+    let s = reduce(atReview(), { type: 'clarify', questions: [AT_7PM] })
+    s = reduce(s, answer('skip'))
+    expect(s.draft.constraints).toEqual([{ text: 'at 7pm', rules: [] }])
+    expect(s.messages.some((m) => m.from === 'user' && m.text === SKIP_LABEL)).toBe(true)
+  })
+
+  it('after the last answer it says to tap Start and clears the chips and the queue', () => {
+    let s = reduce(atReview(), { type: 'clarify', questions: [AT_7PM] })
+    s = reduce(s, answer(1))
+    expect(lastAgent(s)).toBe("Thanks, that's all I needed. Tap Start when you're ready.")
+    expect(s.chips).toEqual([])
+    expect(s.clarify).toEqual([])
+    expect(s.stage).toBe('draft_ready')
+  })
+
+  it('Start does nothing while a question is waiting, and works again after', () => {
+    const asking = reduce(atReview(), { type: 'clarify', questions: [AT_7PM] })
+    expect(reduce(asking, { type: 'start' })).toBe(asking)
+    const answered = reduce(asking, answer(0))
+    expect(reduce(answered, { type: 'start' }).stage).toBe('started')
+  })
+
+  it('carries the chosen rules into the brief the server is sent', () => {
+    let s = reduce(atReview(), { type: 'clarify', questions: [AT_7PM] })
+    s = reduce(s, answer(1))
+    const brief = completedDraft(s)
+    expect(brief?.constraints).toEqual([
+      { text: 'at 7pm', rules: [{ kind: 'time', earliest: '19:00', latest: '19:00' }] },
+    ])
+  })
+
+  it('drops a question about an item the user already changed, and says so if none are left', () => {
+    const gone: Clarification = { ...AT_7PM, item: 'something I deleted' }
+    const s = reduce(atReview(), { type: 'clarify', questions: [gone] })
+    expect(s.clarify).toEqual([])
+    expect(lastAgent(s)).toContain("couldn't match a question to your plan")
+    const some = reduce(atReview(), { type: 'clarify', questions: [gone, AT_7PM] })
+    expect(some.clarify).toEqual([AT_7PM])
+  })
+
+  it('ignores questions and answers outside the review, and an answer with no question', () => {
+    const home = initialChatState(ctx)
+    expect(reduce(home, { type: 'clarify', questions: [AT_7PM] })).toBe(home)
+    const review = atReview()
+    expect(reduce(review, answer(0))).toBe(review)
+  })
+
+  it('editing the plan drops the questions, since the server will read it again', () => {
+    const asking = reduce(atReview(), { type: 'clarify', questions: [AT_7PM, BEFORE_3] })
+    const editing = reduce(asking, { type: 'edit', target: 'constraints' })
+    expect(editing.clarify).toEqual([])
+  })
+
+  it('a restart starts with no questions', () => {
+    const asking = reduce(atReview(), { type: 'clarify', questions: [AT_7PM] })
+    expect(reduce(asking, { type: 'restart' }).clarify).toEqual([])
   })
 })

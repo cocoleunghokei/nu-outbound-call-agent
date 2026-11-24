@@ -231,3 +231,29 @@ describe('fake brief records', () => {
     for (const r of fakeBriefRecords) expect(r.missing_fields, r.business_name).not.toContain('fallbacks')
   })
 })
+
+
+describe('rules the user settled in a clarifying answer', () => {
+  it('go into the brief with the item, and an item without them stays words only', () => {
+    const base = chatDraft(ctx, [
+      { type: 'pick_custom' },
+      send('Hold a cake'),
+      send('Sunrise Bakery'),
+      send('617 555 0122'),
+      done('Nothing specific'),
+      done('Nothing'),
+      done('Nothing, ask me'),
+      done('Nothing, ask me'),
+    ])
+    const draft: CallDraft = {
+      ...base,
+      constraints: [{ text: 'at 7pm', rules: [] }, { text: 'by 10am' }],
+      preferences: [{ text: 'Cake has mochi' }],
+      fallbacks: [{ text: '11am too', rules: [{ kind: 'time', latest: '11:00' }] }],
+    }
+    const { brief } = buildBrief(draft, undefined, fakeProfile)
+    expect(brief.constraints).toEqual([{ text: 'at 7pm', rules: [] }, { text: 'by 10am' }])
+    expect(brief.preferences).toEqual([{ text: 'Cake has mochi' }])
+    expect(brief.fallbacks).toEqual([{ text: '11am too', rules: [{ kind: 'time', latest: '11:00' }] }])
+  })
+})
