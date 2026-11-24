@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from app.calls.assistant import TEMPERATURE, build_assistant_config
+from app.calls.assistant import MAX_TOKENS, TEMPERATURE, build_assistant_config
 from app.calls.prompt import (
     GUARDRAIL_RULES,
     build_system_prompt,
@@ -365,6 +365,14 @@ def test_config_is_transcribed_never_recorded_and_passes_the_port_checks() -> No
     prepared = prepare_assistant(built, SNAPSHOT)
     names = [t.get("function", {}).get("name") or t["type"] for t in prepared["model"]["tools"]]
     assert names == ["ask_user", "report_decision", "report_outcome", "endCall"]
+
+
+def test_config_sets_a_reply_token_cap_above_vapis_default_that_survives_the_port() -> None:
+    # Vapi's default is 250 and the largest reply seen in a thinking-off eval run was 236.
+    built = config()
+    assert built["model"]["maxTokens"] == MAX_TOKENS
+    assert MAX_TOKENS > 250
+    assert prepare_assistant(built, SNAPSHOT)["model"]["maxTokens"] == MAX_TOKENS
 
 
 def test_config_pins_a_low_temperature_that_survives_the_port() -> None:

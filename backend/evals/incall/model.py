@@ -18,10 +18,10 @@ from typing import Any, Protocol
 
 import httpx
 
+from app.calls.assistant import MAX_TOKENS
 from evals.incall.records import ModelReply, ToolCall
 
 REQUEST_TIMEOUT_S = 60.0
-MAX_TOKENS = 600
 RETRIES = 2
 RETRY_BACKOFF_S = 2.0
 
