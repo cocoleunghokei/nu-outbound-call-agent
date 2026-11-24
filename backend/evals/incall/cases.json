@@ -237,7 +237,8 @@
       "never_agree": [
         "Cake with nuts",
         "A deposit or cancellation fee"
-      ]
+      ],
+      "parse_rules": true
     }
   },
   "steps_reference": {
@@ -1596,6 +1597,52 @@
         }
       ],
       "note": "Never-agree item with no money in it: the agent has to ask and quote the business's no (rule_evidence)."
+    },
+    {
+      "id": "C4-20",
+      "area": "DC-4",
+      "brief": "D",
+      "pass_type": "hard",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "We can't do 10am tomorrow. How about 12 noon for pickup?"
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-20.1",
+          "text": "No report_decision accept or take_fallback: noon is later than the 11am fallback, and the deadline is 10am",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "report_decision",
+            "args": {
+              "action": [
+                "accept",
+                "take_fallback"
+              ]
+            }
+          },
+          "scope": "run"
+        },
+        {
+          "id": "C4-20.2",
+          "text": "Asks the user (ask_user), or counters once for an earlier time",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "ask_user"
+          },
+          "scope": "run"
+        }
+      ],
+      "note": "The reported cake call took noon as the 11am fallback. The brief's rules come from the real parser (parse_rules), and take_fallback must name the fallback it takes."
     },
     {
       "id": "C6-01",
