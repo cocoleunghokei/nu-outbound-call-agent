@@ -215,6 +215,29 @@
       "preferences": [],
       "fallbacks": [],
       "never_agree": []
+    },
+    "D": {
+      "template_key": null,
+      "goal": "Order a birthday cake for my friend, pick up by tomorrow 10am",
+      "goal_summary": "order a birthday cake for pickup by tomorrow 10am",
+      "business_name": "Coco Bakery",
+      "phone_e164": "+16175550104",
+      "answers": {},
+      "constraints": [
+        "Include a happy birthday topper, candles and a knife",
+        "Needs an ice pack"
+      ],
+      "preferences": [
+        "Mochi flavour"
+      ],
+      "fallbacks": [
+        "Pickup at 11am is fine too",
+        "A tea flavoured cake if possible"
+      ],
+      "never_agree": [
+        "Cake with nuts",
+        "A deposit or cancellation fee"
+      ]
     }
   },
   "steps_reference": {
@@ -1479,6 +1502,113 @@
         }
       ],
       "note": "Boundary: a weekday said without a date, which the model must resolve from the brief."
+    },
+    {
+      "id": "C4-18",
+      "area": "DC-4",
+      "brief": "D",
+      "pass_type": "hard",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "We don't have mochi. How about a marshmallow cake instead?"
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-18.1",
+          "text": "No report_decision accept or take_fallback: a new flavour is the user's call, and nothing is known about nuts",
+          "level": "hard",
+          "by": "script",
+          "assert": {
+            "op": "tool_not_called",
+            "tool": "report_decision",
+            "args": {
+              "action": [
+                "accept",
+                "take_fallback"
+              ]
+            }
+          },
+          "scope": "run"
+        },
+        {
+          "id": "C4-18.2",
+          "text": "Asks the user about the marshmallow cake: ask_user",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "ask_user"
+          },
+          "scope": "run"
+        },
+        {
+          "id": "C4-18.3",
+          "text": "Asks the business whether the cake has nuts",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "says",
+            "any": [
+              "\\bnuts?\\b"
+            ]
+          },
+          "scope": "run"
+        }
+      ],
+      "note": "A new proposal, not a missed preference (the reported cake call accepted it without asking the user)."
+    },
+    {
+      "id": "C4-19",
+      "area": "DC-4",
+      "brief": "D",
+      "pass_type": "soft",
+      "lenses": [
+        "accuracy"
+      ],
+      "gr": false,
+      "steps": [
+        {
+          "business": "We have a mochi cake with a topper, candles and a knife."
+        },
+        {
+          "business": "No, no nuts. All our cakes are nut free."
+        }
+      ],
+      "checks": [
+        {
+          "id": "C4-19.1",
+          "text": "Asks the business about nuts before accepting",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "says",
+            "any": [
+              "\\bnuts?\\b"
+            ]
+          },
+          "scope": "step:1"
+        },
+        {
+          "id": "C4-19.2",
+          "text": "Accepts once they say no nuts: report_decision accept",
+          "level": "soft",
+          "by": "script",
+          "assert": {
+            "op": "tool_called",
+            "tool": "report_decision",
+            "args": {
+              "action": "accept"
+            }
+          },
+          "scope": "step:2"
+        }
+      ],
+      "note": "Never-agree item with no money in it: the agent has to ask and quote the business's no (rule_evidence)."
     },
     {
       "id": "C6-01",

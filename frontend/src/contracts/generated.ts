@@ -390,7 +390,22 @@ export interface ReportDecisionArgs {
   covered_by_instruction?: boolean;
   dimensions: Dimensions;
   offer?: HeardOffer;
+  /**
+   * For accept or take_fallback, when the brief has never-agree items that are not about money: one entry per item, with the business's own words saying the offer is not that thing. Ask them a question that names the item first ("Does that cake have any nuts?"). The system checks that they really said it, in answer to your question or unprompted, and that it is a no: a yes is not enough. It refuses the action until every item has it.
+   */
+  rule_evidence?: RuleEvidence[];
 }
+export interface RuleEvidence {
+  /**
+   * The never-agree item exactly as typed in <never_agree>
+   */
+  rule: string;
+  /**
+   * The business's no, copied as they said it, e.g. no nuts, or none of our cakes have nuts
+   */
+  business_said: string;
+}
+
 export type ReportedOutcome =
   "booked" | "cancelled" | "rescheduled" | "needs_follow_up" | "refused_ai" | "wrong_number";
 

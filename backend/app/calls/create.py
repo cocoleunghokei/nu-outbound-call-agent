@@ -37,6 +37,7 @@ from app.briefs.phone import check_phone
 from app.briefs.readiness import check_readiness
 from app.briefs.store import get_brief, load_snapshot
 from app.calls.assistant import build_assistant_config
+from app.calls.prompt import us_today
 from app.calls.store import set_status
 from app.calls_lock import TERMINAL_STATUSES, lock_call, write_call_secrets
 from app.config import Settings
@@ -201,6 +202,7 @@ async def prepare_call(
             server_url=server_url,
             webhook_secret=webhook_secret,
             max_duration_s=MAX_DURATION_S,
+            today=us_today(datetime.now(UTC)),
         )
         # The same check create_call runs before sending, run now so a refusal is a 422
         # before any call row exists, not a failed call on every Start.

@@ -45,6 +45,8 @@ from app.calls.gates import (
     money_gate,
     needless_counter_gate,
     needless_ping_gate,
+    never_agree_gate,
+    new_proposal_gate,
     unsaid_name_gate,
 )
 from app.calls.scoring import score_tool_call
@@ -167,7 +169,9 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
             refusal = (
                 money_gate(str(action), facts)
                 or low_offer_gate(str(action), _dims(args), facts, score, covered)
+                or new_proposal_gate(str(action), _dims(args), facts, covered)
                 or missing_detail_gate(str(action), facts, score, covered)
+                or never_agree_gate(str(action), args, state.brief, facts, covered)
             )
             if refusal is not None:
                 return refusal
@@ -276,6 +280,7 @@ async def play_case(
     ]
     record.events.append(Event(step=0, kind="agent", text=setup.first_message))
     state = _State(brief=build_case_brief(data, case))
+    state.timeline.append(("agent", setup.first_message))
 
     for number, step in enumerate(case["steps"], start=1):
         if "business" in step:
@@ -329,6 +334,7 @@ async def _respond(
         convo.append(_assistant_message(reply))
         if reply.text:
             record.events.append(Event(step=step, kind="agent", text=reply.text))
+            state.timeline.append(("agent", reply.text))  # the backend stores the agent's lines too
         if not reply.tool_calls:
             break
         for call in reply.tool_calls:

@@ -11,7 +11,7 @@ owner, so row-level security does not apply here: every query filters by the cal
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends
@@ -24,7 +24,7 @@ from app.contracts.generated import OutcomeDetails, ReportOutcomeArgs
 from app.db import get_pool
 from app.errors import ApiError
 from app.postcall.decide import call_days_for, confirmed_details
-from app.postcall.jobs import latest_report
+from app.postcall.jobs import latest_report, requested_day_of
 
 router = APIRouter()
 
@@ -157,10 +157,11 @@ async def get_call_result(
         # was downgraded to needs_follow_up must not show as a confirmed booking.
         accepted = claims_accepted(report, call.outcome)
         transcript = await _transcript(conn, call_id)
+        asked_for = await requested_day_of(conn, call_id)
         return CallResultResponse(
             call=call,
             business_confirmed=report.business_confirmed if report and accepted else False,
-            details=shown_details(report, accepted, call, transcript),
+            details=shown_details(report, accepted, call, transcript, asked_for),
             open_items=list(report.open_items or []) if report else [],
             decisions=await _decisions(conn, call_id),
             shared_fields=await _shared_fields(conn, call_id),
@@ -173,6 +174,7 @@ def shown_details(
     accepted: bool,
     call: HistoryItem,
     transcript: list[TranscriptLineOut],
+    requested_day: date | None = None,
 ) -> OutcomeDetails:
     """The agreed details the result page may show (PO-2): none unless the outcome job
     accepted the report, and then only those the business said in the transcript shown on
@@ -181,7 +183,10 @@ def shown_details(
         return OutcomeDetails()
     business = [line.text for line in transcript if line.role == "business"]
     call_days = call_days_for(call.created_at, call.ended_at or call.created_at)
-    return confirmed_details(report.details, business, call_days=call_days)
+    turns = [(line.role, line.text) for line in transcript]
+    return confirmed_details(
+        report.details, business, call_days=call_days, turns=turns, requested_day=requested_day
+    )
 
 
 async def _decisions(conn: AsyncConnection[Any], call_id: uuid.UUID) -> list[DecisionOut]:

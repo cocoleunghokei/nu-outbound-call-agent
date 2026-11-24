@@ -23,6 +23,15 @@ Outcome rules (docs/architecture.md, post-call processing). When in doubt: Needs
   line as a refusal is Needs follow-up: the user checks.
 - Known limit: an offer from the business ("How about October 24 at 7:30.") reads like a
   confirmation. The agent's ``business_confirmed`` is the guard for that case.
+- A bare "yes" counts too, when it answers the agent's proposal (see ``affirmed_proposals``):
+  Agent "Would 7:30 work instead?", business "Yeah. Sure." The business agreed to what the
+  agent just said, so the agent's clause is evidence, held to the same time-and-date test.
+  The date may also come from the brief: the day the user typed (``requested_day``) counts
+  as the agreed date when it is the date the agent reported and no business line names a
+  different day, so a speech-to-text slip in the transcript ("deck 23" for "Dec 23") can't
+  hide a date the user asked for and the business never contradicted.
+  Only a line made of nothing but agreement words counts ("Yeah, but we only have salad"
+  doesn't), only straight after an agent line, and not before a later refusal.
 - With no ``report_outcome``, the outcome comes from Vapi's end reason. Only a clear
   "nobody answered" becomes No answer; anything else is Needs follow-up, never a guessed
   Failed.
@@ -30,11 +39,22 @@ Outcome rules (docs/architecture.md, post-call processing). When in doubt: Needs
 """
 
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from app.contracts.generated import OutcomeDetails, ReportOutcomeArgs
+
+# One line of the call: who spoke ("agent" or "business") and what was said.
+Turn = tuple[str, str]
+
+# A line that is only agreement: "Yeah. Sure.", "Okay, sounds good!", "That works." Anything
+# more ("Yeah, but we only have salad") is not a plain yes and never counts as one.
+_AGREEMENT = (
+    r"yes|yeah|yep|yup|sure|ok|okay|alright|all right|absolutely|perfect|great|fine|"
+    r"sounds good|that works|that's fine|that is fine|works for me|that's great"
+)
+PLAIN_AGREEMENT = re.compile(rf"^\W*(?:(?:{_AGREEMENT})\b[\s,.!]*)+$", re.IGNORECASE)
 
 # Outcomes that claim something was arranged, so they need the business's confirmation.
 NEEDS_EVIDENCE = frozenset({"booked", "cancelled", "rescheduled"})
@@ -202,11 +222,15 @@ def decide_outcome(
     *,
     pause_capped: bool = False,
     call_days: Collection[date] = (),
+    turns: Sequence[Turn] = (),
+    requested_day: date | None = None,
 ) -> OutcomeDecision:
     """Decide the call's outcome (PO-1) from the agent's report and the final transcript.
 
     ``call_days`` are the local days the call could have happened on (``call_days_for``).
-    Without them a weekday is never enough to confirm a date.
+    Without them a weekday is never enough to confirm a date. ``turns`` is the whole call in
+    order; without it a plain "yes" from the business can't be matched to what it answered.
+    ``requested_day`` is the day the user typed in the brief (``calls.requested_day``).
     """
     if pause_capped and report is None:
         return OutcomeDecision("needs_follow_up", "ended by the pause cap")
@@ -222,7 +246,13 @@ def decide_outcome(
         return OutcomeDecision(reported, "reported by the agent")
     if not report.business_confirmed:
         return OutcomeDecision("needs_follow_up", f"{reported} not confirmed by the business")
-    if not has_confirmation_evidence(report.details, business_lines, call_days=call_days):
+    if not has_confirmation_evidence(
+        report.details,
+        business_lines,
+        call_days=call_days,
+        turns=turns,
+        requested_day=requested_day,
+    ):
         return OutcomeDecision(
             "needs_follow_up", f"{reported} not found in the business's words in the transcript"
         )
@@ -291,11 +321,19 @@ def has_confirmation_evidence(
     business_lines: list[str],
     *,
     call_days: Collection[date] = (),
+    turns: Sequence[Turn] = (),
+    requested_day: date | None = None,
 ) -> bool:
     """True if one clause of the business's words says the confirmation number (with a cue),
     or says both the agreed time and the agreed date (``mentions_date``, or
     ``mentions_weekday`` for the possible ``call_days``). Questions, lines with a refusal and
-    anything said before a later refusal line don't count."""
+    anything said before a later refusal line don't count.
+
+    A plain "yes" to the agent's proposal also counts (``affirmed_proposals``): the proposal
+    must say the agreed time, and the agreed date too, in its own clause or, when the clause
+    names no other date, anywhere the agent said it earlier in the call, or, when it is the
+    day the user typed in the brief (``requested_day``) and no business line named another
+    day, from the brief (``_brief_day_stands``)."""
     if details is None:
         return False
     number = valid_confirmation_number(details.confirmation_number)
@@ -311,7 +349,80 @@ def has_confirmation_evidence(
                 mentions_date(text, agreed_day) or mentions_weekday(text, agreed_day, call_days)
             ):
                 return True
+    if agreed_day is not None and agreed_time is not None:
+        for clause, earlier in affirmed_proposals(turns):
+            if not mentions_time(clause, agreed_time, spoken=True):
+                continue
+            if _says_the_date(clause, agreed_day, call_days):
+                return True
+            if _names_another_date(clause):
+                continue
+            if _says_the_date(earlier, agreed_day, call_days):
+                return True
+            if _brief_day_stands(agreed_day, requested_day, business_lines, call_days):
+                return True
     return False
+
+
+def _brief_day_stands(
+    agreed: date,
+    requested: date | None,
+    business_lines: list[str],
+    call_days: Collection[date],
+) -> bool:
+    """True if the day the user typed in the brief is the agreed date and the business never
+    named a different day: every line of theirs that names a month and day or a weekday names
+    the agreed one. The transcript can be wrong about the date the agent said ("deck 23");
+    the brief is not, and nothing the business said contradicts it."""
+    if requested is None or requested != agreed:
+        return False
+    for line in business_lines:
+        for part in clauses(line):
+            text = _fold(part)
+            if _names_another_date(text) and not _says_the_date(text, agreed, call_days):
+                return False
+    return True
+
+
+def _says_the_date(text: str, agreed: date, call_days: Collection[date]) -> bool:
+    return mentions_date(text, agreed) or mentions_weekday(text, agreed, call_days)
+
+
+def _names_another_date(text: str) -> bool:
+    """True if ``text`` (lowercased) names any month and day or any weekday."""
+    return _names_a_month_day(text) or any(re.search(rf"\b{day}\b", text) for day in _WEEKDAYS)
+
+
+def affirmed_proposals(turns: Sequence[Turn]) -> list[tuple[str, str]]:
+    """What the business agreed to with a plain "yes", as (clause, earlier agent words).
+
+    A business line made only of agreement words ("Yeah. Sure.") that comes straight after an
+    agent line, with no business refusal on or after it, means the business agreed to what the
+    agent just said. Each clause of that agent line (questions included: "Would 7:30 work?")
+    is returned lowercased, with everything the agent said up to and including that line, so
+    the caller can look for the date there. A clause that is itself a refusal ("let me check")
+    is left out.
+    """
+    refusal_after = [False] * (len(turns) + 1)
+    for index in range(len(turns) - 1, -1, -1):
+        role, text = turns[index]
+        refuses = role == "business" and any(is_refusal(part) for part in clauses(text))
+        refusal_after[index] = refusal_after[index + 1] or refuses
+    found: list[tuple[str, str]] = []
+    said_by_agent: list[str] = []
+    for index, (role, text) in enumerate(turns):
+        if role == "agent":
+            said_by_agent.append(_fold(text))
+            continue
+        if index == 0 or turns[index - 1][0] != "agent" or refusal_after[index]:
+            continue
+        if not PLAIN_AGREEMENT.match(text.strip()):
+            continue
+        earlier = " ".join(said_by_agent)
+        found.extend(
+            (_fold(part), earlier) for part in clauses(turns[index - 1][1]) if not is_refusal(part)
+        )
+    return found
 
 
 def evidence_clauses(business_lines: list[str]) -> list[str]:
@@ -336,6 +447,8 @@ def confirmed_details(
     business_lines: list[str],
     *,
     call_days: Collection[date] = (),
+    turns: Sequence[Turn] = (),
+    requested_day: date | None = None,
 ) -> OutcomeDetails:
     """Only the details the business itself said (PO-2), each checked on its own.
 
@@ -344,24 +457,44 @@ def confirmed_details(
     ``evidence_clauses``: the date (``mentions_date`` or ``mentions_weekday``), the time, the
     confirmation number next to a cue, and the staff name as whole words (a title such as
     "Dr." may be left out). The date and the time may be said in different clauses. Anything
-    else is dropped, so a detail the agent made up never shows as confirmed.
+    else is dropped, so a detail the agent made up never shows as confirmed. What the business
+    agreed to with a plain "yes" (``affirmed_proposals``) counts as said by the business, and
+    so does the day the user typed in the brief when the business agreed to a time with a plain
+    "yes" and named no different day (``_brief_day_stands``).
     """
     if details is None:
         return OutcomeDetails()
-    texts = evidence_clauses(business_lines)
+    affirmed = [clause for clause, _ in affirmed_proposals(turns)]
+    texts = evidence_clauses(business_lines) + affirmed
     agreed_day = valid_iso_date(details.date)
     agreed_time = parse_time(details.time) if details.time else None
     number = valid_confirmation_number(details.confirmation_number)
+    day_from_brief = (
+        agreed_day is not None
+        and agreed_time is not None
+        and any(
+            mentions_time(c, agreed_time, spoken=True) and not _names_another_date(c)
+            for c in affirmed
+        )
+        and _brief_day_stands(agreed_day, requested_day, business_lines, call_days)
+    )
     return OutcomeDetails(
         date=details.date
         if agreed_day is not None
-        and any(
-            mentions_date(t, agreed_day) or mentions_weekday(t, agreed_day, call_days)
-            for t in texts
+        and (
+            day_from_brief
+            or any(
+                mentions_date(t, agreed_day) or mentions_weekday(t, agreed_day, call_days)
+                for t in texts
+            )
         )
         else None,
         time=details.time
-        if agreed_time is not None and any(mentions_time(t, agreed_time) for t in texts)
+        if agreed_time is not None
+        and (
+            any(mentions_time(t, agreed_time) for t in evidence_clauses(business_lines))
+            or any(mentions_time(c, agreed_time, spoken=True) for c in affirmed)
+        )
         else None,
         confirmation_number=details.confirmation_number
         if number is not None and any(says_confirmation_number(t, number) for t in texts)
@@ -408,17 +541,30 @@ def parse_time(value: str | None) -> tuple[int, int] | None:
 _MERIDIEM = r"\s*(a\.?m\.?|p\.?m\.?)?"
 
 
-def mentions_time(text: str, agreed: tuple[int, int]) -> bool:
+def mentions_time(text: str, agreed: tuple[int, int], *, spoken: bool = False) -> bool:
     """True if ``text`` (lowercased) says the agreed (hour, minute): "7:30", "7:30pm",
     "19:30", and for whole hours also "7pm" or "7 o'clock". An am/pm that contradicts the
     agreed time ("7:30 am" for 19:30) doesn't count, and "7:30" never matches inside
-    "17:30". A whole hour also counts as "at 7" with no am/pm, as people book."""
+    "17:30". A whole hour also counts as "at 7" with no am/pm, as people book.
+
+    Speech-to-text often writes 7:30 as "7 30": that counts with an am/pm ("7 30 PM"), and with
+    none only when ``spoken`` is set, for the agent's own words that the business said yes to
+    ("Would 7 30 work?"), so "a table for 7 30 people" never reads as a time."""
     hour, minute = agreed
     h12 = hour % 12 or 12
     wanted = "p" if hour >= 12 else "a"
-    for number, is_24h in ((f"{h12}:{minute:02d}", False), (f"{hour}:{minute:02d}", True)):
-        for match in re.finditer(rf"(?<![\d:]){re.escape(number)}(?!\d){_MERIDIEM}", text):
+    # (regex, is it 24-hour, is it the "7 30" form that speech-to-text writes)
+    forms = [
+        (re.escape(f"{h12}:{minute:02d}"), False, False),
+        (re.escape(f"{hour}:{minute:02d}"), True, False),
+    ]
+    if minute != 0:
+        forms.append((rf"{h12}\s{minute:02d}", False, True))
+    for number, is_24h, is_spaced in forms:
+        for match in re.finditer(rf"(?<![\d:]){number}(?!\d){_MERIDIEM}", text):
             meridiem = match.group(1)
+            if meridiem is None and is_spaced and not spoken:
+                continue
             if meridiem is None or (not is_24h and meridiem[0] == wanted):
                 return True
     if minute == 0:

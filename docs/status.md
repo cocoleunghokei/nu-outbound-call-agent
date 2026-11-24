@@ -47,7 +47,7 @@ The one real call so far (2026-11-10, about 40 s) was placed directly through th
 |---|---|---|
 | Onboarding (Steve) | JWT auth (`backend/app/auth.py`), `GET /me` | Sign-in screen, profile API, notification permission (ON-1 to ON-7) |
 | Pre-call (Lotto) | Chat UI (`frontend/src/precall/`), `/briefs` API (templates, build, create, get, patch) | Answer validation (#47, #48). DeepSeek opening line for custom calls is in review (PR #44). |
-| During call (Coco) | `ask_user` pause and ping, reply, timeout sweeper, pause/resume/end via outbox, call status, decision logging, agent prompt and assistant config (`backend/app/calls/`). Live page with mock and real (Supabase Realtime) modes (`frontend/src/live-call/`). | `POST /calls` (#45), send an instruction (DC-10), browser push (DC-8) |
+| During call (Coco) | `ask_user` pause and ping, reply, timeout sweeper, pause/resume/end via outbox, call status, decision logging, agent prompt and assistant config (`backend/app/calls/`). Live page with mock and real (Supabase Realtime) modes (`frontend/src/live-call/`). | `POST /calls` (#45), browser push (DC-8) |
 | Post-call (Harper) | History list and result page with fake data. Transcript view (#53). | Outcome handlers (PR #55), history API (PR #56), real data on screen (PR #57), notification (PR #54): all in review with changes requested. Back button (#49). |
 
 **Tests on `main`:**

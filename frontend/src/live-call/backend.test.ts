@@ -195,6 +195,14 @@ describe('postReply and postCommand', () => {
     expect(init.body).toBe(JSON.stringify({ type: 'pause' }))
   })
 
+  it('sends an instruction as { type, text }', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await postCommand('https://api.example.test', 'tok', CALL_ID, 'instruction', 'ask about Saturday')
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(init.body).toBe(JSON.stringify({ type: 'instruction', text: 'ask about Saturday' }))
+  })
+
   it('turns a network failure or a non-JSON body into a readable result', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
     expect(await postCommand('https://api.example.test', 'tok', CALL_ID, 'end')).toMatchObject({
