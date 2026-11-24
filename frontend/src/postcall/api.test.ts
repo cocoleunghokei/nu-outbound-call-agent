@@ -116,6 +116,78 @@ describe('toCallResult', () => {
     expect(result?.transcript).toEqual([])
   })
 
+  it('maps result items and the follow-up, dropping malformed rows', () => {
+    const result = toCallResult({
+      ...body,
+      follow_up: '  Call to confirm.  ',
+      result_items: [
+        {
+          label: 'Ice pack',
+          asked: null,
+          got: '+$3.00',
+          status: 'extra',
+          reason: 'They would not waive it.',
+          approved_by: 'user',
+          cost_cents: 300,
+          evidence: [10, 'x', 1.5, 11],
+          verified: true,
+        },
+        { label: 'Party', asked: 'Table for 2', got: 'Table for 2', status: 'as_asked', verified: false },
+        { label: 'No status', got: 'x' },
+        { label: '  ', got: 'x', status: 'changed' },
+        { got: 'x', status: 'changed' },
+        'nope',
+      ],
+    })
+    expect(result?.followUp).toBe('Call to confirm.')
+    expect(result?.items).toEqual([
+      {
+        label: 'Ice pack',
+        asked: null,
+        got: '+$3.00',
+        status: 'extra',
+        reason: 'They would not waive it.',
+        approvedBy: 'user',
+        costCents: 300,
+        evidence: [10, 11],
+        verified: true,
+      },
+      {
+        label: 'Party',
+        asked: 'Table for 2',
+        got: 'Table for 2',
+        status: 'as_asked',
+        reason: null,
+        approvedBy: null,
+        costCents: null,
+        evidence: [],
+        verified: false,
+      },
+    ])
+  })
+
+  it('has no items and no follow-up when an older server does not send them', () => {
+    const result = toCallResult({ call: CALL })
+    expect(result?.items).toEqual([])
+    expect(result?.followUp).toBeNull()
+  })
+
+  it('reads a row without "verified" as verified, and a bad cost as no cost', () => {
+    const result = toCallResult({
+      call: CALL,
+      result_items: [
+        { label: 'A', got: 'b', status: 'changed', cost_cents: -5 },
+        { label: 'C', got: 'd', status: 'changed', cost_cents: 2.5 },
+        { label: 'E', got: 'f', status: 'changed', cost_cents: '300' },
+      ],
+    })
+    expect(result?.items.map((i) => [i.verified, i.costCents])).toEqual([
+      [true, null],
+      [true, null],
+      [true, null],
+    ])
+  })
+
   it('rejects a result whose call is malformed', () => {
     expect(toCallResult({ ...body, call: { id: 1 } })).toBeNull()
   })

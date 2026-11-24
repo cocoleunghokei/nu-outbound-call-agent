@@ -52,6 +52,32 @@ export interface SharedField {
   state: DisclosureState
 }
 
+/** How a result item compares with what the user asked. Open: the backend may add more. */
+export type ResultItemStatus = 'as_asked' | 'changed' | 'not_met' | 'extra' | (string & {})
+
+/**
+ * One asked-vs-got row (PO-2), already checked by the backend against the transcript
+ * (`backend/app/postcall/result_items.py`, `docs/call-result-items.md`).
+ */
+export interface ResultItem {
+  /** One to three words, e.g. "Pickup" */
+  label: string
+  /** The user's own words from the brief. Null for something the business added. */
+  asked: string | null
+  /** What was agreed */
+  got: string
+  status: ResultItemStatus
+  reason: string | null
+  /** "brief": the brief allowed it. "user": the user said yes on the call. "none": nobody did. */
+  approvedBy: string | null
+  /** Whole cents, for a fee or price the business said */
+  costCents: number | null
+  /** `seq` of the transcript lines that back this row, for "show in transcript" */
+  evidence: number[]
+  /** False when no transcript line backs the row (only an `as_asked` row is shown then) */
+  verified: boolean
+}
+
 /** Everything the result page shows for one ended call. */
 export interface CallResult {
   call: CallHistoryItem
@@ -59,6 +85,10 @@ export interface CallResult {
   businessConfirmed: boolean
   details: OutcomeDetails
   openItems: string[]
+  /** Asked-vs-got rows. Empty for calls whose report has none: the page then skips the table. */
+  items: ResultItem[]
+  /** One sentence on what the user must do next, or null */
+  followUp: string | null
   decisions: AgentDecision[]
   sharedFields: SharedField[]
   /** Final transcript lines (PO-4), from the call's `transcript.final` events */

@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { formatCallDate, outcomeDisplay } from '../history/format'
 import { actionLabel, agreedRows, disclosureLabel, fieldLabel } from './format'
+import { ResultItemsTable } from './ResultItemsTable'
 import { TranscriptView } from './TranscriptView'
 import type { CallResult } from './types'
 import '../history/CallHistory.css'
@@ -24,6 +26,8 @@ export function CallResultView({ result, onBack }: CallResultViewProps) {
   const outcome = outcomeDisplay(call)
   const agreed = agreedRows(result.details)
   const unconfirmed = call.outcome !== null && NEEDS_CONFIRMATION.has(call.outcome) && !result.businessConfirmed
+  // The row whose transcript lines are highlighted, and which lines they are.
+  const [picked, setPicked] = useState<{ row: number; seqs: readonly number[] } | null>(null)
 
   return (
     <article className="cr" aria-labelledby="cr-title">
@@ -52,7 +56,19 @@ export function CallResultView({ result, onBack }: CallResultViewProps) {
                 The business didn’t clearly confirm this. Check with them before you rely on it.
               </p>
             )}
+            {result.followUp && (
+              <p className="cr-next" role="note">
+                <span className="cr-brief-label">Next step</span>
+                {result.followUp}
+              </p>
+            )}
           </header>
+
+          <ResultItemsTable
+            items={result.items}
+            selected={picked?.row ?? null}
+            onShow={(row, seqs) => setPicked({ row, seqs })}
+          />
 
           {agreed.length > 0 && (
             <section className="cr-group" aria-labelledby="cr-agreed">
@@ -123,7 +139,7 @@ export function CallResultView({ result, onBack }: CallResultViewProps) {
         </div>
 
         <aside className="cr-side">
-          <TranscriptView lines={result.transcript} businessName={call.businessName} />
+          <TranscriptView lines={result.transcript} businessName={call.businessName} highlight={picked?.seqs} />
         </aside>
       </div>
     </article>
