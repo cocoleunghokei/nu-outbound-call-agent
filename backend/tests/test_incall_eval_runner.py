@@ -23,6 +23,8 @@ from app.calls.gates import (
     REFUSED_MONEY,
     REFUSED_NEEDLESS_COUNTER,
     REFUSED_NEW_PROPOSAL,
+    fallback_breaks_refusal,
+    fallback_not_named_refusal,
     is_refusal,
     never_agree_refusal,
 )
@@ -258,6 +260,17 @@ def test_ending_the_call_early_stops_the_run() -> None:
     assert not [e for e in record.events if e.step == 2]
 
 
+def friday_morning_fallback() -> tuple[str, dict[str, Any]]:
+    """T-01's take_fallback as the model should write it: the fallback named, the offer noted."""
+    call = decision(
+        "take_fallback",
+        matches_fallback=True,
+        offer={"date": "2026-11-20", "time": "10:00"},
+    )
+    call[1]["fallback"] = "Friday 20 November, morning (before noon)"
+    return call
+
+
 def test_a_settling_decision_withdraws_the_open_question() -> None:
     record, _ = play(
         "T-01",
@@ -265,7 +278,7 @@ def test_a_settling_decision_withdraws_the_open_question() -> None:
             tools(ask(), text="One moment."),
             QUIET,
             say("Thanks, still checking."),
-            tools(decision("take_fallback", matches_fallback=True)),
+            tools(friday_morning_fallback()),
         ],
     )
     results = [e.text for e in record.events if e.kind == "tool_result"]
@@ -841,3 +854,82 @@ def test_silences_survive_the_results_file_and_old_files_still_load() -> None:
     old = record.to_json()
     del old["silences"]
     assert RunRecord.from_json(old).silences == []
+
+
+# --- noon taken as the 11am fallback, replayed ---------------------------------------------
+
+PICKUP_11AM = "Pickup at 11am is fine too"
+
+
+def take_fallback(name: str | None, offer: dict[str, Any] | None) -> tuple[str, dict[str, Any]]:
+    call = decision("take_fallback", matches_fallback=True, offer=offer)
+    if name is not None:
+        call[1]["fallback"] = name
+    return call
+
+
+def test_the_cake_briefs_rules_come_from_the_real_parser() -> None:
+    from evals.incall.setup import build_case_brief
+
+    brief = build_case_brief(DATA, DATA.case("C4-20"))
+    deadline = brief["constraints"][-1]
+    assert deadline["text"] == "By tomorrow 10am"  # from the goal; the eval's today is 17 Nov
+    assert deadline["rules"] == [
+        {"kind": "date", "on": "2026-11-18"},
+        {"kind": "time", "latest": "10:00"},
+    ]
+    assert brief["fallbacks"][0]["rules"] == [{"kind": "time", "latest": "11:00"}]
+    assert "rules" not in brief["fallbacks"][1]  # the tea cake is words only
+
+
+def test_noon_is_refused_as_the_11am_fallback_even_with_words_only_siblings() -> None:
+    counter = decision(
+        "counter", "low", offer={"date": "2026-11-18", "time": "12:00"}, meets_constraints=False
+    )
+    record, _ = play(
+        "C4-20",
+        [
+            tools(take_fallback(PICKUP_11AM, {"time": "12:00"}), text="Noon works."),
+            tools(counter, text="That's later than we need. Anything earlier?"),
+        ],
+    )
+    assert results_of(record)[0] == fallback_breaks_refusal(PICKUP_11AM)
+    assert not is_refusal(results_of(record)[1])  # the counter is allowed
+    v = verdicts(record)
+    assert v["C4-20.1"] == "pass"  # the refused take_fallback doesn't count as taking it
+    assert v["C4-20.2"] == "pass"  # it countered once, as the live agent did
+
+
+def test_a_take_fallback_that_names_nothing_is_told_the_options() -> None:
+    record, _ = play("C4-20", [tools(take_fallback(None, {"time": "12:00"})), tools(ask())])
+    options = [
+        PICKUP_11AM,
+        "Is there another branch for pickup if this store is not available?",
+        "Tea flavoured cake if possible",
+    ]
+    refusal = results_of(record)[0]
+    assert refusal.startswith(fallback_not_named_refusal(options)[:60])
+    assert is_refusal(refusal)
+
+
+def test_a_fallback_that_fits_is_taken_when_it_is_named() -> None:
+    # T-01: "A Friday 10am with Dr. Rivera just opened up", brief A's Friday-morning fallback.
+    record, _ = play(
+        "T-01",
+        [
+            tools(ask(), text="One moment."),
+            QUIET,
+            say("Still checking."),
+            tools(friday_morning_fallback()),
+        ],
+    )
+    assert not is_refusal(results_of(record)[-1])
+
+
+def test_a_fallback_named_for_an_offer_that_breaks_it_is_refused_in_the_eval_too() -> None:
+    late = decision(
+        "take_fallback", matches_fallback=True, offer={"date": "2026-11-20", "time": "12:00"}
+    )
+    late[1]["fallback"] = "Friday 20 November, morning (before noon)"
+    record, _ = play("T-01", [tools(ask(), text="One moment."), QUIET, say("Still."), tools(late)])
+    assert is_refusal(results_of(record)[-1])

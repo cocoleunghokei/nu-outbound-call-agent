@@ -43,6 +43,7 @@ from app.calls.gates import (
     low_offer_gate,
     missing_detail_gate,
     money_gate,
+    named_fallback_gate,
     needless_counter_gate,
     needless_ping_gate,
     never_agree_gate,
@@ -170,6 +171,7 @@ def tool_result(data: EvalData, state: _State, name: str, args: dict[str, Any] |
                 money_gate(str(action), facts)
                 or low_offer_gate(str(action), _dims(args), facts, score, covered)
                 or new_proposal_gate(str(action), _dims(args), facts, covered)
+                or named_fallback_gate(str(action), args, state.brief, facts, covered)
                 or missing_detail_gate(str(action), facts, score, covered)
                 or never_agree_gate(str(action), args, state.brief, facts, covered)
             )

@@ -19,9 +19,10 @@ too long for the card, and the money and Low-offer gates (``app/calls/gates.py``
 an accept or take_fallback: the agent then gets the refusal as its tool result, nothing is
 logged, and the open question stays open.
 
-Two more gates guard taking an offer: ``new_proposal_gate`` (the brief can't answer it, so
-the user decides) and ``never_agree_gate`` (the business must say, in words that are really in
-the transcript, that the offer isn't a never-agree item).
+More gates guard taking an offer: ``new_proposal_gate`` (the brief can't answer it, so the user
+decides), ``named_fallback_gate`` (a take_fallback names the fallback it takes, and that
+fallback's rules must fit the offer) and ``never_agree_gate`` (the business must say, in words
+that are really in the transcript, that the offer isn't a never-agree item).
 
 A field the agent shares again (the business couldn't hear the phone number) is logged once:
 see ``decision_dedup_key``.
@@ -43,6 +44,7 @@ from app.calls.gates import (
     low_offer_gate,
     missing_detail_gate,
     money_gate,
+    named_fallback_gate,
     needless_counter_gate,
     never_agree_gate,
     new_proposal_gate,
@@ -95,6 +97,7 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
             money_gate(action, facts)
             or low_offer_gate(action, ctx.dimensions, facts, score, covered)
             or new_proposal_gate(action, ctx.dimensions, facts, covered)
+            or named_fallback_gate(action, ctx.arguments, brief, facts, covered)
             or missing_detail_gate(action, facts, score, covered)
             or never_agree_gate(action, ctx.arguments, brief, facts, covered)
         )

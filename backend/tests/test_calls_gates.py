@@ -598,6 +598,9 @@ def test_a_fallback_with_no_time_is_refused_through_the_webhook(
         )
     take_friday = {
         **_decision("take_fallback", {**DIMS_LOW, "matches_fallback": True}),
+        # A take_fallback must name the fallback (named_fallback_gate); named, the offer is then
+        # refused for the time it leaves out, which is what this test is about.
+        "fallback": "Friday 20 November, morning",
         "offer": {"date": "2026-11-20", "person": "Dr. Rivera"},
     }
 

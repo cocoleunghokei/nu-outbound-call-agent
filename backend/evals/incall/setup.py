@@ -8,11 +8,13 @@ DeepSeek API, so it is sent as a plain function with no arguments (``END_CALL_TO
 
 import json
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from app.briefs.builder import Draft, ProfileField, build_brief
 from app.briefs.catalog import get_template
+from app.briefs.rules import add_rules
 from app.calls.prompt import build_system_prompt
 from app.contracts.generated import Brief
 from app.voice.prompt_safety import CALLING_NAME_KEY, Snapshot, build_first_message
@@ -103,6 +105,11 @@ def build_case_brief(data: EvalData, case: dict[str, Any]) -> dict[str, Any]:
     brief = dict(built.brief)
     for key, value in case.get("brief_overrides", {}).items():
         brief[key] = [{"text": v} for v in value] if isinstance(value, list) else value
+    if spec.get("parse_rules"):
+        # The real pre-call parser, as a saved brief gets it (app/briefs/rules.py), with the
+        # eval's own "today" so "tomorrow" is the same day on every run.
+        today = date.fromisoformat(str(data.raw["today"]))
+        return dict(add_rules(with_rules(brief, spec.get("rules", {})), today).brief)
     return with_rules(brief, spec.get("rules", {}))
 
 
