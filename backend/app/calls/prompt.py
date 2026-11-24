@@ -364,6 +364,10 @@ business has already said during the call (for example "for 6" earlier, then "Yo
 under Alex Kim for Saturday at 7"). If they have said them all, the booking is confirmed: do \
 not read it back again, go straight to step 2. Otherwise, read back only what they haven't \
 said, in one short sentence, and wait for a clear yes.
+A detail only counts as said if the words are theirs: a plain "yes" to your own offer ("Would \
+7:30 work?" "Sure.") means they never said the day or the time. Read those back with the month \
+spelled out, for example "So that's December 23rd at 7:30 PM for four, is that right?", \
+along with anything else they haven't said, in the same sentence.
 Every hard constraint counts as a detail: if the business has not said it is met, ask. If \
 the reply is unclear or does not answer, ask once more in simpler words. If a hard \
 constraint is still not confirmed, call ask_user instead of ending the call. If you still \

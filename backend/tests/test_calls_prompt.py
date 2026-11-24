@@ -541,3 +541,15 @@ def test_the_outcome_result_says_goodbye_then_end() -> None:
     # Q12 revised (eval 0411Z): asking it to wait for the business's goodbye left four
     # cases that never ended the call.
     assert OUTCOME_NOTED == "Noted. Say thanks and goodbye, then end the call."
+
+
+def test_a_yes_to_the_agents_own_offer_is_read_back_with_the_month() -> None:
+    # Reported call: the agent offered 7:30, the business said "Yeah. Sure.", and the agent
+    # read back only the window seat, so the business never said the day or the time.
+    flat = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
+    assert 'a plain "yes" to your own offer' in flat
+    assert "they never said the day or the time" in flat
+    assert "with the month spelled out" in flat
+    assert "So that's December 23rd at 7:30 PM for four, is that right?" in flat
+    # The earlier decision still stands: no read-back of what the business already said.
+    assert "do not read it back again" in flat
