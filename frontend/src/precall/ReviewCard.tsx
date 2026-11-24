@@ -17,6 +17,8 @@ interface ReviewCardProps {
   server?: ServerCheck | null
   /** A save or start request is in flight: Start and Edit are disabled. */
   busy?: boolean
+  /** The chat is asking the user a question about the plan: Start waits for the answer. */
+  waiting?: boolean
   onEdit: (target: EditTarget) => void
   onStart: () => void
 }
@@ -36,6 +38,7 @@ export function ReviewCard({
   outcome = 'calling',
   server = null,
   busy = false,
+  waiting = false,
   onEdit,
   onStart,
 }: ReviewCardProps) {
@@ -43,7 +46,7 @@ export function ReviewCard({
   const local = { missing_fields: review.missing_fields, opening_line: openingLine(brief, profileWithAdditions(draft, profile)) }
   const { missing_fields, opening_line: opening } = reviewView(brief, local, server)
   const details = Object.values(draft.answers).filter((v) => v.trim() !== '')
-  const canStart = !started && !busy && missing_fields.length === 0 && opening !== null
+  const canStart = !started && !busy && !waiting && missing_fields.length === 0 && opening !== null
 
   function editButton(target: EditTarget, label: string) {
     if (started || !canEdit(draft, target)) return null

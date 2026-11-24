@@ -81,7 +81,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
   const review = reviewOf(state, context)
 
   async function start() {
-    if (!review || state.stage !== 'draft_ready') return
+    if (!review || state.stage !== 'draft_ready' || state.clarify.length > 0) return
     const local = { missing_fields: review.missing_fields, opening_line: null }
     if (reviewView(review.brief, local, server).missing_fields.length > 0) return
     const generation = draftGeneration.current
@@ -102,6 +102,10 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
         break
       case 'saved_not_connected':
         dispatch({ type: 'saved_not_connected' })
+        break
+      case 'clarify':
+        // The server saved the plan but has questions about how to read it. Nothing is dialed yet.
+        dispatch({ type: 'clarify', questions: result.questions })
         break
       case 'profile_required':
         dispatch({ type: 'note', text: result.message })
@@ -145,6 +149,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
                   outcome={state.startOutcome}
                   server={server}
                   busy={busy}
+                  waiting={state.clarify.length > 0}
                   onEdit={(target) => act({ type: 'edit', target })}
                   onStart={() => void start()}
                 />

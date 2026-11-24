@@ -317,3 +317,53 @@ describe('chat reducer: Start outcomes from the API', () => {
     expect(s.startOutcome).toBeNull()
   })
 })
+
+
+describe('apiStarter with questions from the server', () => {
+  const question = {
+    item: 'at 7pm',
+    list: 'constraints' as const,
+    question: 'You wrote "at 7pm". Is 7pm the latest you would accept, or the only time that works?',
+    answers: [{ label: '7pm or earlier', rules: [{ kind: 'time' as const, latest: '19:00' }], text: null }],
+  }
+
+  it('saves, then stops and hands the questions to the chat without dialing', async () => {
+    const client = fakeClient({
+      createBrief: vi.fn(async (brief: Brief) => saved(brief, { clarifications: [question] })),
+    })
+    const { result, session } = await apiStarter(client, keys())(contractExampleBrief, emptySession)
+    expect(result).toMatchObject({ kind: 'clarify', questions: [question], server: { missing_fields: [] } })
+    expect(client.startCall).not.toHaveBeenCalled()
+    expect(session.briefId).toBe(BRIEF_ID) // the plan is saved, so the next Start is a PATCH
+  })
+
+  it('dials once the server has no more questions', async () => {
+    const client = fakeClient({
+      createBrief: vi.fn(async (brief: Brief) => saved(brief, { clarifications: [question] })),
+      replaceBrief: vi.fn(async (_id: string, brief: Brief) => saved(brief, { clarifications: [] })),
+    })
+    const starter = apiStarter(client, keys())
+    const first = await starter(contractExampleBrief, emptySession)
+    const answered = { ...contractExampleBrief, constraints: [{ text: 'at 7pm', rules: [] }] }
+    const second = await starter(answered, first.session)
+    expect(client.replaceBrief).toHaveBeenCalledTimes(1)
+    expect(second.result.kind).toBe('started')
+    expect(client.startCall).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks nothing when the server sends no questions field at all', async () => {
+    const client = fakeClient()
+    const { result } = await apiStarter(client, keys())(contractExampleBrief, emptySession)
+    expect(result.kind).toBe('started')
+  })
+
+  it('still reports a missing field before it asks anything', async () => {
+    const client = fakeClient({
+      createBrief: vi.fn(async (brief: Brief) =>
+        saved(brief, { missing_fields: ['calling_name'], opening_line: null, clarifications: [question] }),
+      ),
+    })
+    const { result } = await apiStarter(client, keys())(contractExampleBrief, emptySession)
+    expect(result.kind).toBe('blocked')
+  })
+})
