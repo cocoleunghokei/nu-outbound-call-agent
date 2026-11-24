@@ -42,7 +42,7 @@ for _name in ("httpx", "httpcore"):
 logger = logging.getLogger(__name__)
 
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_MODEL = "deepseek-chat"
+DEFAULT_MODEL = "deepseek-flash"  # deepseek-chat (V3) was retired on 2026-07-24
 LLM_DEADLINE_S = 20.0
 TEMPERATURE = 0.2
 MAX_TOKENS = 400

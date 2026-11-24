@@ -134,10 +134,14 @@ def test_tool_definitions_wrap_args_schemas() -> None:
         assert definition["type"] == "function"
         assert definition["async"] is True
         assert definition["function"]["description"]
-        assert definition["function"]["parameters"] == load_schema(f"tools/{name}.args.v1.json")
-        assert definition["function"]["parameters"] == read_json(
-            CONTRACTS / "tools" / f"{name}.args.v1.json"
-        )
+        schema = read_json(CONTRACTS / "tools" / f"{name}.args.v1.json")
+        assert schema == load_schema(f"tools/{name}.args.v1.json")
+        # Vapi's call API accepts only an OpenAI-style parameters object. Any other JSON Schema
+        # keyword at its top level (the contract files carry ``title``) is a 400 on POST /call,
+        # which the backend records as a failed call. Seen on the first deployed call.
+        parameters = definition["function"]["parameters"]
+        assert set(parameters) <= {"type", "properties", "required"}
+        assert parameters == {k: schema[k] for k in ("type", "properties", "required")}
 
 
 def _description(name: str) -> str:

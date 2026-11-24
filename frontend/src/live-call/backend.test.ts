@@ -141,8 +141,10 @@ describe('liveCallMode', () => {
   const search = `?call=${CALL_ID}`
 
   it('plays the fake call unless real mode is fully set up', () => {
-    expect(liveCallMode(undefined, 'http://localhost:8000', search)).toEqual({ kind: 'mock' })
+    expect(liveCallMode('fake', 'http://localhost:8000', search)).toEqual({ kind: 'mock' })
+    expect(liveCallMode('demo', 'http://localhost:8000', search)).toEqual({ kind: 'mock' })
     expect(liveCallMode('real', undefined, search)).toEqual({ kind: 'mock' })
+    expect(liveCallMode(undefined, undefined, search)).toEqual({ kind: 'mock' })
     expect(liveCallMode('real', 'http://localhost:8000', '')).toEqual({ kind: 'mock' })
     expect(liveCallMode('real', 'http://localhost:8000', '?call=not-a-uuid')).toEqual({ kind: 'mock' })
   })
@@ -153,6 +155,18 @@ describe('liveCallMode', () => {
       callId: CALL_ID,
       apiBase: 'http://localhost:8000',
     })
+  })
+
+  it('follows a real call with only the API URL set: the source flag is an opt-out', () => {
+    // The first deployed call ran for real while /live played the demo, because
+    // VITE_LIVE_CALL_SOURCE had been forgotten. An API URL alone now means real.
+    for (const flag of [undefined, '', '  ']) {
+      expect(liveCallMode(flag, 'http://localhost:8000', search)).toEqual({
+        kind: 'real',
+        callId: CALL_ID,
+        apiBase: 'http://localhost:8000',
+      })
+    }
   })
 })
 

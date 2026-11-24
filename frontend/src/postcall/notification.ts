@@ -33,7 +33,7 @@ export function callEndedNotice(callId: string, businessName: string, outcome: C
 
 /** Where a click on the notification takes the user: that call's result page. */
 export function resultPageUrl(callId: string): string {
-  return `/?screen=history&open=${encodeURIComponent(callId)}`
+  return `/history?open=${encodeURIComponent(callId)}`
 }
 
 /** The parts of the browser this needs, so tests can pass fakes. */

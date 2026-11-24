@@ -2,7 +2,8 @@
  * The open call lives in the address (`?open=<call id>`), so the browser's Back
  * button closes a call's result and a result can be linked to (#49).
  *
- * Temporary: once the app has routing, this becomes a path like `/calls/:id`.
+ * It sits on top of the app's router (`src/router.ts`): the route stays `/history`, and
+ * only the `?open=` part changes here.
  */
 import { useEffect, useRef, useState } from 'react'
 

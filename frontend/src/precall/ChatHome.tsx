@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import './ChatHome.css'
 import { ReviewCard } from './ReviewCard'
 import { chatReducer, completedDraft, initialChatState, reviewOf, type ChatAction, type ChatContext } from './chat'
@@ -13,6 +13,15 @@ interface ChatHomeProps {
   starter: Starter
   /** Small top-bar note, e.g. "Demo mode (fake data)". Hidden when null. */
   modeNote?: { text: string; title: string } | null
+  /**
+   * Called once Start has placed the call, with `POST /calls`' `call_id` (null in demo
+   * mode). The app opens the live screen from it.
+   */
+  onCallStarted?: (callId: string | null) => void
+  /** Called when Start needs the profile first (ON-8); the app opens the onboarding form. */
+  onProfileRequired?: () => void
+  /** Rendered over the chat (the onboarding form), inside this screen's styles. */
+  overlay?: ReactNode
 }
 
 /**
@@ -21,7 +30,7 @@ interface ChatHomeProps {
  * the state and sends user actions. Visual design follows Harper's prototype
  * (`public/prototype/`).
  */
-export function ChatHome({ context, starter, modeNote = null }: ChatHomeProps) {
+export function ChatHome({ context, starter, modeNote = null, onCallStarted, onProfileRequired, overlay }: ChatHomeProps) {
   const [reducer] = useState(() => chatReducer(context))
   const [state, dispatch] = useReducer(reducer, context, initialChatState)
   const [text, setText] = useState('')
@@ -81,9 +90,16 @@ export function ChatHome({ context, starter, modeNote = null }: ChatHomeProps) {
     switch (result.kind) {
       case 'started':
         dispatch({ type: 'start' })
+        // Opens the call even if the user left this screen while it was being placed:
+        // a call that is ringing should be on screen.
+        onCallStarted?.(result.callId)
         break
       case 'saved_not_connected':
         dispatch({ type: 'saved_not_connected' })
+        break
+      case 'profile_required':
+        dispatch({ type: 'note', text: result.message })
+        onProfileRequired?.()
         break
       case 'blocked':
       case 'error':
@@ -164,6 +180,7 @@ export function ChatHome({ context, starter, modeNote = null }: ChatHomeProps) {
           </button>
         </div>
       </form>
+      {overlay}
     </section>
   )
 }

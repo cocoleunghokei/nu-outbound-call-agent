@@ -13,11 +13,18 @@ from app.voice.tools import tool_definitions
 
 @dataclass
 class CreatedCall:
-    """What the platform returned for a placed call. The URLs are capabilities: never log them."""
+    """What the platform returned for a placed call. The URLs are capabilities: never log them.
+
+    ``ended`` is True when the platform says the call is already over (a lookup after an
+    uncertain creation can find a call whose end webhooks were lost); ``ended_reason`` is
+    then the platform's reason, as the end-of-call report would carry it.
+    """
 
     vapi_call_id: str
     control_url: str | None = field(repr=False)
     listen_url: str | None = field(repr=False)
+    ended: bool = False
+    ended_reason: str = ""
 
 
 class UnsafeAssistantConfig(ApiError):
@@ -36,12 +43,21 @@ class VoiceUncertain(Exception):
 
 
 class VoiceRejected(Exception):
-    """The platform answered with a 4xx."""
+    """The platform answered with a 4xx.
 
-    def __init__(self, status: int, code: str | None = None) -> None:
-        super().__init__(f"voice platform rejected the request: status {status}, code {code}")
+    ``detail`` is the platform's own description of what it refused, already reduced to
+    safe text by the adapter (recognised sentence templates and validated property paths,
+    bounded length, never a URL). It is for the server log, never for the browser.
+    """
+
+    def __init__(self, status: int, code: str | None = None, detail: str | None = None) -> None:
+        message = f"voice platform rejected the request: status {status}, code {code}"
+        if detail:
+            message += f", detail: {detail}"
+        super().__init__(message)
         self.status = status
         self.code = code
+        self.detail = detail
 
 
 class VoicePlatform(Protocol):

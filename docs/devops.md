@@ -41,12 +41,14 @@ Vercel's GitHub integration builds `frontend/`. Every merge to `main` goes to pr
 
 - Root directory: `frontend` (Vite is detected automatically)
 - Environment variables: `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`, for Production and Preview
+- The Supabase project needs anonymous sign-ins enabled (dashboard: Authentication, then Sign In / Providers): the app has no sign-in screen and signs each browser in anonymously. `supabase/config.toml` has the same switch for the local stack.
+- No auth email is sent: the profile (name, calling name, phone, email) is collected on the first visit and the email is stored unverified (ON-3, ON-8). Anonymous sign-ins on is the only auth setting the hosted project needs; its email templates and SMTP don't matter. The email-code sign-in from #72/#73 was retired because hosted Supabase only lets projects with custom SMTP edit the templates that would carry the code; `supabase/templates/` and the `current_permanent_user` dependency are kept for when that returns.
 
 ## Backend deploys (Railway)
 
 The backend is a Railway service built from `backend/`. Coco creates it. Like Vercel, there's no workflow file; it's set up in the Railway dashboard:
 
-- Root directory: `backend`. The start command and health check are in `backend/railway.toml`.
+- Root directory: `backend`. The start command and health check are in `backend/railway.toml`. The start command runs `uv run --no-dev`, so the container installs only the runtime packages, never the dev group (pytest, ruff, mypy).
 - Environment variables: every name in `backend/.env.example` (the Postgres connection string through the Supabase session pooler, the Supabase JWT settings, the Vapi keys and webhook secret). Set `VOICE_PLATFORM=vapi` in production.
 - Deploys follow `main`. Vapi's server URL points at `https://<service>/webhooks/vapi` with the webhook secret in the `X-Vapi-Secret` header.
 

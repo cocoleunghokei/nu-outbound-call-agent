@@ -11,7 +11,7 @@ System design: start with the [system overview](docs/system-overview.md) (diagra
 
 ## Status
 
-Build week (Nov 9–13). Each screen works with fake data on the [live site](https://nu-outbound-call-agent-frontend.vercel.app) (`?screen=precall|live|history`), and most of the during-call backend is built. The app doesn't place real calls yet. See [docs/status.md](docs/status.md) for what's built, what's missing, and why the live site is still a demo.
+Build week (Nov 9–13). Each screen works with fake data on the [live site](https://nu-outbound-call-agent-frontend.vercel.app) (`/`, `/live`, `/history`), and most of the during-call backend is built. The app doesn't place real calls yet. See [docs/status.md](docs/status.md) for what's built, what's missing, and why the live site is still a demo.
 
 ## Repo layout
 
