@@ -43,12 +43,21 @@ class VoiceUncertain(Exception):
 
 
 class VoiceRejected(Exception):
-    """The platform answered with a 4xx."""
+    """The platform answered with a 4xx.
 
-    def __init__(self, status: int, code: str | None = None) -> None:
-        super().__init__(f"voice platform rejected the request: status {status}, code {code}")
+    ``detail`` is the platform's own description of what it refused, already reduced to
+    safe text by the adapter (recognised sentence templates and validated property paths,
+    bounded length, never a URL). It is for the server log, never for the browser.
+    """
+
+    def __init__(self, status: int, code: str | None = None, detail: str | None = None) -> None:
+        message = f"voice platform rejected the request: status {status}, code {code}"
+        if detail:
+            message += f", detail: {detail}"
+        super().__init__(message)
         self.status = status
         self.code = code
+        self.detail = detail
 
 
 class VoicePlatform(Protocol):

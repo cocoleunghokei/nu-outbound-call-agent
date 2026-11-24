@@ -2,5 +2,7 @@
 builder = "RAILPACK"
 
 [deploy]
-startCommand = "uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+# --no-dev: the container syncs only the runtime dependencies at start, not the dev group
+# (pytest, ruff, mypy, ...), which otherwise gets installed on every boot.
+startCommand = "uv run --no-dev uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"

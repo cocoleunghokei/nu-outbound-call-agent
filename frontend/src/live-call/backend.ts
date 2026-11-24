@@ -168,16 +168,28 @@ export function isCallId(value: string): boolean {
 }
 
 /**
- * Real data only when all three are set: `VITE_LIVE_CALL_SOURCE=real`, a valid
- * `VITE_API_URL`, and `?call=<uuid>` in the address. Anything else plays the
- * fake call, so the live site keeps working while the backend isn't deployed.
+ * Whether a `VITE_*_SOURCE` flag allows real data: unset, blank or `real` does; any other
+ * word (`fake`, `demo`, a typo) keeps the fake data. The flag is an opt-out, not an opt-in,
+ * so a deployment that sets `VITE_API_URL` gets real screens without a second switch.
+ * The first deployed call ran for real while `/live` still played the demo, because the
+ * flag had been forgotten.
+ */
+export function realSourceAllowed(source: string | undefined): boolean {
+  const flag = source?.trim() ?? ''
+  return flag === '' || flag === 'real'
+}
+
+/**
+ * Real data when `VITE_API_URL` is a valid origin, `?call=<uuid>` is in the address and
+ * `VITE_LIVE_CALL_SOURCE` isn't set to something other than `real`. Anything else plays
+ * the fake call, so the live site keeps working while the backend isn't deployed.
  */
 export function liveCallMode(
   source: string | undefined,
   apiUrl: string | undefined,
   search: string,
 ): LiveCallMode {
-  if (source?.trim() !== 'real') return { kind: 'mock' }
+  if (!realSourceAllowed(source)) return { kind: 'mock' }
   const base = apiBase(apiUrl)
   const callId = new URLSearchParams(search).get('call')?.trim() ?? ''
   if (!base || !UUID.test(callId)) return { kind: 'mock' }

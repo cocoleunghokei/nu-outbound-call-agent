@@ -5,11 +5,12 @@
  * Supabase JWT on every request and row-level security needs `auth.uid()`. So the app signs
  * the browser in anonymously on first use. That identity lives in this browser's storage:
  * clearing site data, a private window or another device starts a new user with no profile
- * and no history. Placing a call needs more: the user adds their email and verifies it with
- * a code (`emailSignIn.ts`), which turns the anonymous user into a permanent one with the
- * same id, so the email also signs them in elsewhere.
+ * and no history. The profile itself (name, phone, email) is collected on the first visit
+ * and stored under this user (`profile.ts`); there is no email verification for now.
  *
- * Only the `auth` part of the client is used, so tests pass a small fake.
+ * Only the `auth` part of the client is used, so tests pass a small fake. Screens reach it
+ * through `ensureSignedIn()` in `accessToken.ts`, which adds the shared client and makes
+ * concurrent callers share one sign-in.
  */
 
 /** The parts of a Supabase user this app reads. */
@@ -22,6 +23,7 @@ export interface SessionUser {
 
 /** Who the session belongs to: anonymous (this browser only) or a permanent, emailed user. */
 export interface Account {
+  userId: string
   anonymous: boolean
   email: string | null
 }
@@ -49,26 +51,26 @@ export class SignInFailedError extends Error {
 
 export function accountOf(user: SessionUser): Account {
   // Supabase gives anonymous users an empty email, not a missing one.
-  return { anonymous: user.is_anonymous === true, email: user.email || null }
+  return { userId: user.id, anonymous: user.is_anonymous === true, email: user.email || null }
 }
 
 /**
  * Returns the current session's user, signing in anonymously first when there is none.
- * Never throws: a failed sign-in (rate limit, auth outage, anonymous sign-ins disabled)
- * comes back as `{ kind: 'failed' }` with the server's message.
+ * Never throws: a failed sign-in (rate limit, auth outage, anonymous sign-ins disabled) or
+ * a session read that fails comes back as `{ kind: 'failed' }` with the error's message.
  */
 export async function ensureSession(auth: SessionAuth): Promise<SessionResult> {
-  const existing = await auth.getSession()
-  if (existing.data.session) {
-    const { user } = existing.data.session
-    return { kind: 'session', userId: user.id, account: accountOf(user) }
-  }
   try {
+    const existing = await auth.getSession()
+    if (existing.data.session) {
+      const { user } = existing.data.session
+      return { kind: 'session', userId: user.id, account: accountOf(user) }
+    }
     const { data, error } = await auth.signInAnonymously()
     if (error) return { kind: 'failed', message: error.message }
     if (!data.session) return { kind: 'failed', message: 'No session was returned' }
     const { user } = data.session
-    return { kind: 'session', userId: user.id, account: { anonymous: true, email: null } }
+    return { kind: 'session', userId: user.id, account: { userId: user.id, anonymous: true, email: null } }
   } catch (err) {
     return { kind: 'failed', message: err instanceof Error ? err.message : String(err) }
   }

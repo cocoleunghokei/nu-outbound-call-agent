@@ -5,20 +5,22 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { CallHistoryItem } from '../history/types'
-import { accessToken, onSignInChange } from '../lib/accessToken'
+import { onSignInChange, signedInAccessToken } from '../lib/accessToken'
 import type { CallResult } from '../result/types'
 import { fetchCallResult, fetchHistory, type Loaded } from './api'
 
-const SIGNED_OUT: Loaded<never> = { ok: false, message: 'Sign in to see your calls.' }
-
-/** The access token, or null when signed out or Supabase isn't configured. */
-async function tokenOrNull(): Promise<string | null> {
-  try {
-    return await accessToken()
-  } catch {
-    return null // Supabase settings missing: same as signed out
-  }
+/** There is no sign-in screen: the anonymous sign-in itself failed, or Supabase isn't configured. */
+const SIGNED_OUT: Loaded<never> = {
+  ok: false,
+  message: "I couldn't sign this browser in, so I can't load your calls. Try again.",
 }
+
+/**
+ * The access token, signing the browser in anonymously first when it has none (a browser
+ * whose first page is `/history` never visited the chat home, which otherwise does it).
+ * Null when the sign-in fails or Supabase isn't configured: same as signed out.
+ */
+const tokenOrNull = signedInAccessToken
 
 export interface RealHistory {
   /** Null while loading. */
@@ -34,7 +36,9 @@ export interface RealHistory {
  * call's result (`GET /calls/{id}/result`) from `apiBase`.
  *
  * Both load again on `retry()` and when the user signs in or out, so a screen opened
- * signed out or during a network blip doesn't need a page reload.
+ * signed out or during a network blip doesn't need a page reload. On a fresh browser the
+ * first load's own sign-in is such a change, so the loads run once more; the second pass
+ * finds the session (`ensureSignedIn` is single-flight and reuses it) and signs nothing in.
  */
 export function useRealHistory(apiBase: string, openCallId: string | null): RealHistory {
   const [loadedCalls, setLoadedCalls] = useState<{ attempt: number; calls: Loaded<CallHistoryItem[]> } | null>(null)
