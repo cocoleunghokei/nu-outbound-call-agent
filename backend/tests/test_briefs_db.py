@@ -201,3 +201,23 @@ def test_readiness_follows_the_profile_as_it_is_now(
     read = client.get(f"/briefs/{created['brief_id']}", headers=auth(signed_up_user)).json()
     assert read["missing_fields"] == []
     assert read["opening_line"] is not None
+
+
+def test_a_save_returns_the_questions_it_could_not_settle_and_a_decided_item_is_not_asked_again(
+    client: TestClient, supabase_env: SupabaseEnv, signed_up_user: SignedUpUser
+) -> None:
+    set_profile(supabase_env, signed_up_user.user_id, ALEX)
+    unclear = example_brief(constraints=[{"text": "at 7pm"}])
+    created = create(client, signed_up_user, unclear)
+    [ask] = created["clarifications"]
+    assert ask["item"] == "at 7pm" and ask["list"] == "constraints"
+    assert [a["label"] for a in ask["answers"]] == ["7pm or earlier", "7pm or later", "Only 7pm"]
+    url = f"/briefs/{created['brief_id']}"
+    assert client.get(url, headers=auth(signed_up_user)).json()["clarifications"] == [ask]
+
+    decided = example_brief(constraints=[{"text": "at 7pm", "rules": []}])  # "decide on the call"
+    replaced = client.patch(url, json=decided, headers=auth(signed_up_user, uuid.uuid4()))
+    assert replaced.status_code == 200, replaced.text
+    assert replaced.json()["clarifications"] == []
+    assert replaced.json()["brief"]["constraints"] == [{"text": "at 7pm", "rules": []}]
+    assert client.get(url, headers=auth(signed_up_user)).json()["clarifications"] == []
