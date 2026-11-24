@@ -244,6 +244,53 @@ def test_transcript_is_in_spoken_order_even_when_lines_arrive_out_of_order(
 
 
 @pytest.mark.db
+def test_result_shows_only_the_details_the_business_said(supabase_env: SupabaseEnv) -> None:
+    """The date and time back the booking, but the agent's staff name and confirmation number
+    were never said: the result page must not show them as agreed (PO-2)."""
+    db = supabase_env.db_url
+    call = seed_call(db)
+    invented = {
+        **BOOKED_ARGS,
+        "details": {
+            "date": "2026-10-24",
+            "time": "19:30",
+            "staff_name": "Marco",
+            "confirmation_number": "4417",
+        },
+    }
+
+    async def scenario() -> None:
+        app = make_app(db)
+        async with serve(app) as client:
+            await post(
+                client,
+                transcript_body(
+                    call,
+                    "You're all set for 7:30 on October 24th.",
+                    role="user",
+                    timestamp=1794081609000,
+                ),
+            )
+            tc = f"tc-{uuid.uuid4()}"
+            await post(client, tool_body(call, [(tc, "report_outcome", invented)]))
+            await post(client, fixture("end-of-call-report", call))
+            await run_due_jobs(app.state.pool)
+            response = await client.get(
+                f"/calls/{call.call_id}/result", headers=auth_headers(call.user_id)
+            )
+        result = response.json()
+        assert result["call"]["outcome"] == "booked"
+        assert result["details"] == {
+            "date": "2026-10-24",
+            "time": "19:30",
+            "confirmation_number": None,
+            "staff_name": None,
+        }
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
 def test_downgraded_report_does_not_show_as_a_confirmed_booking(supabase_env: SupabaseEnv) -> None:
     db = supabase_env.db_url
     call = seed_call(db)
