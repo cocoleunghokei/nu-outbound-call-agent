@@ -21,8 +21,8 @@ _TOOL_DESCRIPTIONS: dict[str, str] = {
     ),
     "report_outcome": (
         "Call once, before you end the call, to report how the call went. Set "
-        "business_confirmed to true only if the other side explicitly confirmed the result in "
-        "words."
+        "business_confirmed to true only if the other side said yes, in words, when you read "
+        "the result back to them."
     ),
 }
 

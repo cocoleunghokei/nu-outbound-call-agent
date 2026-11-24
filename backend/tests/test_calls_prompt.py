@@ -120,6 +120,27 @@ def test_prompt_explains_waiting_and_the_no_reply_rule() -> None:
     assert "did not reply in time" in prompt and "Never guess." in prompt
 
 
+def test_prompt_requires_a_read_back_before_goodbye() -> None:
+    """Regression: the agent once said goodbye after a garbled reply, with the time and the
+    window-seat constraint never confirmed."""
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    assert "CONFIRM BEFORE YOU END" in prompt
+    assert prompt.index("CONFIRM BEFORE YOU END") < prompt.index("FINISHING:")
+    for text in (
+        "read the result back",
+        "every hard constraint",
+        "Is that all correct?",
+        "Wait for a clear yes.",
+        "ask once more in simpler words",
+        "call ask_user instead of ending the call",
+        "needs_follow_up",
+        "Never say goodbye straight after a reply you did not understand.",
+        "said yes to your read-back",
+    ):
+        assert text in prompt, text
+    assert "Alex will confirm" in prompt
+
+
 def test_prompt_includes_the_guardrail_rules() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     for rule in GUARDRAIL_RULES:
