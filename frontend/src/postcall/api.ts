@@ -9,7 +9,7 @@
 import { apiBase, isCallId, realSourceAllowed } from '../live-call/backend'
 import type { CallHistoryItem } from '../history/types'
 import type { TranscriptLine } from '../result/transcript'
-import type { AgentDecision, CallResult, OutcomeDetails, SharedField } from '../result/types'
+import type { AgentDecision, CallResult, OutcomeDetails, ResultItem, SharedField } from '../result/types'
 
 /** Which data the history screen uses. */
 export type HistorySource = { kind: 'fake' } | { kind: 'real'; apiBase: string }
@@ -95,6 +95,28 @@ function toSharedField(raw: unknown): SharedField | null {
   return fieldKey && state ? { fieldKey, state } : null
 }
 
+/** One asked-vs-got row. Null if it has no label, no "got" or no status. */
+export function toResultItem(raw: unknown): ResultItem | null {
+  if (!isObject(raw)) return null
+  const label = optStr(raw.label)?.trim()
+  const got = optStr(raw.got)?.trim()
+  const status = optStr(raw.status)
+  if (!label || !got || !status) return null
+  const cents = raw.cost_cents
+  return {
+    label,
+    asked: optStr(raw.asked) ?? null,
+    got,
+    status,
+    reason: optStr(raw.reason) ?? null,
+    approvedBy: optStr(raw.approved_by) ?? null,
+    costCents: typeof cents === 'number' && Number.isInteger(cents) && cents >= 0 ? cents : null,
+    evidence: listOf(raw.evidence, (n) => (typeof n === 'number' && Number.isInteger(n) ? n : null)),
+    // Only an explicit false marks a row unverified: an older server doesn't send the field.
+    verified: raw.verified !== false,
+  }
+}
+
 const ROLES: ReadonlySet<string> = new Set(['agent', 'business', 'user'])
 
 /** A role this version doesn't know is kept as "unknown" (shown as "Unknown"), not dropped. */
@@ -127,6 +149,8 @@ export function toCallResult(body: unknown): CallResult | null {
     businessConfirmed: body.business_confirmed === true,
     details: toDetails(body.details),
     openItems: listOf(body.open_items, (item) => (typeof item === 'string' && item.trim() ? item : null)),
+    items: listOf(body.result_items, toResultItem),
+    followUp: optStr(body.follow_up)?.trim() || null,
     decisions: listOf(body.decisions, toDecision),
     sharedFields: listOf(body.shared_fields, toSharedField),
     transcript: listOf(body.transcript, toTranscriptLine),
