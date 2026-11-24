@@ -40,10 +40,13 @@ Add one optional array to the existing `report_outcome` tool args (`contracts/to
     "reason": "Mochi isn't available.",                // max 120 chars, shown under "got"
     "approved_by": "user",                             // brief | user | none
     "cost_cents": null,                                // integer, only for money
-    "evidence": [4, 5]                                 // transcript seq numbers where it was said
+    "business_said": "We have all of those except mochi. Is marshmallow okay?"  // their words, copied
   }
-]
+],
+"follow_up": "Call to confirm the cake is nut-free."   // optional, max 200 chars
 ```
+
+The agent can't see transcript line numbers, so it quotes the business's own words in `business_said` (the same approach as `rule_evidence` in `report_decision`). The server finds that quote in the transcript and turns it into `evidence`, the line numbers, in the API response. The contract is in `contracts/tools/report_outcome.args.v1.json`.
 
 ### Field rules
 
@@ -56,14 +59,15 @@ Add one optional array to the existing `report_outcome` tool args (`contracts/to
 | `status` | `as_asked` (matches), `changed` (a different but accepted result), `not_met` (not agreed, and the user must act), `extra` (new cost or condition). The UI counts every status except `as_asked` as a "change". Open enum, like `outcome`: the UI shows an unknown value as `changed`. |
 | `approved_by` | `brief`: the agent used a fallback or rule the user wrote. `user`: the user answered a ping. `none`: nobody approved it (should come with `not_met`). |
 | `cost_cents` | Integer cents for a fee or price, otherwise `null`. Lets the page show "+$3.00" and a total without parsing text. |
-| `evidence` | `seq` values of `transcript.final` events. Powers "click a row to jump to the line". |
+| `business_said` | The business's own words supporting the row, max 200 chars. Optional in the tool call. The server matches it to transcript lines; that match is the verification below. |
+| `evidence` | **API only, never written by the agent.** `seq` values of the transcript lines the server matched. Powers "click a row to jump to the line". |
 | Limits | At most 12 items. `label` and `got` are required. |
 
 ### Checks on the server (the same idea as `shown_details`)
 
 The model's summary is a claim, so the backend verifies what it can before the page shows it, and drops or downgrades what it can't:
 
-1. **`evidence`** must point to real transcript lines of this call. Unknown `seq` values are removed. An item with no evidence left is unverified: shown marked if `as_asked`, otherwise hidden (see open question 2).
+1. **`business_said`** must be found in a business turn of this call's transcript (compared the way `rule_evidence` is). If it is, the matching `seq` values become `evidence`; if it isn't, `evidence` is empty. An item with no evidence left is unverified: shown marked if `as_asked`, otherwise hidden (see open question 2).
 2. **`cost_cents`** must match an amount a business turn actually said. Otherwise it is dropped. This extends the existing money gate in `gates.py`.
 3. **`status` against the brief's rules.** When the referenced item has `rules` (date and time rules in `brief-rule.v1`) and the agreed `details.date` or `details.time` break them, force `changed`, whatever the model said. In the example, "by 10 AM" is `latest: "10:00"` and the agreed time is 12:00, so the pickup row is `changed` even if the model had written `as_asked`.
 4. **`approved_by: "user"`** requires a ping reply from the user in this call. Otherwise it becomes `none`.
@@ -91,7 +95,7 @@ The model's summary is a claim, so the backend verifies what it can before the p
 ```json
 [
   { "label": "Cake", "asked": "Mochi cake", "got": "Marshmallow cake", "status": "changed",
-    "reason": "Mochi isn't available.", "approved_by": "user", "cost_cents": null, "evidence": [5, 6, 7] },
+    "reason": "Mochi isn't available.", "approved_by": "user", "cost_cents": null, "business_said": "…" },
   { "label": "Pickup", "asked": "Wed by 10:00 AM", "got": "Wed 12:00 PM", "status": "changed",
     "reason": "10 AM wasn't possible.", "approved_by": "brief", "cost_cents": null, "evidence": [11, 24] },
   { "label": "Ice pack", "asked": null, "got": "+$3.00", "status": "extra",
@@ -101,7 +105,7 @@ The model's summary is a claim, so the backend verifies what it can before the p
 ]
 ```
 
-The `evidence` numbers are illustrative. The UI headline "3 changes · +$3" comes from counting the non-`as_asked` rows and summing `cost_cents`.
+The `evidence` numbers are illustrative; the server fills them from `business_said`. The UI headline "3 changes · +$3" comes from counting the non-`as_asked` rows and summing `cost_cents`.
 
 ## 4. Changes needed
 
@@ -117,14 +121,14 @@ The `evidence` numbers are illustrative. The UI headline "3 changes · +$3" come
 ## 5. Open questions
 
 1. **Who fills it: decided, the agent, inside `report_outcome`.** It is already the final, gated answer, so no separate post-call job is needed.
-2. **Unverified items.** An item is unverified when, after the server strips invalid `evidence`, no transcript line is left to back it. Example: the agent reports
+2. **Unverified items.** An item is unverified when, the server can't find the agent's `business_said` words in any business turn, so no transcript line backs it. Example: the agent reports
 
    ```json
    { "label": "Delivery", "got": "Free delivery", "status": "changed",
-     "reason": "They waived the fee.", "approved_by": "brief", "evidence": [99] }
+     "reason": "They waived the fee.", "approved_by": "brief", "business_said": "Delivery is on us." }
    ```
 
-   but the call has 47 lines and nobody mentioned delivery. Line 99 doesn't exist, so `evidence` becomes `[]`. The page can then:
+   but nobody mentioned delivery in the 47-line call, so the quote matches no line and `evidence` is `[]`. The page can then:
 
    | Option | What the user sees | Trade-off |
    |---|---|---|
