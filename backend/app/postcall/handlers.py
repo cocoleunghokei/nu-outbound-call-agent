@@ -11,6 +11,7 @@ from uuid import UUID
 from psycopg import AsyncConnection
 from psycopg.types.json import Jsonb
 
+from app.calls.gates import give_up_gate, load_facts, unsaid_name_gate
 from app.calls_lock import end_call_transition
 from app.webhooks.bind import BoundCall, message_of
 from app.webhooks.normalise import ROLE_MAP
@@ -24,11 +25,20 @@ POSTCALL_JOBS = (JOB_OUTCOME, JOB_SHARED_FIELDS)
 
 
 async def handle_report_outcome(conn: AsyncConnection[Any], ctx: ToolCallContext) -> str:
-    """Acknowledge the agent's outcome report.
+    """Acknowledge the agent's outcome report, unless the give-up gate refuses it.
 
     The validated arguments are already stored on the ``tool_calls`` receipt; the outcome
-    job reads them after the call, checks them against the transcript and decides.
+    job reads them after the call, checks them against the transcript and decides. A
+    ``needs_follow_up`` before the user was ever asked, or a staff name the business never
+    said, is refused (``app/calls/gates.py``):
+    the receipt keeps the refusal as its result, and ``jobs.latest_report`` skips it.
     """
+    outcome = ctx.arguments.get("outcome")
+    if isinstance(outcome, str):
+        facts = await load_facts(conn, ctx.call_id)
+        refusal = give_up_gate(outcome, facts) or unsaid_name_gate(ctx.arguments, facts)
+        if refusal is not None:
+            return refusal
     return NOTED
 
 

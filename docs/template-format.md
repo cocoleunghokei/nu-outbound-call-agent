@@ -48,7 +48,7 @@ export interface TemplateField {
 
 **Not proposed:**
 - **An `enabled` flag.** A template that isn't ready simply isn't added to the template list yet. Retiring one means removing it from the list, never reusing its key (R1), because old briefs and Harper's history keep `template_key`.
-- **A version field.** A brief copies `task_line` and `task_vars` in full (brief.v1), so an old brief never depends on a later template edit. If a template's meaning changes, give it a new key instead.
+- **A version field.** A brief copies `task_line`, `task_vars` and `call_details` (each call field's question and answer) in full (brief.v1), so an old brief never depends on a later template edit. If a template's meaning changes, give it a new key instead.
 - **A P0/P1 field.** That's a planning label, not something the app does anything with.
 
 ### JSON example (with the addition)
@@ -83,7 +83,7 @@ These come from the code and contracts. A validation test will check every one (
 | R6 | Ask-first fields can still be **required** (for example `date_of_birth` for a doctor). The chat makes sure the profile has the field, and the agent pings before sharing it (DC-6). | `missing.ts` `missingTemplateFields` |
 | R7 | `source: "profile"` keys come from the official profile key list. That list is **still to confirm with Steve**. Today: `full_name`, `calling_name`, `phone`, `email`, `date_of_birth`, `address`. | `fakeBriefs.ts` header; PR #19 seed has `calling_name`, `full_name`, `date_of_birth`; PRD ON-3 |
 | R8 | `source: "call"` keys must **not** match a profile key, and keys are unique within a template. | `brief.ts` checks call answers first, then the profile, so a clash would mix the two |
-| R9 | Every `question` is one plain question. Answers are capped at 200 chars. | `chat.ts` `ANSWER_MAX` |
+| R9 | Every `question` is one plain question, at most 200 chars (it is copied into the brief's `call_details`). Answers are capped at 200 chars. | `chat.ts` `ANSWER_MAX` |
 | R10 | `default_constraints` items use the brief.v1 `{ "text": "..." }` shape, with non-empty text of 200 chars or less, and **3 items or fewer**. The chat keeps at most 5 per list and the user needs room for their own. | brief.v1 `BriefConstraint`; `chat.ts` `LIST_ITEM_MAX`, `LIST_MAX_ITEMS` (slices to 5) |
 | R11 | No personal data in templates. They ship in the frontend bundle and are the same for every user. | Privacy rule in PR #19 (brief holds keys, never values) |
 

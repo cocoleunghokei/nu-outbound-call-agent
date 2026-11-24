@@ -12,7 +12,7 @@
  */
 import type { CallDraft } from './chat'
 import { missingTemplateFields, withProfileField } from './missing'
-import type { Brief, CallTemplate, ProfileField, TaskVarFieldRef, TaskVarLiteral } from './types'
+import type { Brief, BriefCallDetail, CallTemplate, ProfileField, TaskVarFieldRef, TaskVarLiteral } from './types'
 
 export interface BuiltBrief {
   brief: Brief
@@ -51,6 +51,8 @@ function goalSummary(goal: string): string {
  *   `field_ref` to a Share-freely profile field. Anything else is missing.
  * - `share_freely_keys` / `ask_first_keys`: the calling name, phone and the
  *   template's profile fields that the profile has, split by sharing setting.
+ * - `call_details`: every answer to the template's call fields, including those
+ *   with no placeholder in the task line (e.g. `patient_status`). `[]` for a custom call.
  */
 /** The user's profile plus the fields they filled in during the chat (ON-5 default sharing). */
 export function profileWithAdditions(draft: CallDraft, profile: ProfileField[]): ProfileField[] {
@@ -100,8 +102,21 @@ export function buildBrief(draft: CallDraft, template: CallTemplate | undefined,
     never_agree: draft.never_agree.map((i) => ({ text: i.text })),
     share_freely_keys: shareKeys.filter((key) => byKey.get(key)?.sharing === 'share_freely'),
     ask_first_keys: shareKeys.filter((key) => byKey.get(key)?.sharing === 'ask_first'),
+    call_details: template ? callDetails(template, draft.answers) : [],
   }
   return { brief, missing_fields: [...new Set(missing)] }
+}
+
+/**
+ * The user's answers to the template's call fields, so the agent can answer when the
+ * business asks (PC-4). One entry per `source: 'call'` field with a non-blank answer, in
+ * template order. Profile fields never appear. Same as the backend's `_call_details`.
+ */
+function callDetails(template: CallTemplate, answers: Record<string, string>): BriefCallDetail[] {
+  return template.required_fields
+    .filter((f) => f.source === 'call')
+    .map((f) => ({ key: f.key, question: f.question.trim(), value: (answers[f.key] ?? '').trim() }))
+    .filter((d) => d.value !== '')
 }
 
 /** The DC-1 opening line, word for word as `FIRST_MESSAGE_TEMPLATE` in PR #19 `backend/app/voice/prompt_safety.py`. */

@@ -39,6 +39,7 @@ from app.events import append_event
 from app.registry import Registries
 from app.secrets_registry import get_secret_registry
 from app.webhooks.bind import BoundCall, bind_call, message_of, vapi_call_id_of, vapi_call_of
+from app.webhooks.injection import injection_signals
 from app.webhooks.normalise import (
     SCORE_FIELDS,
     RawUnit,
@@ -68,6 +69,23 @@ _MAX_ERROR_CHARS = 8000
 # A receipt keeps confidence/dimensions only while pending (dispatch_pending needs them to
 # write agent_scores); leaving pending strips them in the same UPDATE (DC-5).
 _STRIP_SCORES = "arguments - 'confidence' - 'dimensions'"
+
+
+def _log_injection_attempt(call_id: UUID, payload: dict[str, Any]) -> None:
+    """Log, for review, business speech that looks like prompt injection (DC-13).
+
+    Logs only the call id and the matched pattern names, never the spoken text. Nothing on
+    the call changes: the in-call model's rules already say to ignore such speech.
+    """
+    if payload.get("role") != "business":
+        return
+    signals = injection_signals(str(payload.get("text", "")))
+    if signals:
+        logger.warning(
+            "call %s: business speech looks like prompt injection (%s)",
+            call_id,
+            ", ".join(signals),
+        )
 
 
 class _DatabaseUnavailable(Exception):
@@ -152,6 +170,18 @@ async def _dead_letter(
 
 def _without_scores(arguments: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in arguments.items() if k not in SCORE_FIELDS}
+
+
+def _dimensions(arguments: dict[str, Any]) -> dict[str, Any] | None:
+    """The model's six checks, read-only for the action gates (never stored by a handler)."""
+    dims = arguments.get("dimensions")
+    return dict(dims) if isinstance(dims, dict) else None
+
+
+def _confidence(arguments: dict[str, Any]) -> str | None:
+    """The model's tier, read-only for the action gates (never stored by a handler)."""
+    value = arguments.get("confidence")
+    return value if isinstance(value, str) else None
 
 
 async def _store_scores(
@@ -261,6 +291,8 @@ async def _receive_tool_call(
         name=unit.name,
         arguments=_without_scores(unit.arguments),
         source_ts=unit.source_ts,
+        dimensions=_dimensions(unit.arguments),
+        confidence=_confidence(unit.arguments),
     )
     _, result = await run_tool_handler(
         conn,
@@ -300,6 +332,7 @@ async def _process_unit(
                     occurred_at=normalised.occurred_at,
                     dedup_key=normalised.dedup_key,
                 )
+                _log_injection_attempt(call.call_id, normalised.payload)
                 return None
             if isinstance(normalised, ToolCallUnit):
                 result = await _receive_tool_call(
@@ -488,6 +521,8 @@ async def dispatch_pending(
                         name=name,
                         arguments=_without_scores(arguments),
                         source_ts=source_ts,
+                        dimensions=_dimensions(arguments),
+                        confidence=_confidence(arguments),
                     )
                     ok, _ = await run_tool_handler(
                         conn,
