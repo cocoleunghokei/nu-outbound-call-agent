@@ -9,6 +9,7 @@ import {
   type ChatAction,
   type ChatContext,
   type ChatState,
+  type FormSubmission,
 } from './chat'
 import { contractExampleBrief } from './contractExample'
 import { fakeProfile, fakeTemplates } from './fakeBriefs'
@@ -20,21 +21,21 @@ const send = (text: string): ChatAction => ({ type: 'send', text })
 const done = (label: string): ChatAction => ({ type: 'list_done', label })
 const lastAgent = (s: ChatState) => [...s.messages].reverse().find((m) => m.from === 'agent')?.text ?? ''
 
+const RESTAURANT_FORM: FormSubmission = {
+  business_name: 'Corner Table Bistro',
+  phone: '617 555 0100',
+  answers: { party_size: '6', day: 'Friday', time: '7pm' },
+  profile_values: {},
+  constraints: ['Between 6:30pm and 8pm'],
+  preferences: [],
+  fallbacks: ['Saturday same time'],
+  never_agree: ['A deposit or fee'],
+}
+
 /** A restaurant call that reaches the review card. */
 const RESTAURANT: ChatAction[] = [
   { type: 'pick_template', templateKey: 'restaurant_booking' },
-  send('Corner Table Bistro'),
-  send('617 555 0100'),
-  send('6'),
-  send('Friday'),
-  send('7pm'),
-  send('Between 6:30pm and 8pm'),
-  done("That's all"),
-  done('No preferences'),
-  send('Saturday same time'),
-  done("That's all"),
-  send('A deposit or fee'),
-  done("That's all"),
+  { type: 'submit_form', form: RESTAURANT_FORM },
 ]
 
 /** A custom call that reaches the review card. */
@@ -43,11 +44,10 @@ const CUSTOM: ChatAction[] = [
   send('Ask if they can hold a cake for pickup tomorrow'),
   send('Sunrise Bakery'),
   send('617 555 0122'),
-  done('No limits'),
-  done('No preferences'),
+  done('Nothing specific'),
+  done('Nothing'),
   send('Any cake they have ready'),
   done("That's all"),
-  done('Nothing else'),
 ]
 
 const run = (actions: ChatAction[], context: ChatContext = ctx) =>
@@ -94,7 +94,7 @@ describe('review card state (PC-6)', () => {
   })
 
   it('has no review before the chat is finished', () => {
-    expect(reviewOf(run(RESTAURANT.slice(0, 5)), ctx)).toBeNull()
+    expect(reviewOf(run(RESTAURANT.slice(0, 1)), ctx)).toBeNull()
   })
 
   it('matches buildBrief on the completed draft', () => {
@@ -126,18 +126,30 @@ describe('editing from the review card', () => {
     })
   })
 
-  it('template details: re-asks the call details without repeating the profile line', () => {
+  it('template details: Edit reopens the form with everything filled in, and the review comes back on submit', () => {
     let s = reduce(run(RESTAURANT), { type: 'edit', target: 'details' })
-    expect(s.fieldKey).toBe('party_size')
-    const announced = s.messages.filter((m) => m.text.startsWith('I already have')).length
-    s = [send('4'), send('Saturday'), send('8pm')].reduce(reduce, s)
+    expect(s.stage).toBe('form')
+    expect(completedDraft(s)).toBeNull()
+    expect(s.draft.answers).toEqual(RESTAURANT_FORM.answers)
+    expect(s.draft.business_name).toBe('Corner Table Bistro')
+    s = reduce(s, { type: 'submit_form', form: { ...RESTAURANT_FORM, answers: { party_size: '4', day: 'Saturday', time: '8pm' } } })
     expect(s.stage).toBe('draft_ready')
     expect(completedDraft(s)?.answers).toEqual({ party_size: '4', day: 'Saturday', time: '8pm' })
-    expect(s.messages.filter((m) => m.text.startsWith('I already have')).length).toBe(announced)
+    expect(s.messages.filter((m) => m.text === "Here's the plan. Give it a quick look, then start the call.")).toHaveLength(2)
   })
 
+  it.each(['calling', 'constraints', 'preferences', 'fallbacks', 'never_agree'] as const)(
+    'template call: editing %s also reopens the form',
+    (target) => {
+      const s = reduce(run(RESTAURANT), { type: 'edit', target })
+      expect(s.stage).toBe('form')
+      expect(s.awaiting).toBeNull()
+      expect(s.draft.fallbacks).toEqual([{ text: 'Saturday same time' }])
+    },
+  )
+
   it('who to call: re-asks the business and the number, with the number checked again', () => {
-    let s = reduce(run(RESTAURANT), { type: 'edit', target: 'calling' })
+    let s = reduce(run(CUSTOM), { type: 'edit', target: 'calling' })
     expect(s.awaiting).toBe('business_name')
     s = reduce(s, send('Harbor Grill'))
     s = reduce(s, send('911'))
@@ -146,36 +158,46 @@ describe('editing from the review card', () => {
     expect(completedDraft(s)).toMatchObject({ business_name: 'Harbor Grill', phone_e164: '+16175550144' })
   })
 
-  it('a list: clears and re-asks only that list, then returns to the card', () => {
-    let s = reduce(run(RESTAURANT), { type: 'edit', target: 'fallbacks' })
+  it('custom call, a list: clears and re-asks only that list, then returns to the card', () => {
+    let s = reduce(run(CUSTOM), { type: 'edit', target: 'fallbacks' })
     expect(s.listKey).toBe('fallbacks')
     expect(s.draft.fallbacks).toEqual([])
     s = [send('Sunday 7pm'), send('Friday 8:30pm'), done("That's all")].reduce(reduce, s)
     expect(s.stage).toBe('draft_ready')
     expect(completedDraft(s)).toMatchObject({
-      constraints: [{ text: 'Between 6:30pm and 8pm' }],
+      constraints: [],
       fallbacks: [{ text: 'Sunday 7pm' }, { text: 'Friday 8:30pm' }],
       never_agree: [{ text: 'A deposit or fee' }],
     })
   })
 
+  it('custom call: never-agree starts as "A deposit or fee" and can still be changed from the card', () => {
+    const ready = run(CUSTOM)
+    expect(completedDraft(ready)?.never_agree).toEqual([{ text: 'A deposit or fee' }])
+    let s = reduce(ready, { type: 'edit', target: 'never_agree' })
+    expect(s.listKey).toBe('never_agree')
+    s = [send('Paying in advance'), done("That's all")].reduce(reduce, s)
+    expect(s.stage).toBe('draft_ready')
+    expect(completedDraft(s)?.never_agree).toEqual([{ text: 'Paying in advance' }])
+  })
+
   it('ignores edits that do not apply, and edits outside the review', () => {
     const ready = run(RESTAURANT)
     expect(reduce(ready, { type: 'edit', target: 'goal' })).toBe(ready)
-    const mid = run(RESTAURANT.slice(0, 3))
+    const mid = run(RESTAURANT.slice(0, 1))
     expect(reduce(mid, { type: 'edit', target: 'constraints' })).toBe(mid)
   })
 })
 
 describe('Start (PC-6)', () => {
-  it('starts the call, keeps the draft and the card, and offers a new call', () => {
+  it('starts the call, keeps the draft and the card, with no new-call chip', () => {
     const ready = run(CUSTOM)
     const s = reduce(ready, { type: 'start' })
     expect(s.stage).toBe('started')
     expect(lastAgent(s)).toBe("Calling Sunrise Bakery now. I'll ask you here if I need anything.")
     expect(completedDraft(s)).toEqual(completedDraft(ready))
     expect(s.reviewAfterId).toBe(ready.reviewAfterId)
-    expect(s.chips.map((c) => c.label)).toEqual(['Start a new call'])
+    expect(s.chips).toEqual([])
   })
 
   it('ignores Start twice, and edits after Start', () => {

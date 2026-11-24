@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useReducer, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import './ChatHome.css'
 import { ReviewCard } from './ReviewCard'
+import { TemplateForm } from './TemplateForm'
 import { chatReducer, completedDraft, initialChatState, reviewOf, type ChatAction, type ChatContext } from './chat'
 import { emptySession, reviewView, singleFlight, type SaveSession, type ServerCheck, type Starter } from './start'
 
@@ -44,10 +45,13 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
   const session = useRef<SaveSession>(emptySession)
   const draftGeneration = useRef(0)
   const feedEnd = useRef<HTMLDivElement>(null)
+  const formTop = useRef<HTMLDivElement>(null)
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    feedEnd.current?.scrollIntoView?.({ block: 'end' })
+    // The form is tall: show its top, not its bottom.
+    if (state.stage === 'form') formTop.current?.scrollIntoView?.({ block: 'start' })
+    else feedEnd.current?.scrollIntoView?.({ block: 'end' })
   }, [state.messages.length, state.stage])
 
   useEffect(() => {
@@ -71,6 +75,8 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
     dispatch(action)
   }
 
+  const formTemplate =
+    state.stage === 'form' ? context.templates.find((t) => t.key === state.draft.template_key) : undefined
   const draft = completedDraft(state)
   const review = reviewOf(state, context)
 
@@ -145,6 +151,18 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
               )}
             </Fragment>
           ))}
+          {formTemplate && (
+            <div ref={formTop}>
+              <TemplateForm
+                key={state.nextId}
+                template={formTemplate}
+                profile={context.profile}
+                draft={state.draft}
+                error={state.formError}
+                onSubmit={(form) => act({ type: 'submit_form', form })}
+              />
+            </div>
+          )}
           <div ref={feedEnd} />
         </div>
       </div>
@@ -172,6 +190,7 @@ export function ChatHome({ context, starter, modeNote = null, onCallStarted, onP
             onChange={(e) => setText(e.target.value)}
             placeholder={state.placeholder}
             aria-label={state.placeholder}
+            disabled={state.stage === 'form'}
             autoComplete="off"
             inputMode={state.awaiting === 'phone' ? 'tel' : 'text'}
           />

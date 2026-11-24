@@ -12,6 +12,7 @@ import {
   type ChatAction,
   type ChatContext,
   type ChatState,
+  type FormSubmission,
 } from './chat'
 import { fakeProfile, fakeTemplates } from './fakeBriefs'
 
@@ -25,19 +26,18 @@ function run(...actions: ChatAction[]): ChatState {
 const send = (text: string): ChatAction => ({ type: 'send', text })
 const done = (label: string): ChatAction => ({ type: 'list_done', label })
 
-/** Skip all four PC-5 lists. The fallback list needs two taps: the chat nudges once. */
+/** Skip the three asked PC-5 lists (never-agree is pre-filled, not asked). The fallback list needs two taps: the chat nudges once. */
 const SKIP_LISTS: ChatAction[] = [
-  done('No limits'),
-  done('No preferences'),
-  done('No backup, ask me'),
-  done('No backup, ask me'),
-  done('Nothing else'),
+  done('Nothing specific'),
+  done('Nothing'),
+  done('Nothing, ask me'),
+  done('Nothing, ask me'),
 ]
 
 /** A draft's empty PC-5 lists and bookkeeping, before any list is finished. */
-const FRESH = { answers: {}, profile_additions: [], constraints: [], preferences: [], fallbacks: [], never_agree: [], done_lists: [] }
-/** The same, after all four lists were skipped. */
-const SKIPPED = { ...FRESH, done_lists: ['constraints', 'preferences', 'fallbacks', 'never_agree'] }
+const FRESH = { answers: {}, profile_additions: [], constraints: [], preferences: [], fallbacks: [], never_agree: [{ text: 'A deposit or fee' }], done_lists: ['never_agree'] }
+/** The same, after the three asked lists were skipped. */
+const SKIPPED = { ...FRESH, done_lists: ['never_agree', 'constraints', 'preferences', 'fallbacks'] }
 const lastAgent = (s: ChatState) => [...s.messages].reverse().find((m) => m.from === 'agent')?.text ?? ''
 
 describe('chat home (PC-1)', () => {
@@ -60,118 +60,158 @@ describe('chat home (PC-1)', () => {
   })
 })
 
-describe('template flow', () => {
-  it('uses the template as the goal and asks for the business and number first', () => {
-    let s = run({ type: 'pick_template', templateKey: 'restaurant_booking' })
-    expect(s.stage).toBe('collecting')
+const RESTAURANT_FORM: FormSubmission = {
+  business_name: 'Corner Table Bistro',
+  phone: '(617) 555-0100',
+  answers: { party_size: '6', day: 'Friday', time: '7 PM' },
+  profile_values: {},
+  constraints: [],
+  preferences: [],
+  fallbacks: [],
+  never_agree: ['A deposit or fee'],
+}
+const DOCTOR_FORM: FormSubmission = {
+  business_name: 'Back Bay Family Clinic',
+  phone: '617 555 0111',
+  answers: { provider_name: 'Dr. Lee', patient_status: 'Existing', reason: 'Check-up' },
+  profile_values: {},
+  constraints: [],
+  preferences: [],
+  fallbacks: [],
+  never_agree: ['A deposit or fee'],
+}
+const pickRestaurant: ChatAction = { type: 'pick_template', templateKey: 'restaurant_booking' }
+const submit = (form: FormSubmission): ChatAction => ({ type: 'submit_form', form })
+
+describe('template form (PC-2, PC-4)', () => {
+  it('opens the form for a template: the template is the goal and nothing is typed in the chat', () => {
+    const s = run(pickRestaurant)
+    expect(s.stage).toBe('form')
+    expect(s.awaiting).toBeNull()
+    expect(s.chips).toEqual([])
+    expect(s.formError).toBeNull()
     expect(s.draft).toEqual({
       template_key: 'restaurant_booking',
       goal: 'Restaurant: book a table',
       ...FRESH,
+      done_lists: [],
     })
-    expect(s.awaiting).toBe('business_name')
-    expect(s.chips).toEqual([])
-
-    s = reduce(s, send('Corner Table Bistro'))
-    expect(s.awaiting).toBe('phone')
+    expect(completedDraft(s)).toBeNull()
   })
 
   it('ignores an unknown template key', () => {
     const start = initialChatState(ctx)
     expect(reduce(start, { type: 'pick_template', templateKey: 'nope' })).toBe(start)
   })
-})
 
-describe('missing-context questions (PC-4)', () => {
-  const restaurantAtQuestions = () =>
-    run({ type: 'pick_template', templateKey: 'restaurant_booking' }, send('Corner Table Bistro'), send('(617) 555-0100'))
-
-  it('says which profile fields it already has, then asks the first missing detail', () => {
-    const s = restaurantAtQuestions()
-    const texts = s.messages.map((m) => m.text)
-    expect(texts).toContain("I already have your name and phone number from your profile, so I won't ask for those.")
-    expect(s.awaiting).toBe('template_field')
-    expect(s.fieldKey).toBe('party_size')
-    expect(lastAgent(s)).toBe('How many people?')
-  })
-
-  it('asks one question at a time, in template order, then finishes', () => {
-    let s = restaurantAtQuestions()
-    s = reduce(s, send('6'))
-    expect(s.fieldKey).toBe('day')
-    s = reduce(s, send('Friday'))
-    expect(s.fieldKey).toBe('time')
-    s = reduce(s, send('7pm'))
-    // All details answered: on to the PC-5 lists.
-    expect(s.awaiting).toBe('list_item')
-    expect(s.listKey).toBe('constraints')
-    s = SKIP_LISTS.reduce(reduce, s)
+  it('goes to the review card once the form is valid, with the number checked and normalised', () => {
+    const s = run(pickRestaurant, submit(RESTAURANT_FORM))
     expect(s.stage).toBe('draft_ready')
+    expect(s.formError).toBeNull()
     expect(completedDraft(s)).toEqual({
       template_key: 'restaurant_booking',
       goal: 'Restaurant: book a table',
       business_name: 'Corner Table Bistro',
       phone_e164: '+16175550100',
       ...SKIPPED,
-      answers: { party_size: '6', day: 'Friday', time: '7pm' },
+      done_lists: ['constraints', 'preferences', 'fallbacks', 'never_agree'],
+      answers: { party_size: '6', day: 'Friday', time: '7 PM' },
     })
-    expect(lastAgent(s)).toBe("Here's the plan. Give it a quick look, then start the call.")
+    expect(s.messages.map((m) => m.text).slice(-2)).toEqual([
+      'Review plan',
+      "Here's the plan. Give it a quick look, then start the call.",
+    ])
+    expect(s.reviewAfterId).toBe(s.messages[s.messages.length - 1].id)
   })
 
-  it('never asks for a field the profile already has (doctor: name and DOB)', () => {
-    let s = run({ type: 'pick_template', templateKey: 'doctor_booking' }, send('Back Bay Family Clinic'), send('617 555 0111'))
-    const asked: string[] = []
-    while (s.awaiting === 'template_field' && s.fieldKey) {
-      asked.push(s.fieldKey)
-      s = reduce(s, send(`answer for ${s.fieldKey}`))
-    }
-    expect(asked).toEqual(['provider_name', 'patient_status', 'reason'])
-    expect(s.messages.map((m) => m.text)).toContain(
-      "I already have your name and date of birth from your profile, so I won't ask for those.",
+  it('keeps the three lists, tidied: trimmed, no blanks, no repeats in any case, at most LIST_MAX_ITEMS', () => {
+    const s = run(
+      pickRestaurant,
+      submit({
+        ...RESTAURANT_FORM,
+        constraints: ['  Vegetarian options ', '', 'vegetarian OPTIONS'],
+        preferences: ['Window seat'],
+        fallbacks: Array.from({ length: LIST_MAX_ITEMS + 2 }, (_, i) => `Backup ${i + 1}`),
+      }),
     )
+    const d = completedDraft(s)
+    expect(d?.constraints).toEqual([{ text: 'Vegetarian options' }])
+    expect(d?.preferences).toEqual([{ text: 'Window seat' }])
+    expect(d?.fallbacks).toHaveLength(LIST_MAX_ITEMS)
+    expect(d?.fallbacks[0]).toEqual({ text: 'Backup 1' })
   })
 
-  it('asks for a profile field the profile lacks, and saves it as a profile field with default sharing', () => {
+  it('starts the must-haves with the template defaults (PC-2)', () => {
+    const withDefaults: ChatContext = {
+      ...ctx,
+      templates: fakeTemplates.map((t) =>
+        t.key === 'restaurant_booking' ? { ...t, default_constraints: [{ text: 'Same day only' }] } : t,
+      ),
+    }
+    const s = chatReducer(withDefaults)(initialChatState(withDefaults), pickRestaurant)
+    expect(s.draft.constraints).toEqual([{ text: 'Same day only' }])
+  })
+
+  it.each([
+    ['no business name', { business_name: '   ' }, 'Enter the name of the place to call.'],
+    ['a business name that is too long', { business_name: 'B'.repeat(BUSINESS_NAME_MAX + 1) }, 'That name is too long'],
+    ['an emergency number', { phone: '911' }, "can't call emergency numbers"],
+    ['no number', { phone: '' }, 'Enter the phone number to call.'],
+    ['a missing detail', { answers: { party_size: '6', day: 'Friday', time: '' } }, 'Still needed: time.'],
+    ['two missing details', { answers: { party_size: '6' } }, 'Still needed: day, time.'],
+    ['an answer that is too long', { answers: { ...RESTAURANT_FORM.answers, day: 'x'.repeat(ANSWER_MAX + 1) } }, 'under 200 characters'],
+    ['a list item that is too long', { preferences: ['x'.repeat(LIST_ITEM_MAX + 1)] }, 'Keep each item under'],
+  ])('stays on the form with an error for %s', (_label, change, message) => {
+    const before = run(pickRestaurant)
+    const s = reduce(before, submit({ ...RESTAURANT_FORM, ...change }))
+    expect(s.stage).toBe('form')
+    expect(s.formError).toContain(message)
+    expect(s.messages).toEqual(before.messages)
+    expect(completedDraft(s)).toBeNull()
+  })
+
+  it('clears the error once the form is valid', () => {
+    const bad = reduce(run(pickRestaurant), submit({ ...RESTAURANT_FORM, phone: '911' }))
+    const s = reduce(bad, submit(RESTAURANT_FORM))
+    expect(s.formError).toBeNull()
+    expect(s.stage).toBe('draft_ready')
+  })
+
+  it('never asks for a profile field the profile already has (doctor: name and DOB)', () => {
+    const s = run({ type: 'pick_template', templateKey: 'doctor_booking' }, submit(DOCTOR_FORM))
+    expect(s.stage).toBe('draft_ready')
+    expect(completedDraft(s)?.profile_additions).toEqual([])
+    expect(completedDraft(s)?.answers).toEqual(DOCTOR_FORM.answers)
+  })
+
+  it('needs a profile field the profile lacks, and saves it as a profile field with default sharing', () => {
     const noDob: ChatContext = { ...ctx, profile: fakeProfile.filter((f) => f.key !== 'date_of_birth') }
     const r = chatReducer(noDob)
-    let s = [
-      { type: 'pick_template', templateKey: 'doctor_booking' } as const,
-      send('Back Bay Family Clinic'),
-      send('617 555 0111'),
-    ].reduce(r, initialChatState(noDob))
-    expect(s.fieldKey).toBe('date_of_birth')
-    expect(s.messages.map((m) => m.text)).toContain(
-      "I already have your name from your profile, so I won't ask for those.",
-    )
-    s = r(s, send('2004-03-15'))
+    const opened = r(initialChatState(noDob), { type: 'pick_template', templateKey: 'doctor_booking' })
+    const blocked = r(opened, submit(DOCTOR_FORM))
+    expect(blocked.formError).toBe('Still needed: date of birth.')
+    const s = r(blocked, submit({ ...DOCTOR_FORM, profile_values: { date_of_birth: ' 2004-03-15 ' } }))
     // The DOB goes to the profile (Ask me first by default), never into the call answers.
-    expect(s.draft.profile_additions).toEqual([{ key: 'date_of_birth', value: '2004-03-15', sharing: 'ask_first' }])
-    expect(s.draft.answers).toEqual({})
-    expect(s.fieldKey).toBe('provider_name')
+    expect(completedDraft(s)?.profile_additions).toEqual([{ key: 'date_of_birth', value: '2004-03-15', sharing: 'ask_first' }])
+    expect(completedDraft(s)?.answers).toEqual(DOCTOR_FORM.answers)
   })
 
-  it('says nothing about the profile when it has none of the fields', () => {
-    const empty: ChatContext = { ...ctx, profile: [] }
-    const r = chatReducer(empty)
-    const s = [
-      { type: 'pick_template', templateKey: 'restaurant_booking' } as const,
-      send('Corner Table Bistro'),
-      send('617 555 0100'),
-    ].reduce(r, initialChatState(empty))
-    expect(s.messages.some((m) => m.text.startsWith('I already have'))).toBe(false)
-    expect(s.fieldKey).toBe('calling_name')
+  it('ignores a submit outside the form', () => {
+    const start = initialChatState(ctx)
+    expect(reduce(start, submit(RESTAURANT_FORM))).toBe(start)
+    const custom = run({ type: 'pick_custom' })
+    expect(reduce(custom, submit(RESTAURANT_FORM))).toBe(custom)
   })
 
-  it('rejects an answer that is too long and asks the same question again', () => {
-    const s = reduce(restaurantAtQuestions(), send('x'.repeat(ANSWER_MAX + 1)))
-    expect(s.fieldKey).toBe('party_size')
-    expect(s.draft.answers).toEqual({})
+  it('points back at the form when the user types while it is open', () => {
+    const s = reduce(run(pickRestaurant), send('hello?'))
+    expect(s.stage).toBe('form')
+    expect(lastAgent(s)).toBe('Fill in the form above, then tap Review plan.')
   })
 
   it('asks no template questions for a custom call', () => {
     const s = run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122'))
     expect(s.listKey).toBe('constraints')
-    expect(s.messages.some((m) => m.text.startsWith('I already have'))).toBe(false)
   })
 })
 
@@ -179,71 +219,66 @@ describe('constraints and fallbacks (PC-5)', () => {
   /** A custom call that has just reached the first PC-5 question. */
   const atLists = () => run({ type: 'pick_custom' }, send('Hold a cake'), send('Sunrise Bakery'), send('617 555 0122'))
 
-  it('asks limits, preferences, backups and never-agree items, in that order', () => {
+  it('asks must-haves, nice-to-haves and what the user is OK with, in that order', () => {
     let s = atLists()
     const asked: string[] = []
     for (let i = 0; i < 10 && s.awaiting === 'list_item' && s.listKey; i++) {
       if (asked[asked.length - 1] !== s.listKey) asked.push(s.listKey)
       s = reduce(s, s.chips[s.chips.length - 1].action)
     }
-    expect(asked).toEqual(['constraints', 'preferences', 'fallbacks', 'never_agree'])
+    expect(asked).toEqual(['constraints', 'preferences', 'fallbacks'])
     expect(s.stage).toBe('draft_ready')
   })
 
   it('collects several items per list, in order, with a follow-up each time', () => {
     let s = reduce(atLists(), send('Pickup before 6pm'))
-    expect(lastAgent(s)).toBe('Got it. Any other limits?')
+    expect(lastAgent(s)).toBe('Got it. Anything else that must be true?')
     expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
     s = reduce(s, send('Not on Sunday'))
     expect(s.draft.constraints).toEqual([{ text: 'Pickup before 6pm' }, { text: 'Not on Sunday' }])
     s = reduce(s, done("That's all"))
     expect(s.listKey).toBe('preferences')
-    expect(s.chips.map((c) => c.label)).toEqual(['No preferences'])
+    expect(s.chips.map((c) => c.label)).toEqual(['Nothing'])
   })
 
-  it('keeps backups ranked best first and numbers them', () => {
-    let s = [done('No limits'), done('No preferences')].reduce(reduce, atLists())
+  it('keeps what the user is OK with in the order given', () => {
+    let s = [done('Nothing specific'), done('Nothing')].reduce(reduce, atLists())
     expect(s.listKey).toBe('fallbacks')
     s = reduce(s, send('Any cake they have ready'))
-    expect(lastAgent(s)).toBe("Saved as backup #1. Another backup in case that's taken too?")
+    expect(lastAgent(s)).toBe('Saved. Anything else you would be OK with?')
     s = reduce(s, send('Cupcakes'))
-    expect(lastAgent(s)).toContain('backup #2')
-    expect(s.draft.fallbacks).toEqual([{ text: 'Any cake they have ready' }, { text: 'Cupcakes' }])
+        expect(s.draft.fallbacks).toEqual([{ text: 'Any cake they have ready' }, { text: 'Cupcakes' }])
   })
 
   it('nudges once when the user skips backups, then accepts a second "no"', () => {
-    let s = [done('No limits'), done('No preferences')].reduce(reduce, atLists())
-    s = reduce(s, done('No backup, ask me'))
+    let s = [done('Nothing specific'), done('Nothing')].reduce(reduce, atLists())
+    s = reduce(s, done('Nothing, ask me'))
     expect(s.listKey).toBe('fallbacks')
     expect(s.fallbackNudged).toBe(true)
     expect(lastAgent(s)).toContain("I'll have to ping you mid-call")
-    s = reduce(s, done('No backup, ask me'))
-    expect(s.listKey).toBe('never_agree')
+    s = reduce(s, done('Nothing, ask me'))
+    expect(s.stage).toBe('draft_ready')
     expect(s.draft.fallbacks).toEqual([])
   })
 
   it('accepts a backup typed after the nudge', () => {
-    let s = [done('No limits'), done('No preferences'), done('No backup, ask me')].reduce(reduce, atLists())
+    let s = [done('Nothing specific'), done('Nothing'), done('Nothing, ask me')].reduce(reduce, atLists())
     s = reduce(s, send('Tomorrow morning instead'))
     expect(s.draft.fallbacks).toEqual([{ text: 'Tomorrow morning instead' }])
     expect(s.listKey).toBe('fallbacks')
   })
 
   it('does not nudge when at least one backup was given', () => {
-    let s = [done('No limits'), done('No preferences'), send('Cupcakes')].reduce(reduce, atLists())
+    let s = [done('Nothing specific'), done('Nothing'), send('Cupcakes')].reduce(reduce, atLists())
     s = reduce(s, done("That's all"))
-    expect(s.listKey).toBe('never_agree')
+    expect(s.stage).toBe('draft_ready')
     expect(s.fallbackNudged).toBe(false)
   })
 
-  it('offers "A deposit or fee" as a one-tap never-agree item, and hides it once added', () => {
-    let s = [done('No limits'), done('No preferences'), send('Cupcakes'), done("That's all")].reduce(reduce, atLists())
-    expect(s.listKey).toBe('never_agree')
-    expect(s.chips.map((c) => c.label)).toEqual(['A deposit or fee', 'Nothing else'])
-    s = reduce(s, s.chips[0].action)
-    expect(s.draft.never_agree).toEqual([{ text: 'A deposit or fee' }])
-    expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
-    s = reduce(s, done("That's all"))
+  it('pre-fills "A deposit or fee" as never-agree and does not ask about it', () => {
+    const s = [done('Nothing specific'), done('Nothing'), send('Cupcakes'), done("That's all")].reduce(reduce, atLists())
+    expect(s.stage).toBe('draft_ready')
+    expect(s.messages.some((m) => m.text.includes('never agree'))).toBe(false)
     expect(completedDraft(s)).toMatchObject({
       constraints: [],
       preferences: [],
@@ -272,31 +307,9 @@ describe('constraints and fallbacks (PC-5)', () => {
     expect(s.listKey).toBe('preferences')
   })
 
-  it('starts the limits with the template defaults and says so (PC-2)', () => {
-    const withDefaults: ChatContext = {
-      ...ctx,
-      templates: fakeTemplates.map((t) =>
-        t.key === 'restaurant_booking' ? { ...t, default_constraints: [{ text: 'Same day only' }] } : t,
-      ),
-    }
-    const r = chatReducer(withDefaults)
-    const s = [
-      { type: 'pick_template', templateKey: 'restaurant_booking' } as const,
-      send('Corner Table Bistro'),
-      send('617 555 0100'),
-      send('6'),
-      send('Friday'),
-      send('7pm'),
-    ].reduce(r, initialChatState(withDefaults))
-    expect(s.listKey).toBe('constraints')
-    expect(s.draft.constraints).toEqual([{ text: 'Same day only' }])
-    expect(lastAgent(s)).toBe("I've added the usual limits for this call: Same day only. Any other limits?")
-    expect(s.chips.map((c) => c.label)).toEqual(["That's all"])
-  })
-
   it('ignores "list_done" when no list is being asked', () => {
     const start = initialChatState(ctx)
-    expect(reduce(start, done('No limits'))).toBe(start)
+    expect(reduce(start, done('Nothing specific'))).toBe(start)
   })
 })
 
@@ -379,17 +392,9 @@ describe('starting a new call any time (PC-1)', () => {
     expect(s.chips.map((c) => c.label)).toContain('Custom call')
   })
 
-  it('offers a new call once a draft is ready, and keeps the chat history', () => {
-    const ready = run(
-      { type: 'pick_template', templateKey: 'doctor_booking' },
-      send('Back Bay Family Clinic'),
-      send('617 555 0111'),
-      send('Dr. Lee'),
-      send('Existing'),
-      send('Check-up'),
-      ...SKIP_LISTS,
-    )
-    expect(ready.chips.map((c) => c.label)).toEqual(['Start a new call'])
+  it('keeps the chat history and shows no new-call chip once a draft is ready (the header button is the only one)', () => {
+    const ready = run({ type: 'pick_template', templateKey: 'doctor_booking' }, submit(DOCTOR_FORM))
+    expect(ready.chips).toEqual([])
     const again = reduce(ready, { type: 'new_call' })
     expect(again.messages.length).toBeGreaterThan(ready.messages.length)
     expect(again.stage).toBe('home')
@@ -408,7 +413,7 @@ describe('ignored input', () => {
     expect(reduce(mid, { type: 'pick_custom' })).toBe(mid)
   })
 
-  it('points to "Start a new call" when the user types after the draft is ready', () => {
+  it('points to the "+ New call" button when the user types after the draft is ready', () => {
     const ready = run(
       { type: 'pick_custom' },
       send('Hold a cake'),
@@ -418,7 +423,7 @@ describe('ignored input', () => {
     )
     expect(ready.stage).toBe('draft_ready')
     const s = reduce(ready, send('hello?'))
-    expect(lastAgent(s)).toContain('Start a new call')
+    expect(lastAgent(s)).toContain('+ New call')
     expect(completedDraft(s)).toEqual(completedDraft(ready))
   })
 

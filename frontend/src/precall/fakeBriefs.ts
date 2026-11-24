@@ -29,7 +29,7 @@ export const fakeTemplates: CallTemplate[] = [
     required_fields: [
       { key: 'calling_name', source: 'profile', question: 'What name should the booking be under?' },
       { key: 'phone', source: 'profile', question: "What's the best number for the reservation?" },
-      { key: 'party_size', source: 'call', question: 'How many people?' },
+      { key: 'party_size', source: 'call', question: 'How many people?', suggestions: ['2', '4', '6'] },
       { key: 'day', source: 'call', question: 'Which day?' },
       { key: 'time', source: 'call', question: 'What time?' },
     ],
@@ -49,7 +49,7 @@ export const fakeTemplates: CallTemplate[] = [
       { key: 'calling_name', source: 'profile', question: 'Who is the appointment for?' },
       { key: 'date_of_birth', source: 'profile', question: "What's your date of birth?" },
       { key: 'provider_name', source: 'call', question: 'Which doctor?' },
-      { key: 'patient_status', source: 'call', question: 'Are you a new or existing patient?' },
+      { key: 'patient_status', source: 'call', question: 'Are you a new or existing patient?', suggestions: ['Existing', 'New'] },
       { key: 'reason', source: 'call', question: "What's the visit for?" },
     ],
     likely_questions: [

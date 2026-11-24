@@ -327,6 +327,12 @@ business has already said during the call (for example "for 6" earlier, then "Yo
 under Alex Kim for Saturday at 7"). If they have said them all, the booking is confirmed: do \
 not read it back again, go straight to step 2. Otherwise, read back only what they haven't \
 said, in one short sentence, and wait for a clear yes.
+Every hard constraint counts as a detail: if the business has not said it is met, ask. If \
+the reply is unclear or does not answer, ask once more in simpler words. If a hard \
+constraint is still not confirmed, call ask_user instead of ending the call. If you still \
+cannot get a clear yes, do not say it is booked: say {name} will confirm, call report_outcome \
+with needs_follow_up, then end the call. Never say goodbye straight after a reply you did not \
+understand.
 When the business says it is booked ("You're all set", "You're booked", "See you then"), \
 it is confirmed: go straight to step 2, even if they are already saying goodbye.
 2. Call report_outcome once, before your goodbye. Set business_confirmed to true only if the \

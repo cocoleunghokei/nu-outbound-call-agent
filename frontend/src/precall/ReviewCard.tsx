@@ -80,14 +80,14 @@ export function ReviewCard({
         <Row label="I'll ask first">
           <Tags items={brief.ask_first_keys.map(profileLabel)} kind="ask" empty="Nothing" />
         </Row>
-        <Row label="Must" edit={editButton('constraints', 'limits')}>
-          <Tags items={texts(brief.constraints)} empty="No limits" />
+        <Row label="Must have" edit={editButton('constraints', 'must-haves')}>
+          <Tags items={texts(brief.constraints)} empty="None" />
         </Row>
-        <Row label="Would like" edit={editButton('preferences', 'preferences')}>
-          <Tags items={texts(brief.preferences)} empty="No preferences" />
+        <Row label="Nice to have" edit={editButton('preferences', 'nice-to-haves')}>
+          <Tags items={texts(brief.preferences)} empty="None" />
         </Row>
-        <Row label="Backups" edit={editButton('fallbacks', 'backups')}>
-          <Tags items={texts(brief.fallbacks)} numbered empty="None, I'll ask you" />
+        <Row label="OK with" edit={editButton('fallbacks', 'what I am OK with')}>
+          <Tags items={texts(brief.fallbacks)} empty="None, I'll ask you" />
         </Row>
         <Row label="Never agree to" edit={editButton('never_agree', 'what not to agree to')}>
           <Tags items={texts(brief.never_agree)} empty="Nothing listed" />

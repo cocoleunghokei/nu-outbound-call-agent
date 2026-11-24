@@ -252,7 +252,7 @@ describe('isCallRouteMissing and describeError', () => {
   it('uses plain words for sign-in and connection problems', () => {
     expect(describeError(new ApiError('unauthenticated', 'Missing or invalid credentials', 401, false), 'save')).toMatch(/signed out/)
     expect(describeError(new ApiError(NETWORK_ERROR, 'x', 0, true), 'save')).toMatch(/couldn't reach the server/)
-    expect(describeError(new ApiError('brief_in_use', 'A call already started from this brief', 409, false), 'save')).toMatch(/Start a new call/)
+    expect(describeError(new ApiError('brief_in_use', 'A call already started from this brief', 409, false), 'save')).toMatch(/\+ New call/)
   })
 
   it('tells a definite server refusal apart from a lost answer on Start', () => {
@@ -287,11 +287,10 @@ describe('chat reducer: Start outcomes from the API', () => {
     send('Ask if they can hold a cake for pickup tomorrow'),
     send('Sunrise Bakery'),
     send('617 555 0122'),
-    done('No limits'),
-    done('No preferences'),
+    done('Nothing specific'),
+    done('Nothing'),
     send('Any cake they have ready'),
     done("That's all"),
-    done('Nothing else'),
   ].reduce(reduce, initialChatState(ctx))
 
   it('"saved, not connected" locks the review without claiming a call', () => {

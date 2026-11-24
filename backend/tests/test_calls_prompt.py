@@ -290,6 +290,25 @@ def test_finishing_says_what_goes_in_the_report() -> None:
     assert "{name}" not in finishing  # the calling name is filled in
 
 
+def test_finishing_requires_a_read_back_and_a_clear_yes() -> None:
+    """Regression: the agent once said goodbye after a garbled reply, with the time and the
+    window-seat constraint never confirmed."""
+    prompt = build_system_prompt(make_brief(), SNAPSHOT)
+    finishing = prompt.split("<finishing>")[1].split("</finishing>")[0]
+    for text in (
+        "wait for a clear yes",
+        "Every hard constraint counts as a detail",
+        "ask once more in simpler words",
+        "call ask_user instead of ending the call",
+        "do not say it is booked",
+        "needs_follow_up",
+        "Never say goodbye straight after a reply you did not understand.",
+    ):
+        assert text in finishing, text
+    assert "Alex will confirm" in finishing
+    assert finishing.index("Every hard constraint") < finishing.index("2. Call report_outcome")
+
+
 def test_prompt_includes_the_guardrail_rules() -> None:
     prompt = build_system_prompt(make_brief(), SNAPSHOT)
     for rule in GUARDRAIL_RULES:

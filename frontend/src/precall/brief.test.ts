@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { CUSTOM_TASK_LINE, buildBrief } from './brief'
-import { chatReducer, completedDraft, initialChatState, type CallDraft, type ChatAction, type ChatContext } from './chat'
+import {
+  chatReducer,
+  completedDraft,
+  initialChatState,
+  type CallDraft,
+  type ChatAction,
+  type ChatContext,
+  type FormSubmission,
+} from './chat'
 import { contractExampleBrief } from './contractExample'
 import { fakeBriefRecords, fakeProfile, fakeTemplates } from './fakeBriefs'
 import type { Brief, CallTemplate, ProfileField } from './types'
@@ -15,11 +23,24 @@ function template(key: string): CallTemplate {
   return t
 }
 
+/** A filled-in template form (restaurant by default). */
+const formWith = (overrides: Partial<FormSubmission> = {}): FormSubmission => ({
+  business_name: 'Corner Table Bistro',
+  phone: '617 555 0100',
+  answers: { party_size: '6', day: 'Friday', time: '7 PM' },
+  profile_values: {},
+  constraints: [],
+  preferences: [],
+  fallbacks: [],
+  never_agree: ['A deposit or fee'],
+  ...overrides,
+})
+
 /** Run the real chat to the end and return its draft, so the test covers chat -> brief. */
 function chatDraft(context: ChatContext, actions: ChatAction[]): CallDraft {
   const state = actions.reduce(chatReducer(context), initialChatState(context))
   const draft = completedDraft(state)
-  if (!draft) throw new Error(`chat did not finish; waiting for ${state.awaiting} ${state.fieldKey ?? state.listKey ?? ''}`)
+  if (!draft) throw new Error(`chat did not finish; waiting for ${state.awaiting} ${state.listKey ?? state.formError ?? ''}`)
   return draft
 }
 
@@ -71,20 +92,14 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
   it('restaurant: all four lists land in the brief in brief.v1 shape, backups in order', () => {
     const d = chatDraft(ctx, [
       { type: 'pick_template', templateKey: 'restaurant_booking' },
-      send('Corner Table Bistro'),
-      send('617 555 0100'),
-      send('6'),
-      send('Friday'),
-      send('7pm'),
-      send('Between 6:30pm and 8pm'),
-      done("That's all"),
-      send('Window seat'),
-      done("That's all"),
-      send('Saturday same time'),
-      send('Friday at 8:30pm'),
-      done("That's all"),
-      send('A deposit or fee'),
-      done("That's all"),
+      {
+        type: 'submit_form',
+        form: formWith({
+          constraints: ['Between 6:30pm and 8pm'],
+          preferences: ['Window seat'],
+          fallbacks: ['Saturday same time', 'Friday at 8:30pm'],
+        }),
+      },
     ])
     const { brief, missing_fields } = buildBrief(d, template('restaurant_booking'), fakeProfile)
     expectValidBrief(brief, fakeProfile)
@@ -97,7 +112,7 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
     expect(brief.task_vars).toEqual({
       party_size: { literal: '6' },
       day: { literal: 'Friday' },
-      time: { literal: '7pm' },
+      time: { literal: '7 PM' },
     })
     expect(brief.share_freely_keys).toEqual(['calling_name', 'phone'])
     expect(brief.ask_first_keys).toEqual([])
@@ -106,17 +121,16 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
   it('doctor: DOB is listed as Ask me first and never referenced or copied into the brief', () => {
     const d = chatDraft(ctx, [
       { type: 'pick_template', templateKey: 'doctor_booking' },
-      send('Back Bay Family Clinic'),
-      send('617 555 0111'),
-      send('Dr. Lee'),
-      send('Existing'),
-      send('Check-up'),
-      send('Before 3pm'),
-      done("That's all"),
-      done('No preferences'),
-      send('Friday morning'),
-      done("That's all"),
-      done('Nothing else'),
+      {
+        type: 'submit_form',
+        form: formWith({
+          business_name: 'Back Bay Family Clinic',
+          phone: '617 555 0111',
+          answers: { provider_name: 'Dr. Lee', patient_status: 'Existing', reason: 'Check-up' },
+          constraints: ['Before 3pm'],
+          fallbacks: ['Friday morning'],
+        }),
+      },
     ])
     const { brief, missing_fields } = buildBrief(d, template('doctor_booking'), fakeProfile)
     expectValidBrief(brief, fakeProfile)
@@ -130,7 +144,7 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
     ])
     expect(brief.share_freely_keys).toEqual(['calling_name', 'phone'])
     expect(brief.ask_first_keys).toEqual(['date_of_birth'])
-    expect(brief.never_agree).toEqual([])
+    expect(brief.never_agree).toEqual([{ text: 'A deposit or fee' }])
   })
 
   it('custom call: uses the tech doc task line with the goal as {goal_summary}', () => {
@@ -139,11 +153,10 @@ describe('buildBrief from the real chat (Step 5 "Done when")', () => {
       send('Ask if they can hold a cake for pickup tomorrow.'),
       send('Sunrise Bakery'),
       send('617 555 0122'),
-      done('No limits'),
-      done('No preferences'),
+      done('Nothing specific'),
+      done('Nothing'),
       send('Any cake they have ready'),
       done("That's all"),
-      done('Nothing else'),
     ])
     const { brief, missing_fields } = buildBrief(d, undefined, fakeProfile)
     expectValidBrief(brief, fakeProfile)

@@ -1,8 +1,9 @@
 /**
  * Chat home logic (PC-1, PC-3, PC-4, PC-5): pick a template or a custom call,
  * give the business name, number and goal, answer only the questions the
- * profile can't already answer, then set limits, preferences, ranked backups
- * and never-agree items. Pure functions only, so the whole flow is
+ * profile can't already answer, then ask for must-haves, nice-to-haves and what
+ * the user is OK with instead. Never-agree items start as "a deposit or fee" and
+ * are not asked; the review card can change them. Pure functions only, so the whole flow is
  * unit-tested without React. `ChatHome.tsx` just renders this state.
  *
  * At `stage: 'draft_ready'` the review card shows (PC-6). Each part can be
@@ -10,15 +11,9 @@
  * Start moves to `stage: 'started'` once nothing is missing.
  */
 import { buildBrief, type BuiltBrief } from './brief'
-import {
-  describeProfileKeys,
-  knownProfileFields,
-  missingTemplateFields,
-  withProfileField,
-  type CallAnswers,
-} from './missing'
+import { defaultSharing, missingTemplateFields, profileLabel, withProfileField, type CallAnswers } from './missing'
 import { checkPhone } from './phone'
-import type { BriefConstraint, CallTemplate, ProfileField, TemplateField } from './types'
+import type { BriefConstraint, CallTemplate, ProfileField } from './types'
 
 export type Speaker = 'agent' | 'user'
 
@@ -29,10 +24,10 @@ export interface ChatMessage {
 }
 
 /**
- * What the chat is waiting for the user to type. `template_field` uses
- * `ChatState.fieldKey`; `list_item` uses `ChatState.listKey`.
+ * What the chat is waiting for the user to type, for a custom call. `list_item` uses
+ * `ChatState.listKey`. A template call has no typed questions: it uses the form (`stage: 'form'`).
  */
-export type Awaiting = 'goal' | 'business_name' | 'phone' | 'template_field' | 'list_item' | null
+export type Awaiting = 'goal' | 'business_name' | 'phone' | 'list_item' | null
 
 /** The four PC-5 lists, in the order the chat asks for them. Same names as in brief.v1. */
 export const LIST_ORDER = ['constraints', 'preferences', 'fallbacks', 'never_agree'] as const
@@ -70,6 +65,8 @@ export interface CallDraft {
 export type ChatAction =
   | { type: 'pick_template'; templateKey: string }
   | { type: 'pick_custom' }
+  /** Review the plan: the template form was filled in (see `FormSubmission`). */
+  | { type: 'submit_form'; form: FormSubmission }
   | { type: 'send'; text: string }
   | { type: 'new_call' }
   /** Finish the current PC-5 list. `label` is what the user tapped, shown as their reply. */
@@ -99,14 +96,30 @@ export interface Chip {
   quiet?: boolean
 }
 
-export type Stage = 'home' | 'collecting' | 'draft_ready' | 'started'
+/**
+ * What the template form sends. Everything is raw: the chat validates it, so a bad number or a
+ * missing answer comes back as `ChatState.formError` and nothing is lost.
+ */
+export interface FormSubmission {
+  business_name: string
+  /** The number as typed; checked like the custom call's number (PC-7). */
+  phone: string
+  /** Answers to the template's call fields, already in the words the agent says ("December 23", "7 PM"). */
+  answers: CallAnswers
+  /** Profile fields the profile lacked and the user filled in, by key. Saved with ON-5 default sharing. */
+  profile_values: Record<string, string>
+  constraints: string[]
+  preferences: string[]
+  fallbacks: string[]
+  never_agree: string[]
+}
+
+export type Stage = 'home' | 'collecting' | 'form' | 'draft_ready' | 'started'
 
 export interface ChatState {
   messages: ChatMessage[]
   chips: Chip[]
   awaiting: Awaiting
-  /** The template field being asked, when `awaiting` is `template_field`. */
-  fieldKey: string | null
   /** The PC-5 list being filled, when `awaiting` is `list_item`. */
   listKey: ListKey | null
   /** Whether the chat has already nudged the user to add a backup (PC-5 asks for at least one). */
@@ -119,8 +132,8 @@ export interface ChatState {
   /** How the review ended once `stage` is `started`: a call placed, or only saved. */
   startOutcome: 'calling' | 'saved' | null
   draft: Partial<CallDraft>
-  /** Whether the chat has said which profile fields it won't ask for, for this draft. */
-  knownAnnounced: boolean
+  /** Why the template form could not be reviewed yet, shown under the form. Null when fine. */
+  formError: string | null
   nextId: number
 }
 
@@ -166,22 +179,22 @@ interface ListPrompt {
 
 const LIST_PROMPTS: Record<ListKey, ListPrompt> = {
   constraints: {
-    ask: 'Any limits I must stick to? For example, "before 3pm" or "not on Monday".',
-    again: () => 'Got it. Any other limits?',
-    none: 'No limits',
-    placeholder: 'A limit, e.g. before 3pm',
+    ask: 'What must be true for this to work? For example, "before 3pm" or "vegetarian options".',
+    again: () => 'Got it. Anything else that must be true?',
+    none: 'Nothing specific',
+    placeholder: 'A must-have, e.g. before 3pm',
   },
   preferences: {
-    ask: 'Anything you would like but can live without? For example, "a window seat".',
-    again: () => 'Noted. Anything else you would like?',
-    none: 'No preferences',
+    ask: 'Anything that would be nice to have, but is not required? For example, "a window seat".',
+    again: () => 'Noted. Anything else that would be nice?',
+    none: 'Nothing',
     placeholder: 'Something you would like',
   },
   fallbacks: {
-    ask: "If they can't do that, what should I accept instead? I'll take a match without bothering you.",
-    again: (n) => `Saved as backup #${n}. Another backup in case that's taken too?`,
-    none: 'No backup, ask me',
-    placeholder: 'A backup, e.g. Friday morning',
+    ask: "If a must-have isn't possible, what are you OK with instead? I'll take a match without bothering you.",
+    again: () => 'Saved. Anything else you would be OK with?',
+    none: 'Nothing, ask me',
+    placeholder: 'Something you are OK with, e.g. Friday morning',
   },
   never_agree: {
     ask: "Anything I should never agree to? I'll always check with you before any deposit or fee.",
@@ -191,6 +204,9 @@ const LIST_PROMPTS: Record<ListKey, ListPrompt> = {
     suggestions: ['A deposit or fee'],
   },
 }
+
+/** Pre-filled never-agree items; the chat does not ask for these. */
+const DEFAULT_NEVER_AGREE: ListItem[] = [{ text: 'A deposit or fee' }]
 
 const FALLBACK_NUDGE =
   "Without a backup, I'll have to ping you mid-call if they can't do your first choice. Want to add one?"
@@ -211,8 +227,6 @@ function homeChips(ctx: ChatContext): Chip[] {
   ]
 }
 
-const NEW_CALL_CHIP: Chip = { label: 'Start a new call', action: { type: 'new_call' }, quiet: true }
-
 function say(state: ChatState, from: Speaker, text: string): ChatState {
   return {
     ...state,
@@ -226,20 +240,8 @@ function waitFor(state: ChatState, field: 'goal' | 'business_name' | 'phone'): C
   return {
     ...say(state, 'agent', prompt.text),
     awaiting: field,
-    fieldKey: null,
     listKey: null,
     placeholder: prompt.placeholder,
-    chips: [],
-  }
-}
-
-function waitForTemplateField(state: ChatState, field: TemplateField): ChatState {
-  return {
-    ...say(state, 'agent', field.question),
-    awaiting: 'template_field',
-    fieldKey: field.key,
-    listKey: null,
-    placeholder: 'Type your answer',
     chips: [],
   }
 }
@@ -261,7 +263,6 @@ function waitForListItem(state: ChatState, key: ListKey, text: string): ChatStat
   return {
     ...say(state, 'agent', text),
     awaiting: 'list_item',
-    fieldKey: null,
     listKey: key,
     placeholder: LIST_PROMPTS[key].placeholder,
     chips: listChips(key, items),
@@ -273,7 +274,6 @@ function showHome(state: ChatState, ctx: ChatContext, text: string): ChatState {
     ...say(state, 'agent', text),
     chips: homeChips(ctx),
     awaiting: null,
-    fieldKey: null,
     listKey: null,
     fallbackNudged: false,
     reviewAfterId: null,
@@ -281,7 +281,7 @@ function showHome(state: ChatState, ctx: ChatContext, text: string): ChatState {
     stage: 'home',
     startOutcome: null,
     draft: {},
-    knownAnnounced: false,
+    formError: null,
   }
 }
 
@@ -291,7 +291,6 @@ export function initialChatState(ctx: ChatContext): ChatState {
     messages: [],
     chips: [],
     awaiting: null,
-    fieldKey: null,
     listKey: null,
     fallbackNudged: false,
     reviewAfterId: null,
@@ -299,7 +298,7 @@ export function initialChatState(ctx: ChatContext): ChatState {
     stage: 'home',
     startOutcome: null,
     draft: {},
-    knownAnnounced: false,
+    formError: null,
     nextId: 1,
   }
   return showHome(
@@ -313,46 +312,21 @@ function templateOf(ctx: ChatContext, key: string | null | undefined): CallTempl
   return key ? ctx.templates.find((t) => t.key === key) : undefined
 }
 
-/** The user's profile plus anything they filled in during this chat. */
-function effectiveProfile(ctx: ChatContext, draft: Partial<CallDraft>): ProfileField[] {
-  return (draft.profile_additions ?? []).reduce(
-    (profile, f) => withProfileField(profile, f.key, f.value),
-    ctx.profile,
-  )
-}
-
 /** Ask for the next thing the draft is missing, or finish this part of the flow. */
-function askNext(state: ChatState, ctx: ChatContext): ChatState {
+function askNext(state: ChatState): ChatState {
   const d = state.draft
   if (!d.goal) return waitFor(state, 'goal')
   if (!d.business_name) return waitFor(state, 'business_name')
   if (!d.phone_e164) return waitFor(state, 'phone')
 
-  // PC-4: ask only for template details the profile and earlier answers don't cover.
-  const template = templateOf(ctx, d.template_key)
-  if (template) {
-    const profile = effectiveProfile(ctx, d)
-    let next = state
-    if (!state.knownAnnounced) {
-      const known = knownProfileFields(template, ctx.profile)
-      if (known.length > 0) {
-        next = say(next, 'agent', `I already have ${describeProfileKeys(known)} from your profile, so I won't ask for those.`)
-      }
-      next = { ...next, knownAnnounced: true }
-    }
-    const missing = missingTemplateFields(template, profile, d.answers ?? {})
-    if (missing.length > 0) return waitForTemplateField(next, missing[0])
-    state = next
-  }
-
-  // PC-5: limits, preferences, ranked backups and never-agree items, in that order.
+  // PC-5: must-haves, nice-to-haves and backups are asked; never-agree is pre-filled (its row can still be edited).
   const nextList = LIST_ORDER.find((key) => !(d.done_lists ?? []).includes(key))
   if (nextList) {
     const prefilled = d[nextList] ?? []
     // Template defaults (PC-2) are already in the list: say so instead of asking from scratch.
     const text =
       prefilled.length > 0
-        ? `I've added the usual limits for this call: ${prefilled.map((i) => i.text).join('; ')}. Any other limits?`
+        ? `I've added the usual must-haves for this call: ${prefilled.map((i) => i.text).join('; ')}. Anything else that must be true?`
         : LIST_PROMPTS[nextList].ask
     return waitForListItem(state, nextList, text)
   }
@@ -363,14 +337,128 @@ function askNext(state: ChatState, ctx: ChatContext): ChatState {
     reviewAfterId: done.nextId - 1,
     stage: 'draft_ready',
     awaiting: null,
-    fieldKey: null,
     listKey: null,
     placeholder: DEFAULT_PLACEHOLDER,
-    chips: [NEW_CALL_CHIP],
+    chips: [],
   }
 }
 
-function startDraft(state: ChatState, ctx: ChatContext, userText: string, draft: Partial<CallDraft>): ChatState {
+const FORM_PLACEHOLDER = 'Fill in the form above'
+
+/** Show the template form (stage "form"): nothing is typed in the chat for a template call. */
+function openForm(state: ChatState, template: CallTemplate): ChatState {
+  const withUser = say({ ...state, chips: [] }, 'user', template.label)
+  return {
+    ...say(withUser, 'agent', "Sure. Fill this in and I'll show you the plan before I dial."),
+    stage: 'form',
+    awaiting: null,
+    listKey: null,
+    chips: [],
+    placeholder: FORM_PLACEHOLDER,
+    formError: null,
+    startOutcome: null,
+    draft: {
+      template_key: template.key,
+      goal: template.label,
+      answers: {},
+      profile_additions: [],
+      // PC-2: each template's default constraints start the list; the user can add more.
+      constraints: template.default_constraints.map((c) => ({ text: c.text })).slice(0, LIST_MAX_ITEMS),
+      preferences: [],
+      fallbacks: [],
+      never_agree: DEFAULT_NEVER_AGREE.map((item) => ({ ...item })),
+      done_lists: [],
+    },
+  }
+}
+
+/** A short name for a template field in "Still needed: ..." ("party_size" -> "party size"). */
+function fieldName(key: string): string {
+  return profileLabel(key).toLowerCase()
+}
+
+/** Trim, drop blanks and repeats (any case), keep at most `LIST_MAX_ITEMS`. Null if an item is too long. */
+function cleanList(items: string[]): ListItem[] | null {
+  const seen = new Set<string>()
+  const out: ListItem[] = []
+  for (const raw of items) {
+    const text = raw.trim()
+    if (text === '' || seen.has(text.toLowerCase())) continue
+    if (text.length > LIST_ITEM_MAX) return null
+    seen.add(text.toLowerCase())
+    out.push({ text })
+  }
+  return out.slice(0, LIST_MAX_ITEMS)
+}
+
+/**
+ * Validate the template form and move to the review card (PC-6), or stay on the form with
+ * `formError` set. Checks the business name, the number (PC-7, same rules as a custom call),
+ * every field the template still needs (PC-4) and the length of each answer.
+ */
+function submitForm(state: ChatState, ctx: ChatContext, form: FormSubmission): ChatState {
+  const template = templateOf(ctx, state.draft.template_key)
+  if (state.stage !== 'form' || !template) return state
+  const fail = (message: string): ChatState => ({ ...state, formError: message })
+
+  const businessName = form.business_name.trim()
+  if (businessName === '') return fail('Enter the name of the place to call.')
+  if (businessName.length > BUSINESS_NAME_MAX) return fail(`That name is too long. Keep it under ${BUSINESS_NAME_MAX} characters.`)
+  const phone = checkPhone(form.phone)
+  if (!phone.ok) return fail(phone.message)
+
+  const answers: CallAnswers = {}
+  for (const [key, value] of Object.entries(form.answers)) {
+    const text = value.trim()
+    if (text.length > ANSWER_MAX) return fail(`Keep each answer under ${ANSWER_MAX} characters.`)
+    if (text !== '') answers[key] = text
+  }
+  const profileAdditions: ProfileField[] = Object.entries(form.profile_values)
+    .map(([key, value]) => ({ key, value: value.trim(), sharing: defaultSharing(key) }))
+    .filter((f) => f.value !== '')
+  if (profileAdditions.some((f) => f.value.length > ANSWER_MAX)) return fail(`Keep each answer under ${ANSWER_MAX} characters.`)
+
+  const profile = profileAdditions.reduce((p, f) => withProfileField(p, f.key, f.value), ctx.profile)
+  const missing = missingTemplateFields(template, profile, answers)
+  if (missing.length > 0) return fail(`Still needed: ${missing.map((f) => fieldName(f.key)).join(', ')}.`)
+
+  const lists = {
+    constraints: cleanList(form.constraints),
+    preferences: cleanList(form.preferences),
+    fallbacks: cleanList(form.fallbacks),
+    never_agree: cleanList(form.never_agree),
+  }
+  if (lists.constraints === null || lists.preferences === null || lists.fallbacks === null || lists.never_agree === null) {
+    return fail(`Keep each item under ${LIST_ITEM_MAX} characters.`)
+  }
+
+  const withUser = say({ ...state, chips: [] }, 'user', 'Review plan')
+  const done = say(withUser, 'agent', "Here's the plan. Give it a quick look, then start the call.")
+  return {
+    ...done,
+    reviewAfterId: done.nextId - 1,
+    stage: 'draft_ready',
+    awaiting: null,
+    listKey: null,
+    placeholder: DEFAULT_PLACEHOLDER,
+    formError: null,
+    chips: [],
+    draft: {
+      ...state.draft,
+      business_name: businessName,
+      phone_e164: phone.e164,
+      answers,
+      profile_additions: profileAdditions,
+      constraints: lists.constraints,
+      preferences: lists.preferences,
+      fallbacks: lists.fallbacks,
+      never_agree: lists.never_agree,
+      done_lists: [...LIST_ORDER],
+    },
+  }
+}
+
+function startDraft(state: ChatState, userText: string, draft: Partial<CallDraft>): ChatState {
   return askNext(
     {
       ...say(state, 'user', userText),
@@ -381,35 +469,27 @@ function startDraft(state: ChatState, ctx: ChatContext, userText: string, draft:
         constraints: [],
         preferences: [],
         fallbacks: [],
-        never_agree: [],
-        done_lists: [],
+        // Not asked: the agent already checks before any payment, so "a deposit or fee" is a
+        // default the user can change from the review card.
+        never_agree: DEFAULT_NEVER_AGREE.map((item) => ({ ...item })),
+        done_lists: ['never_agree'],
         ...draft,
       },
-      knownAnnounced: false,
+      formError: null,
       fallbackNudged: false,
       chips: [],
     },
-    ctx,
   )
 }
 
-/** Store the answer to a template question: on the profile for profile fields, else for this call. */
-function storeTemplateAnswer(ctx: ChatContext, draft: Partial<CallDraft>, key: string, value: string): Partial<CallDraft> {
-  const field = templateOf(ctx, draft.template_key)?.required_fields.find((f) => f.key === key)
-  if (field?.source === 'profile') {
-    return { ...draft, profile_additions: withProfileField(draft.profile_additions ?? [], key, value) }
-  }
-  return { ...draft, answers: { ...(draft.answers ?? {}), [key]: value } }
-}
-
 /** Mark a PC-5 list as finished and move on. */
-function finishList(state: ChatState, ctx: ChatContext, key: ListKey): ChatState {
+function finishList(state: ChatState, key: ListKey): ChatState {
   const done = [...(state.draft.done_lists ?? []), key]
-  return askNext({ ...state, draft: { ...state.draft, done_lists: done } }, ctx)
+  return askNext({ ...state, draft: { ...state.draft, done_lists: done } })
 }
 
 /** Add one item to the current PC-5 list. */
-function addListItem(state: ChatState, ctx: ChatContext, key: ListKey, text: string): ChatState {
+function addListItem(state: ChatState, key: ListKey, text: string): ChatState {
   if (text.length > LIST_ITEM_MAX) {
     return say(state, 'agent', `Could you keep that under ${LIST_ITEM_MAX} characters?`)
   }
@@ -420,7 +500,7 @@ function addListItem(state: ChatState, ctx: ChatContext, key: ListKey, text: str
   const updated = [...items, { text }]
   const withItem = { ...state, draft: { ...state.draft, [key]: updated } }
   if (updated.length >= LIST_MAX_ITEMS) {
-    return finishList(say(withItem, 'agent', `That's ${LIST_MAX_ITEMS}, the most I can keep track of here.`), ctx, key)
+    return finishList(say(withItem, 'agent', `That's ${LIST_MAX_ITEMS}, the most I can keep track of here.`), key)
   }
   return waitForListItem(withItem, key, LIST_PROMPTS[key].again(updated.length))
 }
@@ -430,9 +510,9 @@ const EDIT_LABELS: Record<EditTarget, string> = {
   goal: 'Change the goal',
   details: 'Change the details',
   calling: 'Change who to call',
-  constraints: 'Change my limits',
-  preferences: 'Change my preferences',
-  fallbacks: 'Change my backups',
+  constraints: 'Change my must-haves',
+  preferences: 'Change my nice-to-haves',
+  fallbacks: 'Change what I am OK with',
   never_agree: 'Change what not to agree to',
 }
 
@@ -462,35 +542,28 @@ export function canEdit(draft: Partial<CallDraft>, target: EditTarget): boolean 
 }
 
 /** Handle what the user typed for the field the chat is waiting on. */
-function answer(state: ChatState, ctx: ChatContext, text: string): ChatState {
+function answer(state: ChatState, text: string): ChatState {
   const withUser = say(state, 'user', text)
   switch (state.awaiting) {
     case 'goal':
       if (text.length > GOAL_MAX) {
         return say(withUser, 'agent', `Could you say that in under ${GOAL_MAX} characters?`)
       }
-      return askNext({ ...withUser, draft: { ...state.draft, goal: text } }, ctx)
+      return askNext({ ...withUser, draft: { ...state.draft, goal: text } })
     case 'business_name':
       if (text.length > BUSINESS_NAME_MAX) {
         return say(withUser, 'agent', `That name is too long. Keep it under ${BUSINESS_NAME_MAX} characters.`)
       }
-      return askNext({ ...withUser, draft: { ...state.draft, business_name: text } }, ctx)
+      return askNext({ ...withUser, draft: { ...state.draft, business_name: text } })
     case 'phone': {
       // PC-7: checked here, and again by the backend.
       const result = checkPhone(text)
       if (!result.ok) return say(withUser, 'agent', result.message)
-      return askNext({ ...withUser, draft: { ...state.draft, phone_e164: result.e164 } }, ctx)
-    }
-    case 'template_field': {
-      if (!state.fieldKey) return withUser
-      if (text.length > ANSWER_MAX) {
-        return say(withUser, 'agent', `Could you keep that under ${ANSWER_MAX} characters?`)
-      }
-      return askNext({ ...withUser, draft: storeTemplateAnswer(ctx, state.draft, state.fieldKey, text) }, ctx)
+      return askNext({ ...withUser, draft: { ...state.draft, phone_e164: result.e164 } })
     }
     case 'list_item':
       if (!state.listKey) return withUser
-      return addListItem(withUser, ctx, state.listKey, text)
+      return addListItem(withUser, state.listKey, text)
     default:
       return withUser
   }
@@ -503,16 +576,13 @@ export function chatReducer(ctx: ChatContext) {
       case 'pick_template': {
         const template = templateOf(ctx, action.templateKey)
         if (!template || state.stage !== 'home') return state
-        return startDraft(state, ctx, template.label, {
-          template_key: template.key,
-          goal: template.label,
-          // PC-2: each template's default constraints start the list; the user can add more.
-          constraints: template.default_constraints.map((c) => ({ text: c.text })).slice(0, LIST_MAX_ITEMS),
-        })
+        return openForm(state, template)
       }
+      case 'submit_form':
+        return submitForm(state, ctx, action.form)
       case 'pick_custom':
         if (state.stage !== 'home') return state
-        return startDraft(state, ctx, 'Custom call', { template_key: null })
+        return startDraft(state, 'Custom call', { template_key: null })
       case 'list_done': {
         const key = state.listKey
         if (state.awaiting !== 'list_item' || !key) return state
@@ -521,12 +591,14 @@ export function chatReducer(ctx: ChatContext) {
         if (key === 'fallbacks' && (state.draft.fallbacks ?? []).length === 0 && !state.fallbackNudged) {
           return { ...waitForListItem(withUser, key, FALLBACK_NUDGE), fallbackNudged: true }
         }
-        return finishList(withUser, ctx, key)
+        return finishList(withUser, key)
       }
       case 'edit': {
         if (state.stage !== 'draft_ready' || !canEdit(state.draft, action.target)) return state
         const withUser = say({ ...state, chips: [] }, 'user', EDIT_LABELS[action.target])
-        return askNext({ ...withUser, stage: 'collecting', draft: editDraft(state.draft, action.target) }, ctx)
+        // A template call is edited in the form, with everything already filled in.
+        if (state.draft.template_key) return { ...withUser, stage: 'form', formError: null, placeholder: FORM_PLACEHOLDER }
+        return askNext({ ...withUser, stage: 'collecting', draft: editDraft(state.draft, action.target) })
       }
       case 'start': {
         const review = reviewOf(state, ctx)
@@ -536,7 +608,7 @@ export function chatReducer(ctx: ChatContext) {
           'agent',
           `Calling ${review.brief.business_name} now. I'll ask you here if I need anything.`,
         )
-        return { ...started, stage: 'started', startOutcome: 'calling', chips: [NEW_CALL_CHIP] }
+        return { ...started, stage: 'started', startOutcome: 'calling', chips: [] }
       }
       case 'saved_not_connected': {
         const review = reviewOf(state, ctx)
@@ -546,7 +618,7 @@ export function chatReducer(ctx: ChatContext) {
           'agent',
           "Saved your brief. Calling isn't connected yet, so I haven't dialed.",
         )
-        return { ...saved, stage: 'started', startOutcome: 'saved', chips: [NEW_CALL_CHIP] }
+        return { ...saved, stage: 'started', startOutcome: 'saved', chips: [] }
       }
       case 'note': {
         const text = action.text.trim()
@@ -554,16 +626,19 @@ export function chatReducer(ctx: ChatContext) {
       }
       case 'new_call':
         // PC-1: the user can start a new call at any time; an unfinished draft is dropped.
-        return showHome({ ...say(state, 'user', 'Start a new call'), chips: [] }, ctx, 'Sure. Who should I call?')
+        return showHome({ ...say(state, 'user', 'New call'), chips: [] }, ctx, 'Sure. Who should I call?')
       case 'send': {
         const text = action.text.trim()
         if (text === '') return state
-        if (state.awaiting) return answer(state, ctx, text)
+        if (state.awaiting) return answer(state, text)
         if (state.stage === 'home') {
           // Typing at the home screen starts a custom call with that goal (PC-3).
-          return startDraft(state, ctx, text, { template_key: null, goal: text.slice(0, GOAL_MAX) })
+          return startDraft(state, text, { template_key: null, goal: text.slice(0, GOAL_MAX) })
         }
-        return say(say(state, 'user', text), 'agent', 'Tap "Start a new call" to set up another call.')
+        if (state.stage === 'form') {
+          return say(say(state, 'user', text), 'agent', 'Fill in the form above, then tap Review plan.')
+        }
+        return say(say(state, 'user', text), 'agent', 'Tap "+ New call" at the top to set up another call.')
       }
     }
   }
