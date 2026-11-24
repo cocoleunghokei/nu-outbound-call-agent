@@ -25,6 +25,11 @@ interface LiveCallProps {
    * (see `useRealCall`). Omitted for the mock call, whose events are all live.
    */
   historicalUpTo?: number | null
+  /**
+   * Opens the call's record (summary and transcript) once the call has ended. Real calls
+   * only: the demo call has no record, so it leaves this out.
+   */
+  onOpenResult?: () => void
 }
 
 /**
@@ -32,7 +37,15 @@ interface LiveCallProps {
  * live feed of transcript and decisions (DC-3, DC-4, DC-5), the ping card
  * (DC-8) and Pause / Resume / End (DC-11).
  */
-export function LiveCall({ summary, events, sendReply, sendCommand, notice, historicalUpTo }: LiveCallProps) {
+export function LiveCall({
+  summary,
+  events,
+  sendReply,
+  sendCommand,
+  notice,
+  historicalUpTo,
+  onOpenResult,
+}: LiveCallProps) {
   const view = useMemo(() => deriveLiveCall(events), [events])
   const side = useRef<HTMLElement>(null)
   const openPingId = view.ping?.state === 'open' ? view.ping.ping.ping_id : null
@@ -106,7 +119,16 @@ export function LiveCall({ summary, events, sendReply, sendCommand, notice, hist
           ) : (
             <div className="lc-idle">
               <b>Call ended</b>
-              <span>The summary will show up here once it's ready.</span>
+              {onOpenResult ? (
+                <>
+                  <span>The summary and the full transcript are in the call record.</span>
+                  <button type="button" className="lc-btn primary" onClick={onOpenResult}>
+                    View call record
+                  </button>
+                </>
+              ) : (
+                <span>This was the demo call, so there's no call record to open.</span>
+              )}
             </div>
           )}
           <CallControls
