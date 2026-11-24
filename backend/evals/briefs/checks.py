@@ -10,7 +10,8 @@ Each case is a custom-call goal. ``run_case`` sends it through the same path as
 - no profile value, phone number, email or full date in what was sent to the LLM, in the
   interpretation or in the brief's ``task_vars``
 - readiness matches the case (``ready``, ``missing_includes``), and so do ``llm_used``,
-  ``summary_any_of`` and ``min_questions``.
+  ``summary_any_of`` and ``min_questions``
+- no ``texts_none_of`` word (wording a prompt injection tried to plant) in the interpretation.
 """
 
 import json
@@ -159,6 +160,10 @@ def check_case(
     words = expect.get("summary_any_of")
     if words and not any(w.lower() in interp.goal_summary.lower() for w in words):
         failures.append(f"goal_summary {interp.goal_summary!r} has none of {words}")
+    # Prompt injection (DC-13): wording the goal smuggled in must not reach the brief.
+    for word in expect.get("texts_none_of", []):
+        if any(word.lower() in text.lower() for text in interp_texts):
+            failures.append(f"injected wording {word!r} reached the interpretation")
     if len(interp.questions_to_ask_user) < expect.get("min_questions", 0):
         failures.append("expected at least one question for the user")
     return failures

@@ -88,6 +88,11 @@ export const fakeBriefRecords: BriefRecord[] = [
       never_agree: [{ text: 'A deposit' }],
       share_freely_keys: ['calling_name', 'phone'],
       ask_first_keys: [],
+      call_details: [
+        { key: 'party_size', question: 'How many people?', value: '6' },
+        { key: 'day', question: 'Which day?', value: 'Friday' },
+        { key: 'time', question: 'What time?', value: '7pm' },
+      ],
     },
     missing_fields: [],
     created_at: '2026-11-10T15:00:00Z',
@@ -115,6 +120,8 @@ export const fakeBriefRecords: BriefRecord[] = [
       share_freely_keys: ['calling_name'],
       // DOB is Ask me first: the agent pings before sharing it (DC-6).
       ask_first_keys: ['date_of_birth'],
+      // Only the doctor is answered so far.
+      call_details: [{ key: 'provider_name', question: 'Which doctor?', value: 'Dr. Lee' }],
     },
     // patient_status and reason aren't known yet. No backup is fine: PC-5 only
     // prompts for one, so an empty fallbacks list never blocks the call.
@@ -143,6 +150,8 @@ export const fakeBriefRecords: BriefRecord[] = [
       never_agree: [{ text: 'Paying in advance' }],
       share_freely_keys: ['calling_name', 'phone'],
       ask_first_keys: [],
+      // A custom call has no template fields to answer.
+      call_details: [],
     },
     missing_fields: [],
     created_at: '2026-11-10T15:10:00Z',

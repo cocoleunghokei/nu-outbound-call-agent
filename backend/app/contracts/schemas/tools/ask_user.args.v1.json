@@ -75,6 +75,36 @@
           "type": "boolean"
         }
       }
+    },
+    "offer": {
+      "title": "HeardOffer",
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The offer exactly as the other side said it, written as data. Fill a field only when they said it or it is clear from the call (\"Thursday\" on a call about Thursday 19 November). Leave out anything you are unsure of. Never your own judgment.",
+      "properties": {
+        "date": {
+          "type": "string",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "The offered day, YYYY-MM-DD"
+        },
+        "time": {
+          "type": "string",
+          "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+          "description": "The offered start time, 24-hour HH:MM, e.g. 15:00 for 3pm"
+        },
+        "party_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "How many people the offer is for"
+        },
+        "person": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Who it is with, as they said it, e.g. Dr. Patel"
+        }
+      }
     }
   }
 }

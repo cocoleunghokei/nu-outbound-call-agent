@@ -14,7 +14,14 @@
   },
   "constraints": [
     {
-      "text": "Between 6pm and 8pm"
+      "text": "Between 6pm and 8pm",
+      "rules": [
+        {
+          "kind": "time",
+          "earliest": "18:00",
+          "latest": "20:00"
+        }
+      ]
     }
   ],
   "preferences": [
@@ -24,7 +31,18 @@
   ],
   "fallbacks": [
     {
-      "text": "Friday same time"
+      "text": "Friday same time",
+      "rules": [
+        {
+          "kind": "date",
+          "on": "2026-11-20"
+        },
+        {
+          "kind": "time",
+          "earliest": "18:00",
+          "latest": "20:00"
+        }
+      ]
     }
   ],
   "never_agree": [
@@ -38,5 +56,12 @@
   ],
   "ask_first_keys": [
     "date_of_birth"
+  ],
+  "call_details": [
+    {
+      "key": "party_size",
+      "question": "How many people?",
+      "value": "4"
+    }
   ]
 }

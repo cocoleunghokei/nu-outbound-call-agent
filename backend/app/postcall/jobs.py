@@ -21,18 +21,20 @@ The summary job (PO-2, LLM) and the call-ended push (PO-5) are not here yet.
 
 import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
 from psycopg import AsyncConnection
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 from pydantic import ValidationError
 
+from app.calls.gates import REFUSED_GIVE_UP
 from app.calls_lock import CallNotFound, lock_call
 from app.contracts.generated import ReportOutcomeArgs
 from app.events import append_event
-from app.postcall.decide import PAUSE_CAP, decide_outcome, spoken_fields
+from app.postcall.decide import PAUSE_CAP, call_days_for, decide_outcome, spoken_fields
 from app.postcall.handlers import JOB_OUTCOME, JOB_SHARED_FIELDS
 from app.registry import AppContext
 
@@ -156,7 +158,10 @@ async def run_outcome_job(
     report = await latest_report(conn, call_id)
     pause_capped = await was_pause_capped(conn, call_id)
     business = await transcript_lines(conn, call_id, "business") + _lines(payload, "business")
-    decision = decide_outcome(report, vapi_reason, business, pause_capped=pause_capped)
+    call_days = await possible_call_days(conn, call_id)
+    decision = decide_outcome(
+        report, vapi_reason, business, pause_capped=pause_capped, call_days=call_days
+    )
     ended_reason = PAUSE_CAP if pause_capped and report is None else (vapi_reason or "unknown")
     outcome = await _store_outcome(conn, call_id, decision.outcome, ended_reason)
     logger.info("postcall: call %s outcome %s (%s)", call_id, outcome, decision.reason)
@@ -232,13 +237,15 @@ async def latest_report(conn: AsyncConnection[Any], call_id: UUID) -> ReportOutc
 
     A receipt still ``pending`` counts too: the ingress has already validated its
     arguments, and only the acknowledgement is outstanding (for example during a deploy).
+    A report the give-up gate refused (its result is the refusal) never counts.
     """
     row = await (
         await conn.execute(
             "select arguments from public.tool_calls"
             " where call_id = %s and name = 'report_outcome' and state in ('handled', 'pending')"
+            " and (result is null or result <> %s)"
             " order by source_ts desc nulls last, created_at desc limit 1",
-            (call_id,),
+            (call_id, Jsonb(REFUSED_GIVE_UP)),
         )
     ).fetchone()
     if row is None or not isinstance(row[0], dict):
@@ -248,6 +255,20 @@ async def latest_report(conn: AsyncConnection[Any], call_id: UUID) -> ReportOutc
     except ValidationError:
         logger.warning("postcall: call %s has an unreadable report_outcome", call_id)
         return None
+
+
+async def possible_call_days(conn: AsyncConnection[Any], call_id: UUID) -> frozenset[date]:
+    """The local days the call could have been on, from its start and end (now if the end
+    isn't stored yet). Lets a weekday such as "Thursday" confirm the agreed date."""
+    row = await (
+        await conn.execute(
+            "select created_at, coalesce(ended_at, now()) from public.calls where id = %s",
+            (call_id,),
+        )
+    ).fetchone()
+    if row is None:
+        return frozenset()
+    return call_days_for(row[0], row[1])
 
 
 async def transcript_lines(conn: AsyncConnection[Any], call_id: UUID, role: str) -> list[str]:

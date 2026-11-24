@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { livePath, navigate, routeOf } from './router'
+import { openCallFrom } from './postcall/openCallUrl'
+import { livePath, navigate, resultPath, routeOf } from './router'
 
 const CALL_ID = '00000000-0000-4000-8000-0000000000aa'
 
@@ -39,6 +40,15 @@ describe('livePath', () => {
 
   it('opens the demo call when there is no call id (demo mode)', () => {
     expect(livePath(null)).toBe('/live')
+  })
+})
+
+describe('resultPath', () => {
+  it('opens the call on the history screen, in the ?open= the history screen reads', () => {
+    expect(resultPath(CALL_ID)).toBe(`/history?open=${CALL_ID}`)
+    const [path, query] = resultPath(CALL_ID).split('?')
+    expect(routeOf(path, `?${query}`)).toEqual({ name: 'history' })
+    expect(openCallFrom(`?${query}`)).toBe(CALL_ID)
   })
 })
 

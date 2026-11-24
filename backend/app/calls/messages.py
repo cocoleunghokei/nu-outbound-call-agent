@@ -55,6 +55,28 @@ def superseded_result() -> str:
     return "A newer question is already with the user. Keep waiting for their answer."
 
 
+def already_booked_result(withdrawn: bool) -> str:
+    """Tool result for an accept the business already confirmed as booked (G-11).
+
+    In eval 2026-11-18T1539Z the business opened with "You're all set for Thursday at 2", and the
+    agent logged an accept but never reported the outcome. A tool result is followed far more
+    reliably than a prompt rule, so the nudge comes here.
+    """
+    withdrawn_note = " Your open question to the user is withdrawn." if withdrawn else ""
+    return (
+        f"Noted.{withdrawn_note} They already said it is booked: call report_outcome now, then "
+        "say thanks and goodbye."
+    )
+
+
+def question_withdrawn_result() -> str:
+    """Tool result when a decision settles the question still open with the user (Q2)."""
+    return (
+        "Noted. Your open question to the user is withdrawn. If their answer to it arrives "
+        "anyway, ignore it."
+    )
+
+
 def call_over_result() -> str:
     """Tool result when the call has already ended."""
     return "The call has ended. Do not ask anything else."

@@ -20,6 +20,7 @@ Open http://localhost:5173.
 ## Layout
 
 - `src/App.tsx`: root component, start here. It picks the screen for the current address with `useRoute()`.
+- `src/shell/`: the app layout around every screen. `AppShell.tsx` is the sidebar from the design prototype's rail (a bar along the bottom at phone width) next to the current screen; `nav.ts` lists its entries (only screens that exist: Chat and Calls) and which one a route highlights. Add an entry there when a screen is added. The logo is `public/app-icon.svg`, a copy of the prototype's icon.
 - `src/router.ts`: the app's small router on the browser History API (no routing library). Routes: `/` chat home, `/live?call=<call_id>` live call (no `call`: the scripted demo call), `/history` past calls. Screens never touch `window.history`: they call `navigate(path)`, and Back / Forward just work. Add a route in `routeOf`, a `Route` case, and a `case` in `App.tsx`.
 - `src/lib/supabase.ts`: shared Supabase client (anon key only; every table it reads needs row-level security)
 - `src/index.css`: global styles

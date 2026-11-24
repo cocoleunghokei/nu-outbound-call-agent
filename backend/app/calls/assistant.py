@@ -29,7 +29,11 @@ SERVER_MESSAGES = (
 # Vapi has no DeepSeek keys of its own: the team's key must be connected in the Vapi
 # dashboard (Integrations), never here, or the model does not run. Tool calling on DeepSeek
 # is not documented by Vapi: confirm it on the first real calls.
-MODEL = {"provider": "deep-seek", "model": "deepseek-flash"}
+# Temperature is low and pinned so the agent behaves the same way call after call, and the
+# in-call eval (evals/incall) tests what real calls get. The provider default (1.0) made
+# identical eval runs disagree.
+TEMPERATURE = 0.2
+MODEL = {"provider": "deep-seek", "model": "deepseek-flash", "temperature": TEMPERATURE}
 # Voice and transcriber as used in the probe kit; tune after the Vapi session.
 VOICE = {"provider": "vapi", "voiceId": "Clara"}
 TRANSCRIBER = {"provider": "deepgram", "model": "nova-3", "language": "en-US"}

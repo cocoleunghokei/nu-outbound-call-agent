@@ -144,6 +144,111 @@ def test_tool_definitions_wrap_args_schemas() -> None:
         assert parameters == {k: schema[k] for k in ("type", "properties", "required")}
 
 
+def _description(name: str) -> str:
+    tools = {d["function"]["name"]: d for d in tool_definitions() if "function" in d}
+    return str(tools[name]["function"]["description"])
+
+
+def test_report_decision_description_allows_a_low_counter() -> None:
+    """Regression: it said "call ask_user whenever the score is Low", so counters went unlogged."""
+    text = _description("report_decision")
+    assert "Call ask_user instead whenever the score is Low" not in text
+    assert "action counter and confidence low" in text
+    assert "before you speak" in text
+
+
+def test_ask_user_description_covers_missing_info_and_not_understood() -> None:
+    """Regression: it listed only constraint, ask-first and money, so missing info never pinged."""
+    text = _description("ask_user")
+    assert "not in the brief" in text
+    assert "can't understand them after asking once" in text
+    assert "before you speak" in text
+
+
+# --- structured rules and offers (docs/superpowers/plans/2026-11-18-structured-offers.md) ---
+
+BRIEF_ITEM_LISTS = ("constraints", "preferences", "fallbacks")
+
+
+def _brief_with(list_name: str, item: dict[str, Any]) -> dict[str, Any]:
+    brief = read_json(EXAMPLES / "brief.v1.valid.json")
+    brief[list_name] = [item]
+    return brief
+
+
+@pytest.mark.parametrize("list_name", BRIEF_ITEM_LISTS)
+def test_brief_items_take_optional_rules(list_name: str) -> None:
+    assert is_valid("brief.v1.json", _brief_with(list_name, {"text": "Before 3pm"}))
+    before_3pm = {"text": "Before 3pm", "rules": [{"kind": "time", "latest": "14:59"}]}
+    assert is_valid("brief.v1.json", _brief_with(list_name, before_3pm))
+    friday_morning = {
+        "text": "Friday 20 November, morning",
+        "rules": [{"kind": "date", "on": "2026-11-20"}, {"kind": "time", "latest": "11:59"}],
+    }
+    assert is_valid("brief.v1.json", _brief_with(list_name, friday_morning))
+
+
+def test_never_agree_items_take_no_rules() -> None:
+    item = {"text": "A deposit", "rules": [{"kind": "person", "name": "x"}]}
+    assert not is_valid("brief.v1.json", _brief_with("never_agree", item))
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"kind": "date", "on": "2026-11-19"},
+        {"kind": "date", "earliest": "2026-11-19", "latest": "2026-11-20"},
+        {"kind": "time", "earliest": "18:30", "latest": "20:00"},
+        {"kind": "time", "latest": "00:00"},
+        {"kind": "time", "earliest": "23:59"},
+        {"kind": "party_size", "exactly": 6},
+        {"kind": "party_size", "min": 2, "max": 4},
+        {"kind": "person", "name": "Dr. Rivera"},
+    ],
+)
+def test_valid_rules(rule: dict[str, Any]) -> None:
+    assert is_valid("brief-rule.v1.json", rule)
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"kind": "time", "latest": "3pm"},  # must be 24-hour HH:MM
+        {"kind": "time", "latest": "24:00"},
+        {"kind": "time", "latest": "9:00"},
+        {"kind": "date", "on": "19 November"},
+        {"kind": "date", "on": "2026-11-19", "at": "x"},  # unknown key
+        {"kind": "party_size", "exactly": 0},
+        {"kind": "person"},  # a person rule needs a name
+        {"kind": "price", "max": 50},  # not a rule kind (money is a gate, not a rule)
+        {"latest": "14:59"},  # no kind
+    ],
+)
+def test_invalid_rules(rule: dict[str, Any]) -> None:
+    assert not is_valid("brief-rule.v1.json", rule)
+
+
+@pytest.mark.parametrize("tool", ["ask_user", "report_decision"])
+def test_tools_take_an_optional_offer_written_out_in_full(tool: str) -> None:
+    schema = load_schema(f"tools/{tool}.args.v1.json")
+    # The tool schema is sent to the model as is, so the offer can't be a $ref.
+    assert "$ref" not in json.dumps(schema)
+    assert "offer" not in schema.get("required", [])
+    name = f"tools/{tool}.args.v1.json"
+    base = read_json(EXAMPLES / "tools" / f"{tool}.args.v1.valid.json")
+    assert is_valid(name, {**base, "offer": {"date": "2026-11-19", "time": "15:00"}})
+    assert is_valid(name, {**base, "offer": {"party_size": 6, "person": "Dr. Patel"}})
+    assert is_valid(name, {**base, "offer": {}})
+    assert not is_valid(name, {**base, "offer": {"time": "3pm"}})
+    assert not is_valid(name, {**base, "offer": {"time": "15:00", "meets": True}})
+
+
+def test_both_tools_define_the_same_offer() -> None:
+    ask = load_schema("tools/ask_user.args.v1.json")["properties"]["offer"]
+    decide = load_schema("tools/report_decision.args.v1.json")["properties"]["offer"]
+    assert ask == decide
+
+
 def test_tool_dimensions_and_confidence_tiers() -> None:
     dims = {
         "needs_ask_first_field",

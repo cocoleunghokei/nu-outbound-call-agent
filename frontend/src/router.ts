@@ -28,6 +28,11 @@ export function livePath(callId: string | null): string {
   return callId ? `/live?call=${encodeURIComponent(callId)}` : '/live'
 }
 
+/** The address of one call's result (summary and transcript) on the history screen. */
+export function resultPath(callId: string): string {
+  return `/history?open=${encodeURIComponent(callId)}`
+}
+
 /** The screen for an address. Unknown paths go to the chat home. */
 export function routeOf(pathname: string, search: string): Route {
   const path = pathname.replace(/\/+$/, '') || '/'
