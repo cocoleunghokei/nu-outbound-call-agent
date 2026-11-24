@@ -484,3 +484,161 @@
     grid-row: 2;
   }
 }
+
+/* Template form (PC-2): one card in the chat. Same card look as the review card. */
+.precall-form {
+  align-self: flex-start;
+  width: min(100%, 600px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--pc-surface);
+  border: 1px solid var(--pc-line);
+  border-radius: 24px;
+  padding: 18px;
+  box-shadow: var(--pc-shadow);
+  animation: precall-in 0.22s ease-out;
+}
+
+.precall-form h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.precall-fs {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 0 0;
+  border: 0;
+  border-top: 1px solid var(--pc-line);
+}
+
+.precall-fs > legend {
+  padding: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pc-muted);
+  float: left;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.precall-fs > legend + * {
+  clear: both;
+}
+
+.precall-fgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.precall-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.precall-field > span:first-child {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.precall-field input,
+.precall-addrow input {
+  width: 100%;
+  min-width: 0;
+  border: 1.5px solid var(--pc-line);
+  border-radius: 12px;
+  background: var(--pc-surface);
+  padding: 10px 12px;
+}
+
+.precall-field input:focus,
+.precall-addrow input:focus {
+  border-color: var(--pc-brand);
+  outline: none;
+}
+
+.precall-stepper {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1.5px solid var(--pc-line);
+  border-radius: 12px;
+}
+
+.precall-stepper button {
+  width: 42px;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+}
+
+.precall-stepper button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.precall-stepper output {
+  min-width: 34px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.precall-known {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #e2f6ee;
+  color: #065f46;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.precall-addrow {
+  display: flex;
+  gap: 8px;
+}
+
+.precall-addrow .precall-btn {
+  flex: none;
+}
+
+.precall-sugg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.precall-x {
+  width: 20px;
+  height: 20px;
+  margin-right: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  line-height: 1;
+  font-size: 15px;
+}
+
+.precall-x:hover {
+  background: rgba(17, 24, 39, 0.1);
+}
+
+.precall-form .precall-warn {
+  margin: 0;
+}
+
+.precall-form .precall-foot {
+  margin-top: 0;
+}

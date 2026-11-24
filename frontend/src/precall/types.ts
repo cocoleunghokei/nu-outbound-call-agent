@@ -90,6 +90,8 @@ export interface TemplateField {
   /** Where the value comes from: the user's profile, or asked in the chat for this call. */
   source: 'profile' | 'call'
   question: string
+  /** One-tap answers shown under the input, e.g. "Existing" and "New". */
+  suggestions?: string[]
 }
 
 /** Draft template shape (PC-2 is Harper's; to agree in plan Step 7). */
