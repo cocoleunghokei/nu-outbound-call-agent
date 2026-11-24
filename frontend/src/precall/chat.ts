@@ -197,7 +197,7 @@ const LIST_PROMPTS: Record<ListKey, ListPrompt> = {
     placeholder: 'Something you are OK with, e.g. Friday morning',
   },
   never_agree: {
-    ask: "Anything I should never agree to? I'll always check with you before any deposit or fee.",
+    ask: "Anything I should never agree to?",
     again: () => 'Got it. Anything else I should never agree to?',
     none: 'Nothing else',
     placeholder: 'Something I should never agree to',
