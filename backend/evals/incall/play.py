@@ -280,6 +280,7 @@ async def play_case(
     ]
     record.events.append(Event(step=0, kind="agent", text=setup.first_message))
     state = _State(brief=build_case_brief(data, case))
+    state.timeline.append(("agent", setup.first_message))
 
     for number, step in enumerate(case["steps"], start=1):
         if "business" in step:
@@ -333,6 +334,7 @@ async def _respond(
         convo.append(_assistant_message(reply))
         if reply.text:
             record.events.append(Event(step=step, kind="agent", text=reply.text))
+            state.timeline.append(("agent", reply.text))  # the backend stores the agent's lines too
         if not reply.tool_calls:
             break
         for call in reply.tool_calls:

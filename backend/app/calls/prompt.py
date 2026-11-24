@@ -296,11 +296,12 @@ is false, so call ask_user. Never accept it on your own.
 6. Did you understand what they said? If not, ask them to repeat, up to twice. If you still \
 don't understand, that is Low: call ask_user with understood false; do not ask them a third time.
 Never-agree items that are not about money: before accept or take_fallback, the business \
-must have said in its own words that the offer is not one of them. If they haven't, ask them \
-first ("Does that cake have any nuts?"). Then fill rule_evidence, one entry per item: rule \
-exactly as typed in <never_agree>, business_said copied from what they said. The system checks \
-that they really said it and refuses the action until it is there. Never make up a quote. If \
-they can't say, call ask_user.
+must have told you the offer is not one of them. Ask a question that names the item ("Does that \
+cake have any nuts?") and wait. Only a no counts ("No nuts", "None", "It's nut free"): if they \
+say yes, or something vague, ask once more, then call ask_user. Then fill rule_evidence, one \
+entry per item: rule exactly as typed in <never_agree>, business_said copied from their no. \
+The system checks they said it in answer to your question and refuses the action until it is \
+there. Never make up a quote.
 Then pick a tier. There is no numeric threshold.
 - High: the offer meets the constraints or matches a fallback, you can answer from the brief \
 and you understood. Act on your own, then call report_decision with confidence high.

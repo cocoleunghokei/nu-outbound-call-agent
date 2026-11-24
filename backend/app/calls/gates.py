@@ -42,9 +42,11 @@ the same turn. Found by the in-call eval (``backend/evals/incall/notes/``):
   (marshmallow cake in place of the mochi the user wanted), which is the user's call, not a
   missed preference.
 - **Never-agree evidence** (``never_agree_gate``): accept or take_fallback is refused until
-  ``rule_evidence`` quotes the business's own words, really said on the call, for every
-  never-agree item that isn't about money ("cake with nuts"). Python can't read the item, so
-  the agent has to ask the business and bring the quote; the quote must be in the transcript.
+  ``rule_evidence`` quotes a denial the business really said, for every never-agree item that
+  isn't about money ("cake with nuts"): in reply to a question the agent asked that names the
+  item ("Does that cake have any nuts?" "No, none."), or unprompted ("all our cakes are nut
+  free"). A yes isn't enough, because it could mean the item is there. The check reads words,
+  it doesn't understand them.
 - **Wrong day** (``report_day_gate``): ``report_outcome`` is refused when ``details.date`` is not
   the day the user typed ("Dec 23", read into 2026-12-23 by ``requested_day``), not a day a date
   rule in the brief allows, and not a day the business named. The requirement list anchors the
@@ -174,11 +176,12 @@ def never_agree_refusal(unconfirmed: Sequence[str]) -> str:
     item. ``unconfirmed`` are the items as the user typed them."""
     names = "; ".join(f'"{one_line(text)}"' for text in unconfirmed)
     return (
-        "Not done: the user said never to agree to these, and the business has not said in its "
-        f"own words that this offer is not one of them: {names}. Ask the business about each "
-        '(for example "Does that cake have any nuts?"), then call report_decision again with '
-        "rule_evidence: one entry per item, rule exactly as the user typed it and business_said "
-        "copied from what they said. If they can't say, call ask_user."
+        "Not done: the user said never to agree to these, and the business has not clearly said "
+        f"this offer is not one of them: {names}. Ask the business a question that names each "
+        '(for example "Does that cake have any nuts?") and wait for the answer. It has to be a no '
+        '("No nuts", "None", "It\'s nut free"): a yes, or a vague answer, is not enough. Then call '
+        "report_decision again with rule_evidence: one entry per item, rule exactly as the user "
+        "typed it and business_said copied from their no. If they can't say, call ask_user."
     )
 
 
@@ -216,7 +219,9 @@ class CallFacts:
     a decision ping (or ever, if there was none).
     ``ending``: the user pressed End (or the pause cap fired). ``business_said``: every
     business transcript line so far, joined and casefolded. ``instructed``: the user sent an
-    instruction during the call (DC-10).
+    instruction during the call (DC-10). ``turns``: every final transcript line in the order it
+    was spoken, as (``agent`` or ``business``, text); it lets a gate tell what a business line
+    answered.
     """
 
     money_since_yes: bool = False
@@ -226,6 +231,7 @@ class CallFacts:
     ending: bool = False
     business_said: str = ""
     instructed: bool = False
+    turns: tuple[tuple[str, str], ...] = ()
 
 
 def instruction_covers(covered_by_instruction: object, facts: CallFacts) -> bool:
@@ -358,8 +364,84 @@ def _normal(text: object) -> str:
     return " ".join(re.sub(r"[^\w\s]", " ", str(text).casefold()).split())
 
 
-# A quote this short ("yeah") says nothing about a particular item.
-_MIN_QUOTE_WORDS = 2
+# A quote this short ("no") says nothing when nobody asked, so an unprompted quote needs two words.
+_MIN_VOLUNTEERED_WORDS = 2
+# What a denial looks like: "no nuts", "none of them", "it's nut free", "doesn't have any".
+_DENIAL = re.compile(r"\b(?:no|nope|nah|none|not|never|without|nothing|free)\b|n't\b")
+# Words that name nothing in particular, so asking about them is not asking about the item.
+_FILLER = frozenset(
+    "the and for with any that this from have has had are was were you your our their not "
+    "but can will would could should may might one two all some more most only also just "
+    "than then them they there here what when where which who whom why how".split()
+)
+_MIN_STEM_LETTERS = 3
+
+
+def _stems(text: str) -> set[str]:
+    """Content words of ``text`` as stems: 3+ letters, no filler words, a plural "s" removed,
+    so "nuts" and "nut" meet."""
+    words = _normal(text).split()
+    stems = {w for w in words if len(w) >= _MIN_STEM_LETTERS and w not in _FILLER}
+    return {w[:-1] if w.endswith("s") and len(w) > _MIN_STEM_LETTERS else w for w in stems}
+
+
+def _item_stems(item: str, brief: Mapping[str, Any] | None) -> set[str]:
+    """The words that make ``item`` specific: its stems minus the ones the goal already uses.
+
+    "cake with nuts" in a call about ordering a cake is about "nuts": asking "Is the cake
+    ready?" does not ask about the item. If nothing is left, every stem of the item counts.
+    """
+    stems = _stems(item)
+    if brief:
+        about = f"{brief.get('goal', '')} {brief.get('task_line', '')}"
+        stems = (stems - _stems(about)) or stems
+    return stems
+
+
+def _whole(quote: str, text: str) -> bool:
+    """True if the words of ``quote`` appear in ``text`` as whole words, in order."""
+    return bool(quote) and f" {quote} " in f" {_normal(text)} "
+
+
+def _is_denial(quote: str) -> bool:
+    return _DENIAL.search(quote.casefold().replace("\u2019", "'")) is not None
+
+
+def _answers_the_item(
+    item: str, quote: str, turns: Sequence[tuple[str, str]], brief: Mapping[str, Any] | None
+) -> bool:
+    """True if the business really said, in answer to the item, that the offer isn't it.
+
+    The quote has to be a denial (``_DENIAL``: a "yeah" could mean yes, it has nuts), and one of:
+
+    - **Answered:** the agent asked a question that names the item, and the quote is in the
+      business's reply to it (the business lines before the agent speaks again).
+    - **Volunteered:** the business said it unprompted, in at least two words that name the item.
+
+    The business's words are checked, not understood: "not nut free" would pass. The agent
+    still has to ask, and the user can see the call.
+    """
+    wanted = _normal(quote)
+    stems = _item_stems(item, brief)
+    if not wanted or not _is_denial(quote) or not stems:
+        return False
+    for index, (role, text) in enumerate(turns):
+        if role == "agent" and "?" in text and _stems(text) & stems:
+            reply = []
+            for later_role, later_text in turns[index + 1 :]:
+                if later_role == "agent":
+                    break
+                reply.append(later_text)
+            if _whole(wanted, " ".join(reply)):
+                return True
+        if (
+            role == "business"
+            and len(wanted.split()) >= _MIN_VOLUNTEERED_WORDS
+            and _stems(quote) & stems
+            and _whole(wanted, text)
+        ):
+            return True
+    return False
 
 
 def never_agree_to_check(brief: Mapping[str, Any] | None) -> list[str]:
@@ -382,14 +464,13 @@ def never_agree_gate(
     covered_by_instruction: object = None,
 ) -> str | None:
     """The refusal for accepting or taking a fallback before the business has said, in its own
-    words, that the offer is not one of the user's never-agree items, else None.
+    words and in answer to the item, that the offer is not one of the user's never-agree items.
 
     Python can't read "cake with nuts", so the agent must bring evidence: ``rule_evidence``
-    with one entry per item (the item exactly as typed, and what the business said), and each
-    quote must really be in the business's words on this call (at least two words, so "yeah"
-    doesn't do). That proves the business said it, not that it answers the question: the
-    agent still has to ask. A "yes" from the user to the latest ping, or their own instruction,
-    lets it through, as in ``low_offer_gate``.
+    with one entry per item (the item exactly as typed, and what the business said). The quote
+    must be a denial the business really said, either in reply to a question the agent asked
+    that names the item, or unprompted (``_answers_the_item``). A "yes" from the user to the
+    latest ping, or their own instruction, lets it through, as in ``low_offer_gate``.
     """
     if action not in SETTLING_ACTIONS or facts.latest_ping_approved:
         return None
@@ -402,13 +483,11 @@ def never_agree_gate(
     quotes: dict[str, str] = {}
     for entry in evidence if isinstance(evidence, list) else []:
         if isinstance(entry, Mapping):
-            quotes[_normal(entry.get("rule", ""))] = _normal(entry.get("business_said", ""))
-    said = f" {_normal(facts.business_said)} "
+            quotes[_normal(entry.get("rule", ""))] = str(entry.get("business_said", ""))
     unconfirmed = [
         text
         for text in required
-        if len(quotes.get(_normal(text), "").split()) < _MIN_QUOTE_WORDS
-        or f" {quotes[_normal(text)]} " not in said
+        if not _answers_the_item(text, quotes.get(_normal(text), ""), facts.turns, brief)
     ]
     return never_agree_refusal(unconfirmed) if unconfirmed else None
 
@@ -497,7 +576,7 @@ def facts_from_timeline(
 ) -> CallFacts:
     """``CallFacts`` from the call's events in order, as ``(kind, text)``.
 
-    Kinds: ``business`` (a business transcript line), ``countered`` (the agent recorded a
+    Kinds: ``business`` and ``agent`` (a transcript line), ``countered`` (the agent recorded a
     counter), ``answered`` (a decision ping answered, with the reply text),
     ``field_answered`` (an Ask-me-first approval answered: it counts as asking, never as
     approving money or as an answer to a counter), ``expired`` (a ping that timed out) and
@@ -510,7 +589,10 @@ def facts_from_timeline(
     countered = False
     instructed = False
     said: list[str] = []
+    turns: list[tuple[str, str]] = []
     for kind, text in timeline:
+        if kind in ("business", "agent"):
+            turns.append((kind, text))
         if kind == "business":
             said.append(text.casefold())
         if kind == "business" and mentions_money(text):
@@ -534,6 +616,7 @@ def facts_from_timeline(
         ending=ending,
         business_said="\n".join(said),
         instructed=instructed,
+        turns=tuple(turns),
     )
 
 
@@ -556,7 +639,7 @@ async def load_facts(conn: AsyncConnection[Any], call_id: UUID) -> CallFacts:
             "select e.type, e.payload, p.kind from public.call_events e"
             " left join public.pings p on p.ping_id::text = e.payload->>'ping_id'"
             " where e.call_id = %s and (e.type = 'ping.resolved'"
-            "  or (e.type = 'transcript.final' and e.payload->>'role' = 'business')"
+            "  or (e.type = 'transcript.final' and e.payload->>'role' in ('business', 'agent'))"
             "  or (e.type = 'agent.decision' and e.payload->>'action' = 'counter')"
             "  or (e.type = 'command.applied' and e.payload->>'command' = 'instruction'))"
             " order by e.seq",
@@ -568,7 +651,8 @@ async def load_facts(conn: AsyncConnection[Any], call_id: UUID) -> CallFacts:
         if not isinstance(payload, dict):
             continue
         if event_type == "transcript.final":
-            timeline.append(("business", str(payload.get("text") or "")))
+            role = "agent" if payload.get("role") == "agent" else "business"
+            timeline.append((role, str(payload.get("text") or "")))
         elif event_type == "agent.decision":
             timeline.append(("countered", ""))
         elif event_type == "command.applied":

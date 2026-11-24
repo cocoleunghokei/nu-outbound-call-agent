@@ -498,7 +498,7 @@ class RuleEvidence(BaseModel):
     business_said: Annotated[
         str,
         Field(
-            description="What the business said on this call, copied as it was said, e.g. no nuts in any of our cakes",
+            description="The business's no, copied as they said it, e.g. no nuts, or none of our cakes have nuts",
             max_length=200,
         ),
     ]
@@ -551,7 +551,7 @@ class ReportDecisionArgs(BaseModel):
     rule_evidence: Annotated[
         list[RuleEvidence] | None,
         Field(
-            description="For accept or take_fallback, when the brief has never-agree items that are not about money: one entry per item, with the business's own words showing the offer is not that thing. The system checks the words really were said on this call, and refuses the action until every item has them. Ask the business first if they haven't said it."
+            description='For accept or take_fallback, when the brief has never-agree items that are not about money: one entry per item, with the business\'s own words saying the offer is not that thing. Ask them a question that names the item first ("Does that cake have any nuts?"). The system checks that they really said it, in answer to your question or unprompted, and that it is a no: a yes is not enough. It refuses the action until every item has it.'
         ),
     ] = None
 
