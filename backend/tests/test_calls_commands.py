@@ -335,19 +335,77 @@ def test_pause_cap_offers_a_call_back_and_ends(supabase_env: SupabaseEnv) -> Non
     asyncio.run(scenario())
 
 
-def test_instruction_is_not_handled_here(supabase_env: SupabaseEnv) -> None:
+async def instruct(client: httpx.AsyncClient, call: FreshCall, text: str) -> httpx.Response:
+    return await client.post(
+        f"/calls/{call.call_id}/commands",
+        json={"type": "instruction", "text": text},
+        headers=auth_headers(call.user_id),
+    )
+
+
+def test_instruction_is_logged_and_queued_quietly(supabase_env: SupabaseEnv) -> None:
     db = supabase_env.db_url
     call = seed_call(db)
 
     async def scenario() -> None:
         async with serve(make_app(db)) as client:
-            response = await client.post(
-                f"/calls/{call.call_id}/commands",
-                json={"type": "instruction", "text": "ask about Saturday"},
-                headers=auth_headers(call.user_id),
-            )
+            response = await instruct(client, call, "  ask if they have\nSaturday  ")
+        assert response.status_code == 200
+        assert response.json() == {
+            "call_id": str(call.call_id),
+            "command": "instruction",
+            "status": "accepted",
+        }
+        applied = [p for t, p in await event_rows(db, call) if t == "command.applied"]
+        assert applied == [{"command": "instruction", "text": "ask if they have Saturday"}]
+        queued = [o for o in await control(db, call) if o["kind"] == "instruction"]
+        assert len(queued) == 1
+        message = queued[0]["payload"]["message"]
+        assert message["triggerResponseEnabled"] is False
+        assert message["message"]["role"] == "system"
+        assert "instruction: ask if they have Saturday." in message["message"]["content"]
+
+    asyncio.run(scenario())
+
+
+def test_instruction_is_accepted_while_paused_and_not_held(supabase_env: SupabaseEnv) -> None:
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            assert (await command(client, call, "pause")).status_code == 200
+            response = await instruct(client, call, "4pm is fine too")
+        assert response.status_code == 200
+        assert await call_status(db, call) == "on_hold"
+
+    asyncio.run(scenario())
+
+
+def test_empty_instruction_is_refused(supabase_env: SupabaseEnv) -> None:
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            response = await instruct(client, call, " \t\n ")
         assert response.status_code == 422
-        assert response.json()["error"]["code"] == "unsupported_command"
+        assert response.json()["error"]["code"] == "invalid_instruction"
+        assert [o for o in await control(db, call) if o["kind"] == "instruction"] == []
+
+    asyncio.run(scenario())
+
+
+def test_instruction_is_refused_once_the_call_is_ending(supabase_env: SupabaseEnv) -> None:
+    db = supabase_env.db_url
+    call = seed_call(db)
+
+    async def scenario() -> None:
+        async with serve(make_app(db)) as client:
+            assert (await command(client, call, "end")).status_code == 200
+            response = await instruct(client, call, "ask about Saturday")
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "invalid_call_state"
 
     asyncio.run(scenario())
 

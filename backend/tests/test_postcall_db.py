@@ -60,6 +60,7 @@ def test_end_of_call_report_ends_the_call_and_queues_each_job_once(
             "ended_reason": "assistant-ended-call",
             "agent_lines": ["Hi, I'm calling for Alex Chen."],
             "business_lines": ["Sure."],
+            "turns": [["agent", "Hi, I'm calling for Alex Chen."], ["business", "Sure."]],
         }
 
     asyncio.run(scenario())

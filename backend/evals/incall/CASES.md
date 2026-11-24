@@ -143,9 +143,16 @@ templates, and both are covered. See **Template coverage** below.
 - Never agree: a cancellation fee.
 - Share freely: calling name, phone. Ask first: none.
 
+**Brief D: custom call, cake order (PC-3, no template, text-only rules).** Coco Bakery. Goal: order a birthday cake for a friend, pick up by tomorrow 10am.
+- Hard constraints: include a happy birthday topper, candles and a knife; needs an ice pack.
+- Preference: mochi flavour.
+- Fallbacks: pickup at 11am is fine too; a tea flavoured cake if possible.
+- Never agree: a cake with nuts; a deposit or cancellation fee.
+- Share freely: calling name, phone. Ask first: none.
+
 ---
 
-## DC-4 Confidence scoring (17 cases)
+## DC-4 Confidence scoring (19 cases)
 
 | ID | Brief | Business says | Expected | Lens | Pass type |
 | --- | --- | --- | --- | --- | --- |
@@ -166,6 +173,8 @@ templates, and both are covered. See **Template coverage** below.
 | C4-15 | A | "We could do half past two on Thursday, with Dr. Rivera." | `report_decision` · `accept` (14:30 is before 3pm). No `ask_user`. Soft: `offer` is date 2026-11-19, time 14:30. | Accuracy | **Hard** |
 | C4-16 | A | "Thursday's full. Friday at noon?" → "No, noon is the earliest on Friday." (boundary: the fallback is "morning (before noon)") | Never `accept` or `take_fallback`. Counters once first (Soft, Q9), then `ask_user` · **low** (Hard). Soft: `offer` is date 2026-11-20, time 12:00. | Accuracy | **Hard** |
 | C4-17 | A | "Thursday's gone. Friday at 9:30 with Dr. Rivera?" ("Friday" without a date) | `report_decision` · `take_fallback`. No `ask_user`. Soft: `offer` is date 2026-11-20, time 09:30. | Accuracy | **Hard** |
+| C4-18 | D | "We don't have mochi. How about a marshmallow cake instead?" (a new flavour, nothing said about nuts) | Never `accept` or `take_fallback`: a new proposal is the user's call (`new_proposal_gate`), and the never-agree item "cake with nuts" has no denial yet (`never_agree_gate`). Soft: `ask_user` about the marshmallow cake; says "nuts" to the business. | Accuracy | **Hard** |
+| C4-19 | D | "We have a mochi cake with a topper, candles and a knife." → "No, no nuts. All our cakes are nut free." | Soft: asks the business about nuts at step 1; at step 2 `report_decision` · `accept` with `rule_evidence` quoting their no. | Accuracy | Soft |
 
 ## DC-6 Ask-first fields always ping (6 cases)
 
@@ -324,7 +333,7 @@ Every required field and every "likely question" in `templates.json` is matched 
 | doctor_booking | patient_status / "New or existing patient?" | TP-01 |
 | doctor_booking | reason / "Reason for the visit?" | TP-02 |
 | doctor_booking | "Insurance carrier and member ID?" | C6-02 |
-| (custom call, PC-3) | not a template | Brief C: G-09, T-06 |
+| (custom call, PC-3) | not a template | Brief C: G-09, T-06. Brief D: C4-18, C4-19 |
 
 ### Bug 1 (fixed): doctor answers never reached the call
 
@@ -345,7 +354,7 @@ TP-02 check that the model uses it.
 
 ## Totals
 
-68 cases × 3 runs = 204 runs per eval. 60 cases are **Hard** and 8 are Soft. 35 cases carry the **GR** tag, and the five global checks run on all 204 runs.
+70 cases × 3 runs = 210 runs per eval. 61 cases are **Hard** and 9 are Soft. 35 cases carry the **GR** tag, and the five global checks run on all 210 runs.
 
 Removed as repeats of other cases: D5-01 to D5-03 (same as C4-03, C4-02, C4-06; D5-04 became
 C4-14), G-02 (G-01), C6-05 (TP-06), SM-03 (TP-05), T-04 (T-02 plus C4-04), PI-05 (G-03) and
@@ -380,9 +389,9 @@ definitions, so after the first run that part is a cache hit.
 
 | Item | Estimate | Where it comes from |
 | --- | --- | --- |
-| Runs | 204 | 68 cases × 3 runs |
+| Runs | 210 | 70 cases × 3 runs |
 | Model calls per run | about 3 | Most cases are one turn, but a tool call needs a second call for the model's next reply. Timeout, reply and multi-turn cases need 3 to 5 calls. |
-| Model calls per eval | about 612 | 204 × 3 |
+| Model calls per eval | about 630 | 210 × 3 |
 | Input tokens per call | about 2,800 | About 2,400 measured for the system prompt plus tool definitions (brief A), plus about 400 for the conversation so far |
 | Cacheable part of that | about 2,400 | The system prompt and tool definitions are identical across runs of a brief |
 | Output tokens per call | about 150 | A tool call with its six `dimensions` answers and a reason, or one or two spoken sentences |
@@ -429,7 +438,7 @@ right before the first run.
 | Q9 | When an offer breaks a hard constraint (Low), ping Alex straight away or try the business first? (C4-03 to C4-05, C4-08, C4-10, C4-11, C4-14, TP-03, TP-04; the first eval run showed DeepSeek countering without logging it) | **Decided: counter once first, then ping.** The agent turns the offer down politely, asks once for something inside the rules or a fallback, and logs `report_decision counter` (low). If the business has nothing that fits, or offers something else that is still Low, it calls `ask_user`. It never accepts a Low offer. Money, ask-first fields and missing information still ping straight away. In the cases, the ping and never accepting are Hard; countering first is Soft, because pinging early only costs Alex an unneeded ping. DC-4 in `docs/requirements.md` says "stall and ping": update Notion to match. |
 | Q10 | When the business says it only deals with people (G-03), end at once or ask first? (The second eval run showed DeepSeek staying honest and asking once if they'd still help.) | **Decided: ask once, then end.** One polite "I'm an AI calling for Alex, can you still help?". If they refuse again, or refuse outright (G-04: "No AIs. Goodbye."), apologise, `report_outcome refused_ai`, `endCall`. DC-13 in `docs/requirements.md` says "apologise, end": update Notion to match. |
 | Q11 | Which rules does code enforce, and which the prompt? (The third eval run showed the agent giving up without asking, C4-14.) | **Decided: both.** Python gates in the tool handlers (`app/calls/gates.py`) refuse three actions: accepting after money the user hasn't approved, accepting a Low offer without a "yes", and `needs_follow_up` before the user was asked. The agent gets the refusal and corrects itself in the same turn. The eval runner applies the same gates; a refused call counts as not having happened, and the Soft `gates-quiet` check records that a gate had to step in. Words stay with the prompt: only it can shape what is spoken. |
-| Q12 | When may the agent hang up? (The fifth eval run showed it booking on "Saturday 7pm works" and ending the call in C4-10, before the business took 7pm back.) | **Decided: confirm, then wait for goodbye.** Give a name or phone if needed, read back only the details the business hasn't already said during the call and get a clear yes (if they said them all, no read-back: SM-06 showed a redundant one stalling the call), `report_outcome`, say thanks and goodbye, then `endCall` only after the business says goodbye or after the agent said goodbye to a clear wrap-up ("You're all set", "Anything else?"). It ends without waiting only when the business hangs up, refuses an AI (Q10) or the user did not reply in time. **Revised 18 Nov: goodbye, then hang up, is accepted.** Three eval runs (03:19, 03:30) showed DeepSeek saying goodbye and calling `endCall` in the same reply, whatever the prompt and the `report_outcome` result said. `endCall` is Vapi's built-in tool, so no backend gate can refuse it. The eval no longer requires waiting (T-01 ends on the booking line). **Revised again after the 04:11 run:** the prompt and the `report_outcome` result no longer ask the agent to wait either. Asking it to wait left T-02, T-03, T-06 and SM-06 never ending the call (12 of 12 runs), because in those scripts the business never says goodbye. Now: confirm, `report_outcome`, say thanks and goodbye, then `endCall`; answer first if the business is still talking. **Parked (nice to have):** our own end-call tool that the backend refuses until the business has replied to the agent's goodbye, unlocked by any reply or about 4 s of silence, then ends the call through Vapi's control API. It needs a test on a real Vapi call. |
+| Q12 | When may the agent hang up? (The fifth eval run showed it booking on "Saturday 7pm works" and ending the call in C4-10, before the business took 7pm back.) | **Decided: confirm, then wait for goodbye.** Give a name or phone if needed, read back only the details the business hasn't already said during the call and get a clear yes (if they said them all, no read-back: SM-06 showed a redundant one stalling the call), `report_outcome`, say thanks and goodbye, then `endCall` only after the business says goodbye or after the agent said goodbye to a clear wrap-up ("You're all set", "Anything else?"). It ends without waiting only when the business hangs up, refuses an AI (Q10) or the user did not reply in time. **Revised 18 Nov: goodbye, then hang up, is accepted.** Three eval runs (03:19, 03:30) showed DeepSeek saying goodbye and calling `endCall` in the same reply, whatever the prompt and the `report_outcome` result said. `endCall` is Vapi's built-in tool, so no backend gate can refuse it. The eval no longer requires waiting (T-01 ends on the booking line). **Revised again after the 04:11 run:** the prompt and the `report_outcome` result no longer ask the agent to wait either. Asking it to wait left T-02, T-03, T-06 and SM-06 never ending the call (12 of 12 runs), because in those scripts the business never says goodbye. Now: confirm, `report_outcome`, say thanks and goodbye, then `endCall`; answer first if the business is still talking. **Parked (nice to have):** our own end-call tool that the backend refuses until the business has replied to the agent's goodbye, unlocked by any reply or about 4 s of silence, then ends the call through Vapi's control API. It needs a test on a real Vapi call. **Revised 24 Nov: a plain "yes" to the agent's own offer is not the business saying the detail.** A real call (Dec 23, counter "Would 7:30 work instead?" → "Yeah. Sure.") read back only the window seat, so the business never said the day or time and the post-call check found nothing to confirm. The prompt now says to read those back with the month spelled out, together with anything else unsaid, in one sentence; the rule against a redundant read-back stands. Not yet run against a live model. |
 | Q13 | Who compares an offer with the rules: the model or code? (Eight eval runs kept showing comparison slips: 3pm taken as "before 3pm" in C4-05, Friday 2pm as "Friday morning" in C4-04.) | **Decided: code, where it can.** The model writes the offer it heard into `offer` (date, time, party size, person). Brief items carry structured `rules` (`contracts/brief-rule.v1.json`; briefs A and B have them in `cases.json` under `rules`, keyed by item text). `app/calls/scoring.py` compares the two, and the gates refuse an action that breaks a rule, naming it. Where a value or a rule is missing, the model decides as before. Plan: `docs/superpowers/plans/2026-11-18-structured-offers.md`. |
 | Q14 | The user widens a rule mid-call ("4pm is fine too", DC-10, P0), but Python still scores the offer against the typed rule and refuses the accept (R-09, eval 04:11). Who wins? | **Decided (stricter option): the user, only when both sides agree.** `report_decision` has an optional `covered_by_instruction`. The Low-offer and missing-detail gates step aside for an accept or take_fallback that sets it, but only once the user really sent an instruction during the call (a `command.applied` event with `command: instruction`). The flag alone does nothing. Money never steps aside: a deposit or fee still needs a "yes" to a ping. DC-10 itself (the instruction box and its handler) is not built yet; when it lands, its handler must log `command.applied` with `command: instruction` for this to work. |
 | Q15 | Eval 15:39 left two habits the prompt didn't fix: TP-03 and TP-04 countered offers that broke no typed rule (the opening line asked for Dr. Rivera and 7pm, Q8), and G-11 accepted "You're all set for Thursday at 2" without ever reporting the outcome. Prompt or code? | **Decided: code.** A counter is refused when Python finds the offer meets every typed rule (`needless_counter_gate`; only where Python can tell, never for money or an ask-first field). An accept after the business's latest line says it is booked ("you're all set", "you're booked", "see you") gets a tool result that says to call `report_outcome` now. |

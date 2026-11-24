@@ -238,7 +238,18 @@ function FeedEntry({ item, businessName }: { item: FeedItem; businessName: strin
         </div>
       )
     case 'command':
-      return <div className="lc-note lc-note-you">{commandText(item.command)}</div>
+      return (
+        <div className="lc-note lc-note-you">
+          {item.command === 'instruction' && item.text !== undefined ? (
+            <>
+              <span className="lc-badge you">Your instruction</span>
+              {item.text}
+            </>
+          ) : (
+            commandText(item.command)
+          )}
+        </div>
+      )
   }
 }
 

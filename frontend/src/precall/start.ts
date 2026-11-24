@@ -21,7 +21,7 @@ import { ApiError, NETWORK_ERROR, NO_SESSION, type ApiClient, type BriefResponse
 import { profileLabel } from './missing'
 import type { Brief } from './types'
 
-/** What the browser remembers about saving the current draft. Reset on "restart". */
+/** What the browser remembers about saving the current draft. Reset on "new call". */
 export interface SaveSession {
   /** Set once `POST /briefs` succeeded; later saves are `PATCH`es to this id. */
   briefId: string | null

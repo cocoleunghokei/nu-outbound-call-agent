@@ -46,7 +46,14 @@ export type FeedItem =
   | ({ kind: 'line' } & TranscriptLine)
   | ({ kind: 'decision' } & DecisionItem)
   | { kind: 'asked'; key: string; seq: number; question: string; reason: string }
-  | { kind: 'command'; key: string; seq: number; command: CallCommandType | (string & {}) }
+  | {
+      kind: 'command'
+      key: string
+      seq: number
+      command: CallCommandType | (string & {})
+      /** What you typed, for an `instruction`. */
+      text?: string
+    }
 
 /** The latest ping and where it stands. */
 export interface PingCardView {
@@ -89,7 +96,7 @@ export type StatusStep = (typeof STATUS_STEPS)[number]['step'] | 'unknown'
 
 const TERMINAL_STATUSES: ReadonlySet<string> = new Set(['ended', 'failed'])
 const TRANSCRIPT_ROLES: ReadonlySet<string> = new Set(['agent', 'business', 'user'])
-const COMMANDS: ReadonlySet<string> = new Set(['pause', 'resume', 'end'])
+const COMMANDS: ReadonlySet<string> = new Set(['instruction', 'pause', 'resume', 'end'])
 const MAX_MISSED_PREFERENCE = 200
 
 /**
@@ -193,9 +200,17 @@ export function deriveLiveCall(events: readonly CallEvent[]): LiveCallView {
       }
       case 'command.applied': {
         const command = event.payload.command
-        // `instruction` is DC-10 (pre-call owner); it gets its own feed entry there.
         if (typeof command !== 'string' || !COMMANDS.has(command)) break
-        view.feed.push({ kind: 'command', key: event.event_id, seq: event.seq, command })
+        const text = event.payload.text
+        // An instruction without its text has nothing to show.
+        if (command === 'instruction' && (typeof text !== 'string' || text.trim() === '')) break
+        view.feed.push({
+          kind: 'command',
+          key: event.event_id,
+          seq: event.seq,
+          command,
+          ...(command === 'instruction' && typeof text === 'string' ? { text: text.trim() } : {}),
+        })
         break
       }
       case 'ping.opened': {
