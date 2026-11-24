@@ -63,7 +63,7 @@ Add one optional array to the existing `report_outcome` tool args (`contracts/to
 
 The model's summary is a claim, so the backend verifies what it can before the page shows it, and drops or downgrades what it can't:
 
-1. **`evidence`** must point to real transcript lines of this call. Unknown `seq` values are removed. An item with no evidence left is still shown, but marked unverified (see open question 2).
+1. **`evidence`** must point to real transcript lines of this call. Unknown `seq` values are removed. An item with no evidence left is unverified: shown marked if `as_asked`, otherwise hidden (see open question 2).
 2. **`cost_cents`** must match an amount a business turn actually said. Otherwise it is dropped. This extends the existing money gate in `gates.py`.
 3. **`status` against the brief's rules.** When the referenced item has `rules` (date and time rules in `brief-rule.v1`) and the agreed `details.date` or `details.time` break them, force `changed`, whatever the model said. In the example, "by 10 AM" is `latest: "10:00"` and the agreed time is 12:00, so the pickup row is `changed` even if the model had written `as_asked`.
 4. **`approved_by: "user"`** requires a ping reply from the user in this call. Otherwise it becomes `none`.
@@ -131,6 +131,6 @@ The `evidence` numbers are illustrative. The UI headline "3 changes · +$3" come
    | Hide it | Nothing. The row is gone. | Safest: no claim without proof. A real change might be missing from the table. |
    | Show it, marked | `Delivery  →  Free delivery` with a gray "Not found in transcript" tag, no jump link | Complete, and the user can judge. A wrong claim is still on screen. |
 
-   Recommendation: show it marked when `status` is `as_asked`, and hide it when it claims a `changed` result, a fee or a waived cost, because a false claim there costs the user more. Undecided.
+   **Decided:** an unverified item with `status` `as_asked` is shown with the gray "Not found in transcript" tag. An unverified item with any other status (`changed`, `not_met`, `extra`) is hidden, because a false claim of a change, a fee or a waived cost costs the user more. The server applies this rule before sending `result_items`, so the frontend never receives a hidden item. Add a test for each status.
 3. **Total cost.** Is a sum of `cost_cents` enough, or does the page need a currency? The product is US-only today, so USD is assumed.
 4. **Separate data bug.** On the Nov 24 call the page said "Nothing was shared" although the agent said the name and phone number aloud. `shared_fields` seems not to record spoken disclosures. It is independent of this proposal and worth its own issue.
