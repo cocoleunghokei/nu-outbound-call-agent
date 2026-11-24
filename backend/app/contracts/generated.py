@@ -50,6 +50,20 @@ class AskFirstKey(RootModel[str]):
     root: Annotated[str, Field(min_length=1, title="AskFirstKey")]
 
 
+class BriefCallDetail(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: Annotated[str, Field(max_length=64, pattern="^[a-z][a-z0-9_]*$")]
+    question: Annotated[
+        str,
+        Field(
+            description="The template's question, e.g. 'Are you a new or existing patient?'",
+            max_length=200,
+            min_length=1,
+        ),
+    ]
+    value: Annotated[str, Field(max_length=200, min_length=1)]
+
+
 class Brief(BaseModel):
     """
     The reviewed brief (Lotto to Coco handoff). Field keys only, never profile values; values come from call_profile_snapshots at call start.
@@ -71,6 +85,12 @@ class Brief(BaseModel):
     never_agree: list[BriefNeverAgree]
     share_freely_keys: list[ShareFreelyKey]
     ask_first_keys: list[AskFirstKey]
+    call_details: Annotated[
+        list[BriefCallDetail] | None,
+        Field(
+            description="Answers the user gave in the pre-call chat for this call's template fields with source 'call' (e.g. patient_status), in template order, so the agent can answer when asked (PC-4). Never profile values. Optional: briefs stored before it existed don't have it."
+        ),
+    ] = None
 
 
 class EventSource(StrEnum):
@@ -396,7 +416,12 @@ class OutcomeDetails(BaseModel):
     confirmation_number: Annotated[
         str | None, Field(description="Exactly as the business said it, e.g. A1B2")
     ] = None
-    staff_name: str | None = None
+    staff_name: Annotated[
+        str | None,
+        Field(
+            description="The name of the person at the business you spoke with, exactly as they said it, e.g. Marco. Never the business's own name. Leave it out if they gave no name."
+        ),
+    ] = None
 
 
 class ReportOutcomeArgs(BaseModel):

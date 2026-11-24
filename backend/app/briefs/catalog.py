@@ -30,6 +30,7 @@ _PLACEHOLDER = re.compile(r"\{(\w+)\}")
 TASK_LINE_MAX = 120  # brief.v1 task_line maxLength (R3)
 LABEL_MAX = 40  # R2: chip text and the brief goal
 ANSWER_MAX = 200  # chat.ts ANSWER_MAX: one-tap answers are answers (R9)
+QUESTION_MAX = 200  # brief.v1 call_details question maxLength (R9)
 CONSTRAINT_MAX = 200  # chat.ts LIST_ITEM_MAX (R10)
 DEFAULT_CONSTRAINTS_MAX = 3  # R10: leave room in the chat's 5-item list for the user's own
 SUGGESTIONS_MAX = 5
@@ -144,6 +145,8 @@ def _check_rules(template: CallTemplate) -> None:
         question = field.question.strip()
         if not question.endswith("?") or question.count("?") != 1:
             raise fail("R9", f"question for {field.key!r} must be one question ending in '?'")
+        if len(question) > QUESTION_MAX:
+            raise fail("R9", f"question for {field.key!r} is over {QUESTION_MAX} characters")
         if len(field.suggestions) > SUGGESTIONS_MAX:
             raise fail("R9", f"at most {SUGGESTIONS_MAX} suggestions for {field.key!r}")
         for suggestion in field.suggestions:

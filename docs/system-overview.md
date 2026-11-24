@@ -413,11 +413,11 @@ stateDiagram-v2
   [*] --> open
   open --> answered : reply wins
   open --> expired : 45 s timeout wins
-  open --> superseded : newer question
+  open --> superseded : newer question, or the agent took a better offer
   open --> cancelled : call ended
 ```
 
-**Your part (planned):** Coco owns ping transitions. A call has at most one `open` ping (a partial unique index enforces it).
+**Your part (planned):** Coco owns ping transitions. A call has at most one `open` ping (a partial unique index enforces it). A `report_decision` with `accept` or `take_fallback` that is newer than the open `decision` ping closes it as `superseded` and returns the call to Talking (`app/calls/decisions.py`). An Ask-me-first approval ping is never closed this way.
 
 ## 7. Webhook ingress
 
