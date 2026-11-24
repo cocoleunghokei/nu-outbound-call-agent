@@ -12,8 +12,10 @@ Only a ``decision`` ping is closed: an Ask-me-first approval stays open, because
 offer doesn't answer "may I share your date of birth?". A decision older than the ping (a
 late webhook) closes nothing.
 
-Before anything is logged, the length gate refuses a reason or missed preference too long for
-the card, and the money and Low-offer gates (``app/calls/gates.py``) may refuse
+When the call carries the ``offer`` the model heard, the Low-offer gate judges it with
+Python's score against the brief's rules (``app/calls/scoring.py``) instead of the model's
+own checks. Before anything is logged, the length gate refuses a reason or missed preference
+too long for the card, and the money and Low-offer gates (``app/calls/gates.py``) may refuse
 an accept or take_fallback: the agent then gets the refusal as its tool result, nothing is
 logged, and the open question stays open.
 """
@@ -27,12 +29,17 @@ from psycopg import AsyncConnection
 from app.calls import messages
 from app.calls.gates import (
     SETTLING_ACTIONS,
-    length_gate,
+    business_said_booked,
+    counter_gate,
+    load_brief,
     load_facts,
     low_offer_gate,
+    missing_detail_gate,
     money_gate,
+    needless_counter_gate,
 )
 from app.calls.pings import close_ping, open_ping_for_update
+from app.calls.scoring import score_tool_call
 from app.calls.store import set_status
 from app.events import append_event
 from app.webhooks.registry import ToolCallContext
@@ -48,14 +55,22 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
 
     An accept or take_fallback that a gate refuses is not logged; the refusal is returned.
     """
-    too_long = length_gate(ctx.arguments)
-    if too_long is not None:
-        logger.info("report_decision refused by the length gate for call %s", ctx.call_id)
-        return too_long
     action = ctx.arguments.get("action")
+    facts = await load_facts(conn, ctx.call_id)
+    if action == "counter":
+        score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)
+        refusal = counter_gate(action, facts) or needless_counter_gate(ctx.dimensions, score)
+        if refusal is not None:
+            logger.info("report_decision refused by a counter gate for call %s", ctx.call_id)
+            return refusal
     if action in SETTLING_ACTIONS:
-        facts = await load_facts(conn, ctx.call_id)
-        refusal = money_gate(action, facts) or low_offer_gate(action, ctx.dimensions, facts)
+        score = score_tool_call(await load_brief(conn, ctx.call_id), ctx.arguments)
+        covered = ctx.arguments.get("covered_by_instruction")
+        refusal = (
+            money_gate(action, facts)
+            or low_offer_gate(action, ctx.dimensions, facts, score, covered)
+            or missing_detail_gate(action, facts, score, covered)
+        )
         if refusal is not None:
             logger.info("report_decision refused by a gate for call %s", ctx.call_id)
             return refusal
@@ -73,9 +88,12 @@ async def handle_report_decision(conn: AsyncConnection[Any], ctx: ToolCallContex
         occurred_at=ctx.source_ts or datetime.now(UTC),
         dedup_key=f"decision:{ctx.tool_call_id}",
     )
-    if payload.get("action") in SETTLING_ACTIONS and await _withdraw_open_question(conn, ctx):
-        return messages.question_withdrawn_result()
-    return NOTED
+    if payload.get("action") not in SETTLING_ACTIONS:
+        return NOTED
+    withdrawn = await _withdraw_open_question(conn, ctx)
+    if business_said_booked(facts):
+        return messages.already_booked_result(withdrawn)
+    return messages.question_withdrawn_result() if withdrawn else NOTED
 
 
 async def _withdraw_open_question(conn: AsyncConnection[Any], ctx: ToolCallContext) -> bool:
