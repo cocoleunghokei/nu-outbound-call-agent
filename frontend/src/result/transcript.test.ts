@@ -74,6 +74,8 @@ describe('transcriptRows', () => {
       'Yes.',
     ])
     expect(rows[0].seq).toBe(1)
+    expect(rows[0].seqs).toEqual([1, 2, 3]) // a result row's evidence can point at any of them
+    expect(rows[1].seqs).toEqual([4])
     expect(rows[0].clock).toBe('00:00')
   })
 
