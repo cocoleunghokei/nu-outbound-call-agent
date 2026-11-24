@@ -42,6 +42,7 @@ CI calls these same targets, so passing locally means passing in CI.
 ### Commits and PRs
 - [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary`. Types: `feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`, `revert`. Scopes: `backend`, `frontend`, `db`, `ci`, `docs`, `spike`.
 - PRs are squash-merged, so the PR title must also follow the format. CI checks it.
+- Write the PR description from `.github/pull_request_template.md`, with every heading filled in, honest test results and a truthful checklist. The full rules are in [README.md](README.md#pull-requests-humans-and-ai-agents-every-time).
 
 ### Code
 - Strict typing and explicit interfaces. Validate input at every boundary: HTTP handlers, webhooks (telephony callbacks), LLM tool calls, and database writes.

@@ -17,6 +17,7 @@ from app.events import append_event
 
 # The kinds of control-lane outbox rows this package writes.
 CONTROL_REPLY = "reply"
+CONTROL_INSTRUCTION = "instruction"  # the user's typed instruction (DC-10)
 CONTROL_TIMEOUT = "timeout"
 CONTROL_FILLER = "filler"
 CONTROL_HOLD = "hold"  # the hold line when the user pauses

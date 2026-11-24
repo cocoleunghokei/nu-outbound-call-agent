@@ -11,7 +11,12 @@
  * screen stays the same.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { PAUSE_CAP_MS, type CommandResult, type SendCallCommand } from './controls'
+import {
+  PAUSE_CAP_MS,
+  availableControls,
+  type CommandResult,
+  type SendCallCommand,
+} from './controls'
 import { PING_WINDOW_MS, sanitizeReplyText, type ReplyResult, type SendPingReply } from './ping'
 import type { CallEvent, LiveCallSummary, PingKind, PingReplyCommand } from './types'
 
@@ -284,10 +289,11 @@ export class MockCallEngine {
   }
 
   /** Handles Pause / Resume / End like `POST /calls/{call_id}/commands`. */
-  command: SendCallCommand = async (callId, command) => {
+  command: SendCallCommand = async (callId, command, text) => {
     if (this.stopped || callId !== this.callId) {
       return { kind: 'error', message: 'This call is not running.' }
     }
+    if (command === 'instruction') return this.instruct(text)
     if (command === 'end') {
       this.endByUser()
       return { kind: 'accepted' }
@@ -295,6 +301,18 @@ export class MockCallEngine {
     if (this.ended) return { kind: 'error', message: 'The call has already ended.' }
     if (command === 'pause') return this.pauseCall()
     return this.resumeCall()
+  }
+
+  /** Logs the instruction like the backend; the scripted agent does not react to it. */
+  private instruct(text: string | undefined): CommandResult {
+    if (this.ended) return { kind: 'error', message: 'The call has already ended.' }
+    if (!availableControls(this.status, false).instruct) {
+      return { kind: 'error', message: 'You can send an instruction once they pick up.' }
+    }
+    const cleaned = sanitizeReplyText(text ?? '')
+    if (cleaned === '') return { kind: 'error', message: 'The instruction is empty.' }
+    this.emit('command.applied', { command: 'instruction', text: cleaned })
+    return { kind: 'accepted' }
   }
 
   private pauseCall(): CommandResult {

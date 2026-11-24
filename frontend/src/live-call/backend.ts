@@ -147,10 +147,14 @@ export async function postCommand(
   token: string,
   callId: string,
   command: ControlCommand,
+  text?: string,
 ): Promise<CommandResult> {
   try {
     const path = `/calls/${encodeURIComponent(callId)}/commands`
-    const { status, body } = await post(base, path, token, { type: command })
+    const { status, body } = await post(base, path, token, {
+      type: command,
+      ...(text !== undefined ? { text } : {}),
+    })
     return commandResultFrom(status, body)
   } catch {
     return { kind: 'error', message: 'No connection. Check your internet and try again.' }

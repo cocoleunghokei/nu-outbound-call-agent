@@ -53,3 +53,15 @@ def test_control_message_shapes() -> None:
         "message": {"role": "system", "content": "x"},
         "triggerResponseEnabled": True,
     }
+
+
+def test_instruction_message_has_the_prefix_the_agent_prompt_looks_for() -> None:
+    text = messages.instruction_message("Alex", "ask about Saturday")
+    assert text.startswith("Alex's instruction: ask about Saturday.")
+
+
+def test_add_message_quietly_does_not_trigger_a_response() -> None:
+    message = messages.add_message_quietly("hello")
+    assert message["type"] == "add-message"
+    assert message["triggerResponseEnabled"] is False
+    assert message["message"] == {"role": "system", "content": "hello"}
