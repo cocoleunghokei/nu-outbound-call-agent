@@ -2,12 +2,19 @@
 
 import asyncio
 import json
+from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
 
 from app.calls.assistant import TEMPERATURE, build_assistant_config
-from app.calls.prompt import GUARDRAIL_RULES, build_system_prompt, opening_request
+from app.calls.prompt import (
+    GUARDRAIL_RULES,
+    build_system_prompt,
+    opening_request,
+    today_line,
+    us_today,
+)
 from app.contracts.generated import Brief
 from app.postcall.handlers import NOTED as OUTCOME_NOTED
 from app.voice.fake import FakeVoicePlatform
@@ -492,6 +499,42 @@ def test_prompt_spells_out_the_briefs_dates_with_the_year() -> None:
 
 def test_prompt_dates_say_none_without_date_rules() -> None:
     assert "<dates>\n- (none)\n</dates>" in build_system_prompt(make_brief(), SNAPSHOT)
+
+
+def test_the_prompt_tells_the_agent_what_day_it_is() -> None:
+    # A booking was reported for 2026-10-23 on a call made on 2026-11-23: the brief had no
+    # date rule, so the model had no month to work from.
+    prompt = build_system_prompt(make_brief(), SNAPSHOT, date(2026, 11, 23))
+    assert "<today>Monday 23 November 2026 (2026-11-23)</today>" in prompt
+    assert "<today> (when present)" in prompt.replace("\n", " ")
+    assert "never a day that has passed" in prompt.replace("\n", " ")
+
+
+def test_the_prompt_has_no_today_tag_when_no_date_is_given() -> None:
+    assert "</today>" not in build_system_prompt(make_brief(), SNAPSHOT)
+
+
+def test_the_assistant_config_carries_today_into_the_prompt() -> None:
+    config = build_assistant_config(
+        make_brief(),
+        SNAPSHOT,
+        server_url="https://example.test/webhooks/vapi",
+        webhook_secret="test-secret",
+        max_duration_s=900,
+        today=date(2026, 11, 23),
+    )
+    assert "2026-11-23" in config["model"]["messages"][0]["content"]
+
+
+def test_today_line_spells_out_weekday_and_year() -> None:
+    assert today_line(date(2026, 11, 23)) == "Monday 23 November 2026 (2026-11-23)"
+
+
+def test_the_call_date_is_the_us_local_date() -> None:
+    # 9pm Pacific on 23 Nov is already 24 Nov in UTC; the call is still on the 23rd.
+    assert us_today(datetime(2026, 11, 24, 5, 0, tzinfo=UTC)) == date(2026, 11, 23)
+    assert us_today(datetime(2026, 11, 23, 19, 0, tzinfo=UTC)) == date(2026, 11, 23)  # 2pm Boston
+    assert us_today(datetime(2026, 11, 23, 14, 0, tzinfo=UTC)) == date(2026, 11, 23)  # 9am Boston
 
 
 def test_the_outcome_result_says_goodbye_then_end() -> None:
