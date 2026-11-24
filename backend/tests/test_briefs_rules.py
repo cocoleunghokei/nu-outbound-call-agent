@@ -13,11 +13,12 @@ from typing import Any
 
 import pytest
 
-from app.briefs.router import with_rules
-from app.briefs.rules import add_rules
+from app.briefs.router import build_response, read_rules, with_rules
+from app.briefs.rules import Answer, add_rules
 from app.calls.gates import REFUSED_NOT_A_FALLBACK, CallFacts, low_offer_gate
 from app.calls.scoring import score_offer
 from app.contracts import validator_for
+from tests.test_briefs_builder import FAKE_PROFILE, draft
 
 TUESDAY = date(2026, 11, 17)
 NOV_24 = date(2026, 11, 24)
@@ -336,11 +337,12 @@ def test_a_lone_time_in_a_must_have_is_asked_about() -> None:
     assert ask.question == (
         'You wrote "at 7pm". Is 7pm the latest you would accept, or the only time that works?'
     )
-    assert ask.answers == {
-        "7pm or earlier": time_rule(latest="19:00"),
-        "7pm or later": time_rule(earliest="19:00"),
-        "Only 7pm": time_rule(earliest="19:00", latest="19:00"),
-    }
+    assert ask.list == "constraints"
+    assert ask.answers == (
+        Answer("7pm or earlier", rules=time_rule(latest="19:00")),
+        Answer("7pm or later", rules=time_rule(earliest="19:00")),
+        Answer("Only 7pm", rules=time_rule(earliest="19:00", latest="19:00")),
+    )
 
 
 def test_a_lone_time_in_a_fallback_earlier_than_the_deadline_is_asked_about() -> None:
@@ -418,3 +420,106 @@ def test_a_brief_whose_rules_would_break_the_contract_is_saved_without_them(
     monkeypatch.setattr(sys.modules["app.briefs.router"], "add_rules", lambda b, t: Broken())
     original = contract_brief()
     assert with_rules(original) == original
+
+
+# --- the questions the API sends ------------------------------------------------------------
+
+
+def questions_for(**lists: list[str]) -> list[Any]:
+    return add_rules(brief_of(**lists), TUESDAY).clarifications
+
+
+def test_a_question_says_which_list_its_item_is_in() -> None:
+    [pref] = questions_for(preferences=["at 7pm"])
+    [fallback] = questions_for(fallbacks=["at 7pm"])
+    [constraint] = questions_for(constraints=["at 7pm"])
+    assert (constraint.list, pref.list, fallback.list) == (
+        "constraints",
+        "preferences",
+        "fallbacks",
+    )
+
+
+def test_a_question_becomes_the_json_the_chat_reads() -> None:
+    [ask] = questions_for(constraints=["at 7pm"])
+    assert ask.to_json() == {
+        "item": "at 7pm",
+        "list": "constraints",
+        "question": (
+            'You wrote "at 7pm". Is 7pm the latest you would accept, or the only time that works?'
+        ),
+        "answers": [
+            {"label": "7pm or earlier", "rules": time_rule(latest="19:00"), "text": None},
+            {"label": "7pm or later", "rules": time_rule(earliest="19:00"), "text": None},
+            {
+                "label": "Only 7pm",
+                "rules": time_rule(earliest="19:00", latest="19:00"),
+                "text": None,
+            },
+        ],
+    }
+    json.dumps(ask.to_json())  # plain JSON types
+
+
+def test_a_missing_am_or_pm_is_answered_by_rewriting_the_item() -> None:
+    [ask] = questions_for(constraints=["before 3"])
+    assert ask.answers == (
+        Answer("Morning (am)", text="before 3am"),
+        Answer("Afternoon or evening (pm)", text="before 3pm"),
+    )
+    [vague] = questions_for(constraints=["between 6 and 8"])
+    assert [a.text for a in vague.answers] == ["between 6 and 8am", "between 6 and 8pm"]
+    [half] = questions_for(fallbacks=["7:30 works too"])
+    assert [a.text for a in half.answers] == ["7:30am works too", "7:30pm works too"]
+
+
+def test_a_rewritten_item_is_read_on_the_next_save() -> None:
+    assert rules_for("before 3pm") == time_rule(latest="14:59")
+    assert rules_for("before 3am") == time_rule(latest="02:59")
+    assert rules_for("between 6 and 8pm") == time_rule(earliest="18:00", latest="20:00")
+    again = add_rules(brief_of(constraints=["7:30pm"]), TUESDAY)
+    assert [c.question for c in again.clarifications][0].startswith('You wrote "7:30pm". Is 7:30pm')
+
+
+def test_an_item_the_user_decided_is_not_asked_about_again() -> None:
+    brief = brief_of(constraints=["at 7pm"])
+    brief["constraints"][0]["rules"] = []  # "decide on the call"
+    parsed = add_rules(brief, TUESDAY)
+    assert parsed.clarifications == []
+    assert parsed.brief["constraints"][0]["rules"] == []
+    settled = brief_of(constraints=["at 7pm"])
+    settled["constraints"][0]["rules"] = time_rule(latest="19:00")
+    assert add_rules(settled, TUESDAY).clarifications == []
+
+
+def test_answering_every_question_leaves_nothing_to_ask() -> None:
+    brief = brief_of(
+        goal="cake by tomorrow 10am", constraints=["at 7pm"], fallbacks=["9am works too"]
+    )
+    first = add_rules(brief, NOV_24)
+    assert len(first.clarifications) == 2
+    for ask in first.clarifications:  # the user taps the first answer, or "decide on the call"
+        item = next(i for i in brief[ask.list] if i["text"] == ask.item)
+        item["rules"] = ask.answers[0].rules if ask.answers[0].rules else []
+    assert add_rules(brief, NOV_24).clarifications == []
+
+
+def test_the_build_answer_carries_the_questions() -> None:
+    built = build_response(draft(constraints=["at 7pm"], goal_summary="order a cake"), FAKE_PROFILE)
+    [ask] = built["clarifications"]
+    assert ask["item"] == "at 7pm" and ask["list"] == "constraints"
+    assert [a["label"] for a in ask["answers"]] == ["7pm or earlier", "7pm or later", "Only 7pm"]
+    assert build_response(draft(), FAKE_PROFILE)["clarifications"] == []
+
+
+def test_a_brief_whose_rules_break_the_contract_is_saved_without_them_and_without_questions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Broken:
+        brief = {"goal": ""}
+        clarifications = ["not asked"]
+
+    monkeypatch.setattr(sys.modules["app.briefs.router"], "add_rules", lambda b, t: Broken())
+    original = contract_brief()
+    parsed = read_rules(original)
+    assert parsed.brief == original and parsed.clarifications == []

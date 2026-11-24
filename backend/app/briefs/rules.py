@@ -128,13 +128,37 @@ _PERSON = re.compile(
 
 
 @dataclass(frozen=True)
+class Answer:
+    """One tap-able answer to a question. It settles the item with ``rules``, or rewrites its
+    ``text`` (then the item is read again when the brief is next saved)."""
+
+    label: str
+    rules: list[Rule] | None = None
+    text: str | None = None
+
+
+@dataclass(frozen=True)
 class Clarification:
-    """Something the parser nearly read: the question to ask the user, and what each answer sets."""
+    """Something the parser nearly read: the question to ask the user, and what each answer means.
+
+    ``list`` is which list the item is in (``constraints``, ``preferences`` or ``fallbacks``),
+    ``item`` its text as typed, so the chat knows what to change. There is no "skip" answer
+    here: the chat adds it, and it means "decide on the call" (``rules: []`` on the item).
+    """
 
     item: str
+    list: str
     question: str
-    # Answer label -> the rules it means. The chat shows the labels and attaches the rules.
-    answers: dict[str, list[Rule]] = field(default_factory=dict)
+    answers: tuple[Answer, ...] = ()
+
+    def to_json(self) -> dict[str, Any]:
+        """The shape the API sends and the chat reads."""
+        return {
+            "item": self.item,
+            "list": self.list,
+            "question": self.question,
+            "answers": [{"label": a.label, "rules": a.rules, "text": a.text} for a in self.answers],
+        }
 
 
 @dataclass(frozen=True)
@@ -444,8 +468,8 @@ def _with_rules(
     clarifications: list[Clarification],
     deadline: int | None = None,
 ) -> Any:
-    if not isinstance(item, Mapping) or item.get("rules"):
-        return item  # already has rules: keep them
+    if not isinstance(item, Mapping) or "rules" in item:
+        return item  # has rules, or the user decided it has none (``rules: []``): keep it
     text = str(item.get("text", ""))
     reading = _read(text, today)
     rules = list(reading.rules)
@@ -459,9 +483,9 @@ def _with_rules(
         ):
             rules = _with_latest(rules, minutes)  # a later latest: it can only relax the deadline
         elif minutes is not None:
-            clarifications.append(_ask_about(text, label, minutes))
+            clarifications.append(_ask_about(text, key, minutes))
     for label in reading.unreadable:
-        clarifications.append(_ask_am_pm(text, label))
+        clarifications.append(_ask_am_pm(text, key, label))
     return {**item, "rules": rules} if rules else dict(item)
 
 
@@ -481,30 +505,38 @@ def _clock(minutes: int) -> str:
     return f"{hour % 12 or 12}{f':{minute:02d}' if minute else ''}{suffix}"
 
 
-def _ask_about(text: str, label: str, minutes: int) -> Clarification:
+def _ask_about(text: str, key: str, minutes: int) -> Clarification:
     """A time with no "before", "after" or "between" next to it."""
     clock = _clock(minutes)
     return Clarification(
         item=text,
+        list=key,
         question=(
             f'You wrote "{text}". Is {clock} the latest you would accept, '
             "or the only time that works?"
         ),
-        answers={
-            f"{clock} or earlier": [{"kind": "time", "latest": _hhmm(minutes)}],
-            f"{clock} or later": [{"kind": "time", "earliest": _hhmm(minutes)}],
-            f"Only {clock}": [
-                {"kind": "time", "earliest": _hhmm(minutes), "latest": _hhmm(minutes)}
-            ],
-        },
+        answers=(
+            Answer(f"{clock} or earlier", rules=[{"kind": "time", "latest": _hhmm(minutes)}]),
+            Answer(f"{clock} or later", rules=[{"kind": "time", "earliest": _hhmm(minutes)}]),
+            Answer(
+                f"Only {clock}",
+                rules=[{"kind": "time", "earliest": _hhmm(minutes), "latest": _hhmm(minutes)}],
+            ),
+        ),
     )
 
 
-def _ask_am_pm(text: str, label: str) -> Clarification:
-    """A time with no am or pm."""
-    hour_text = label.strip()
+def _ask_am_pm(text: str, key: str, label: str) -> Clarification:
+    """A time with no am or pm: each answer rewrites the item with it, and the item is then
+    read again (a lone time may then be asked about next)."""
+    at = text.find(label)
+    stem, rest = (text[: at + len(label)], text[at + len(label) :]) if at >= 0 else (text, "")
     return Clarification(
         item=text,
-        question=f'You wrote "{text}". Did you mean {hour_text} in the morning or in the evening?',
-        answers={},
+        list=key,
+        question=f'You wrote "{text}". Did you mean {label} in the morning or in the evening?',
+        answers=(
+            Answer("Morning (am)", text=f"{stem}am{rest}"),
+            Answer("Afternoon or evening (pm)", text=f"{stem}pm{rest}"),
+        ),
     )

@@ -11,9 +11,12 @@ Those three answer ``{brief_id, brief, missing_fields, opening_line, created_at}
 allowed only when ``missing_fields`` is empty; ``POST /calls`` (Coco) checks again.
 
 ``POST`` and ``PATCH`` (and ``/briefs/build``) read structured ``rules`` out of the typed items
-and add a deadline from the goal as a constraint (``app/briefs/rules.py``, ``with_rules``), so
+and add a deadline from the goal as a constraint (``app/briefs/rules.py``, ``read_rules``), so
 the brief that is stored, and that the call's gates compare offers with, has them. It never
-blocks a save.
+blocks a save. Every brief answer also carries ``clarifications``: what the reader could not
+settle, each ``{item, list, question, answers: [{label, rules, text}]}``, for the chat to ask
+before Start. An answer either settles the item with ``rules`` or rewrites its ``text``; an item
+that already has a ``rules`` key, even ``[]`` ("decide on the call"), is never asked again.
 
 Brief builder (plan Step 9), both read-only, so no ``Idempotency-Key``:
 
@@ -66,7 +69,7 @@ from app.briefs.llm import GoalInterpreter, LlmError, check_goal_summary, interp
 from app.briefs.phone import check_phone
 from app.briefs.ratelimit import reserve_llm_build
 from app.briefs.readiness import Readiness, check_readiness
-from app.briefs.rules import add_rules
+from app.briefs.rules import ParsedBrief, add_rules
 from app.briefs.store import (
     StoredBrief,
     brief_has_call,
@@ -113,25 +116,39 @@ def validate_brief(body: dict[str, Any]) -> dict[str, Any]:
 logger = logging.getLogger(__name__)
 
 
-def with_rules(brief: dict[str, Any]) -> dict[str, Any]:
-    """The brief with ``rules`` read from its typed items (``app/briefs/rules.py``).
+def read_rules(brief: dict[str, Any]) -> ParsedBrief:
+    """The brief with ``rules`` read from its typed items, and the questions it could not settle
+    (``app/briefs/rules.py``).
 
     Never blocks a save: if the result somehow fails the brief contract, the original goes
-    through unchanged, and the items simply stay text only.
+    through unchanged, with no questions, and the items simply stay text only.
     """
-    enriched = add_rules(brief, us_today(datetime.now(UTC))).brief
-    if validator_for("brief.v1.json").is_valid(enriched):
-        return enriched
+    parsed = add_rules(brief, us_today(datetime.now(UTC)))
+    if validator_for("brief.v1.json").is_valid(parsed.brief):
+        return parsed
     logger.warning("briefs: rules made the brief invalid; saving it without them")
-    return brief
+    return ParsedBrief(brief, [])
 
 
-def _response(stored: StoredBrief, readiness: Readiness) -> dict[str, Any]:
+def with_rules(brief: dict[str, Any]) -> dict[str, Any]:
+    """Just the brief from ``read_rules``."""
+    return read_rules(brief).brief
+
+
+def _questions(parsed: ParsedBrief) -> list[dict[str, Any]]:
+    """The questions as the API sends them (``Clarification.to_json``)."""
+    return [c.to_json() for c in parsed.clarifications]
+
+
+def _response(
+    stored: StoredBrief, readiness: Readiness, clarifications: list[dict[str, Any]]
+) -> dict[str, Any]:
     return {
         "brief_id": str(stored.id),
         "brief": stored.brief,
         "missing_fields": readiness.missing_fields,
         "opening_line": readiness.opening_line,
+        "clarifications": clarifications,
         "created_at": stored.created_at.isoformat(),
     }
 
@@ -141,7 +158,8 @@ async def create_brief(
     request: Request, user_id: UserId, key: IdempotencyKey, body: BriefBody
 ) -> dict[str, Any] | JSONResponse:
     """Save a new brief for the caller and report what's still missing."""
-    brief = with_rules(validate_brief(body))
+    parsed = read_rules(validate_brief(body))
+    brief = parsed.brief
     pool = get_pool(request)
     async with pool.connection() as conn, conn.transaction():
         replay = await claim_idempotency(conn, user_id, key)
@@ -149,7 +167,7 @@ async def create_brief(
             return JSONResponse(status_code=replay.status_code, content=replay.body)
         readiness = check_readiness(brief, await load_snapshot(conn, user_id))
         stored = await insert_brief(conn, user_id, brief, readiness.missing_fields)
-        result = _response(stored, readiness)
+        result = _response(stored, readiness, _questions(parsed))
         await store_idempotent_response(conn, user_id, key, 201, result)
     return result
 
@@ -233,8 +251,10 @@ def build_response(draft: Draft, profile: Sequence[ProfileField]) -> dict[str, A
     snapshot = snapshot_of(profile_with_additions(profile, draft.profile_additions))
     readiness = check_readiness(built.brief, snapshot)
     missing = list(dict.fromkeys([*built.missing_fields, *readiness.missing_fields]))
+    parsed = read_rules(built.brief)
     return {
-        "brief": with_rules(built.brief),
+        "brief": parsed.brief,
+        "clarifications": _questions(parsed),
         "missing_fields": missing,
         "opening_line": None if missing else readiness.opening_line,
     }
@@ -301,7 +321,9 @@ async def read_brief(request: Request, user_id: UserId, brief_id: uuid.UUID) -> 
         if stored is None:
             raise _not_found()
         readiness = check_readiness(stored.brief, await load_snapshot(conn, user_id))
-    return _response(stored, readiness)
+    # What is still unsettled in the stored brief; nothing is stored or changed by asking.
+    unsettled = add_rules(stored.brief, us_today(datetime.now(UTC)))
+    return _response(stored, readiness, _questions(unsettled))
 
 
 @router.patch("/{brief_id}", response_model=None)
@@ -309,7 +331,8 @@ async def replace_brief(
     request: Request, user_id: UserId, key: IdempotencyKey, brief_id: uuid.UUID, body: BriefBody
 ) -> dict[str, Any] | JSONResponse:
     """Replace the caller's brief after review. Refused once a call used it."""
-    brief = with_rules(validate_brief(body))
+    parsed = read_rules(validate_brief(body))
+    brief = parsed.brief
     pool = get_pool(request)
     async with pool.connection() as conn, conn.transaction():
         replay = await claim_idempotency(conn, user_id, key)
@@ -328,6 +351,6 @@ async def replace_brief(
             missing_fields=readiness.missing_fields,
             created_at=stored.created_at,
         )
-        result = _response(updated, readiness)
+        result = _response(updated, readiness, _questions(parsed))
         await store_idempotent_response(conn, user_id, key, 200, result)
     return result
