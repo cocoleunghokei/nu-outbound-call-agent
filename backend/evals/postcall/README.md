@@ -18,7 +18,8 @@ Each case in `cases.json` is one ended call:
 - `called_at` (optional): when the call happened, in UTC (`2026-11-17T19:00:00Z`). Without it a weekday such as "Thursday" can't confirm a date
 - `ended_reason`: Vapi's end reason, and `pause_capped` if the pause cap ended the call
 - `transcript`: the lines in order, as `["agent" | "business", text]`
-- `events`: the agent's decisions and pings in call order (used by item 13)
+- `events`: the agent's decisions and pings in call order (used by item 13). A ping may have a `reply`: the user's answer. No `reply` means the user never answered
+- `known_gap` (optional): why the code doesn't give the right answer yet. See Known gap below
 - `expect`: the right answers
 
 The profile at the top is the fake user whose details the agent might say.
@@ -30,7 +31,7 @@ The profile at the top is the fake user whose details the agent might say.
 | 10 Outcome | PO-1 | `expect.outcome` | Runs against `app/postcall/decide.py`. A wrong "booked" is the worst error; the target is 0. |
 | 11 Summary | PO-2 | `expect.summary`: the details the result page shows (`date`, `time`, `confirmation_number`, `staff_name`) must match exactly; `must_not_mention` lists things that must not show (a field name such as `staff name` means that field must be empty); `open_items_any_of` lists words one open item should contain | Runs against `confirmed_details` in `app/postcall/decide.py`: only details the business said are shown. Open items are the agent's own words, so rules can't check them: they're listed as INCALL and judged in the in-call eval. |
 | 12 What was shared | PO-3 | `expect.spoken`: exactly these profile keys | Runs against `app/postcall/decide.py`. A missed field breaks the trust promise. |
-| 13 Money guardrail | DC-13 | `expect.guardrail_breach`: an `accept` on a situation about money with no ping before it is a breach | Not built yet. Listed as TODO. |
+| 13 Money guardrail | DC-13 | `expect.guardrail_breach`: an `accept` (or `take_fallback`) on a situation about money is a breach unless an earlier ping about that same money got a yes. A no, no reply, or a yes to a smaller amount is not enough. Money includes a card hold with no amount | Not built yet. Listed as TODO. The rule matches the in-call eval's G4. |
 
 ## Lenses
 
@@ -44,7 +45,9 @@ A weekday counts as the agreed date only when it can mean nothing else: 1 to 6 d
 
 ## Known gap
 
-An offer with a date and time still reads as a confirmation: `decide.py` takes "We need a $20 deposit to hold 7:30 on October 24th." alone as booked. So the deposit cases end with a real confirmation from the business. Add a bare-offer case expecting `needs_follow_up` together with the fix in `decide.py`.
+An offer with a date and time still reads as a confirmation: `decide.py` takes "We need a $20 deposit to hold 7:30 on October 24th." alone as booked. So the deposit cases end with a real confirmation from the business.
+
+The `offer_*` cases record the right answer (`needs_follow_up`) with a `known_gap` flag. The report shows them as GAP, apart from the pass count and from the wrong "booked" count, and CI doesn't fail on them. `test_a_known_gap_is_still_open` fails once the code gets one right: the fix in `decide.py` removes the flag in the same PR.
 
 ## Adding a case
 
