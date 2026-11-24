@@ -13,7 +13,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { checkPhone } from '../precall/phone'
-import type { ProfileField } from '../precall/types'
+import type { ProfileField, Sharing } from '../precall/types'
 
 /** What the store holds for one user. `onboardedAt` is null until onboarding is saved. */
 export interface LoadedProfile {
@@ -119,6 +119,119 @@ export async function saveOnboarding(
     return { kind: 'failed', message: `I couldn't save your profile (${why}). Try again.` }
   }
   return { kind: 'saved', profile: { onboardedAt, fields: checked.fields } }
+}
+
+/** What the profile page edits (ON-7): the basic profile (ON-3) and who may be said what (ON-5). */
+export interface ProfileEditInput {
+  fullName: string
+  callingName: string
+  phone: string
+  email: string
+  /** `YYYY-MM-DD` (what a date input holds), or empty. */
+  dateOfBirth: string
+  address: string
+  /** Sharing for each field in `SHAREABLE_KEYS`; the calling name is not here, it is always shared. */
+  sharing: Record<ShareableKey, Sharing>
+}
+
+/** The fields whose sharing the user can change. The calling name can't be (DC-1). */
+export const SHAREABLE_KEYS = ['full_name', 'phone', 'email', 'date_of_birth', 'address'] as const
+export type ShareableKey = (typeof SHAREABLE_KEYS)[number]
+
+/** ON-5 defaults: date of birth and address are Ask me first, the rest Share freely. */
+export const DEFAULT_SHARING: Record<ShareableKey, Sharing> = {
+  full_name: 'share_freely',
+  phone: 'share_freely',
+  email: 'share_freely',
+  date_of_birth: 'ask_first',
+  address: 'ask_first',
+}
+
+/** The profile page's form values for a stored profile (defaults for what isn't stored yet). */
+export function editInputFrom(fields: ProfileField[]): ProfileEditInput {
+  const sharing = { ...DEFAULT_SHARING }
+  for (const key of SHAREABLE_KEYS) {
+    const stored = fields.find((f) => f.key === key)
+    if (stored) sharing[key] = stored.sharing
+  }
+  return {
+    fullName: fieldValue(fields, 'full_name') ?? '',
+    callingName: fieldValue(fields, 'calling_name') ?? '',
+    phone: fieldValue(fields, 'phone') ?? '',
+    email: fieldValue(fields, 'email') ?? '',
+    dateOfBirth: fieldValue(fields, 'date_of_birth') ?? '',
+    address: fieldValue(fields, 'address') ?? '',
+    sharing,
+  }
+}
+
+/** True for a real calendar date written `YYYY-MM-DD` that is not in the future. */
+export function isPlausibleBirthDate(text: string, today: Date = new Date()): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text)
+  if (!match) return false
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])]
+  const date = new Date(Date.UTC(year, month - 1, day))
+  const real = date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  return real && year >= 1900 && date.getTime() <= today.getTime()
+}
+
+/**
+ * Checks the profile page and turns it into the rows to store. The required fields follow
+ * `validateOnboarding`. An optional field the user cleared that was stored before is written
+ * back blank, because the browser may not delete rows; a blank value counts as "not set".
+ */
+export function validateProfileEdit(
+  input: ProfileEditInput,
+  existing: ProfileField[],
+  today: Date = new Date(),
+): OnboardingCheck {
+  const required = validateOnboarding(input)
+  if (!required.ok) return required
+
+  const dateOfBirth = input.dateOfBirth.trim()
+  if (dateOfBirth !== '' && !isPlausibleBirthDate(dateOfBirth, today)) {
+    return { ok: false, problem: 'Enter your date of birth as a real date in the past.' }
+  }
+
+  const fields = required.fields.map((f) =>
+    f.key === 'calling_name' ? f : { ...f, sharing: input.sharing[f.key as ShareableKey] ?? f.sharing },
+  )
+  const optional: Array<[ShareableKey, string]> = [
+    ['date_of_birth', dateOfBirth],
+    ['address', input.address.trim()],
+  ]
+  for (const [key, value] of optional) {
+    if (value !== '' || existing.some((f) => f.key === key)) {
+      fields.push({ key, value, sharing: input.sharing[key] })
+    }
+  }
+  return { ok: true, fields }
+}
+
+/**
+ * Validates and stores the profile page (ON-7). The profile keeps its original onboarding
+ * time; an edit never re-runs onboarding (ON-8). Never throws.
+ */
+export async function saveProfileEdit(
+  store: ProfileStore,
+  userId: string,
+  current: LoadedProfile,
+  input: ProfileEditInput,
+  now: () => Date = () => new Date(),
+): Promise<SaveOutcome> {
+  const checked = validateProfileEdit(input, current.fields, now())
+  if (!checked.ok) return { kind: 'failed', message: checked.problem }
+  const onboardedAt = current.onboardedAt ?? now().toISOString()
+  try {
+    await store.save(userId, checked.fields, onboardedAt)
+  } catch (err) {
+    const why = err instanceof Error ? err.message : String(err)
+    return { kind: 'failed', message: `I couldn't save your profile (${why}). Try again.` }
+  }
+  // Keep fields this page doesn't edit (e.g. insurance); replace the ones it wrote.
+  const written = new Set(checked.fields.map((f) => f.key))
+  const kept = current.fields.filter((f) => !written.has(f.key))
+  return { kind: 'saved', profile: { onboardedAt, fields: [...checked.fields, ...kept] } }
 }
 
 const SHARING = new Set(['share_freely', 'ask_first'])
