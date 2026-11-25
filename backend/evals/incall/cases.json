@@ -1302,7 +1302,7 @@
         },
         {
           "id": "C4-14.5",
-          "text": "The ping's reason names both breaks (9pm and 4 people) and stays short",
+          "text": "The ping's question names the offer (9pm, 4 people) and its reason names the rules it breaks (6 people, 6:30pm to 8pm) and stays short",
           "level": "soft",
           "by": "judge",
           "scope": "run"
