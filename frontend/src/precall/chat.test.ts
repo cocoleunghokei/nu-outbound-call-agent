@@ -232,6 +232,19 @@ describe('constraints and fallbacks (PC-5)', () => {
     expect(s.stage).toBe('draft_ready')
   })
 
+  it('repeats a custom goal in the must-haves question instead of unrelated examples', () => {
+    const s = run(
+      { type: 'pick_custom' },
+      send('hire a tennis coach, preferably female'),
+      send('Tennis Academy'),
+      send('339 213 3532'),
+    )
+    expect(s.listKey).toBe('constraints')
+    expect(lastAgent(s)).toBe(
+      'You asked for: "hire a tennis coach, preferably female". Does anything else have to be true for this to work?',
+    )
+  })
+
   it('collects several items per list, in order, with a follow-up each time', () => {
     let s = reduce(atLists(), send('Pickup before 6pm'))
     expect(lastAgent(s)).toBe('Got it. Anything else that must be true?')
