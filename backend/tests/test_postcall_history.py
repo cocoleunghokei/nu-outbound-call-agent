@@ -204,6 +204,7 @@ def test_result_before_any_report_has_empty_parts(supabase_env: SupabaseEnv) -> 
         assert result["call"]["outcome"] is None
         assert result["business_confirmed"] is False
         assert result["open_items"] == []
+        assert result["result_items"] == [] and result["follow_up"] is None
         assert result["decisions"] == [] and result["transcript"] == []
 
     asyncio.run(scenario())
@@ -286,6 +287,71 @@ def test_result_shows_only_the_details_the_business_said(supabase_env: SupabaseE
             "confirmation_number": None,
             "staff_name": None,
         }
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.db
+def test_result_items_are_checked_against_the_transcript(supabase_env: SupabaseEnv) -> None:
+    """A row the business's words back is shown with its line numbers, an unbacked change is
+    left out, and an unbacked as_asked row is shown marked (docs/call-result-items.md)."""
+    db = supabase_env.db_url
+    call = seed_call(db)
+    args = {
+        **BOOKED_ARGS,
+        "follow_up": "Bring the confirmation number.",
+        "result_items": [
+            {
+                "ref": {"kind": "extra"},
+                "label": "Time",
+                "got": "7:30 PM on Oct 24",
+                "status": "changed",
+                "business_said": "all set for 7:30 on October 24th",
+            },
+            {
+                "ref": {"kind": "extra"},
+                "label": "Parking",
+                "got": "Free parking",
+                "status": "changed",
+                "business_said": "Parking is free",  # never said
+            },
+            {
+                "ref": {"kind": "extra"},
+                "label": "Party",
+                "got": "Table for 2",
+                "status": "as_asked",
+            },
+        ],
+    }
+
+    async def scenario() -> None:
+        app = make_app(db)
+        async with serve(app) as client:
+            await post(
+                client,
+                transcript_body(
+                    call,
+                    "You're all set for 7:30 on October 24th.",
+                    role="user",
+                    timestamp=1794081609000,
+                ),
+            )
+            tc = f"tc-{uuid.uuid4()}"
+            await post(client, tool_body(call, [(tc, "report_outcome", args)]))
+            await post(client, fixture("end-of-call-report", call))
+            await run_due_jobs(app.state.pool)
+            response = await client.get(
+                f"/calls/{call.call_id}/result", headers=auth_headers(call.user_id)
+            )
+        result = response.json()
+        assert result["follow_up"] == "Bring the confirmation number."
+        assert [(r["label"], r["verified"]) for r in result["result_items"]] == [
+            ("Time", True),
+            ("Party", False),
+        ]
+        time_row = result["result_items"][0]
+        assert time_row["evidence"] == [result["transcript"][0]["seq"]]
+        assert time_row["asked"] is None  # an extra row has no brief item
 
     asyncio.run(scenario())
 

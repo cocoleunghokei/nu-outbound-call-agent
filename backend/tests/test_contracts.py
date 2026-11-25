@@ -249,6 +249,76 @@ def test_both_tools_define_the_same_offer() -> None:
     assert ask == decide
 
 
+def _outcome_with_items(*items: dict[str, Any]) -> dict[str, Any]:
+    base = read_json(EXAMPLES / "tools" / "report_outcome.args.v1.valid.json")
+    return {**base, "result_items": list(items)}
+
+
+def _item(**changes: Any) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "ref": {"kind": "preference", "index": 0},
+        "label": "Cake",
+        "got": "Marshmallow cake",
+        "status": "changed",
+    }
+    return {**item, **changes}
+
+
+def test_report_outcome_result_items_are_optional_and_written_out_in_full() -> None:
+    schema = load_schema("tools/report_outcome.args.v1.json")
+    name = "tools/report_outcome.args.v1.json"
+    assert "$ref" not in json.dumps(schema)  # the tool schema is sent to the model as is
+    assert "result_items" not in schema["required"]
+    assert "follow_up" not in schema["required"]
+    # An outcome from before result_items existed still validates.
+    assert is_valid(name, {"outcome": "booked", "business_confirmed": True})
+    assert is_valid(
+        name,
+        _outcome_with_items(_item(), _item(ref={"kind": "extra"}, status="extra", cost_cents=300)),
+    )
+    assert is_valid(name, _outcome_with_items())  # an empty list is allowed
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        _item(status="done"),  # not one of the four statuses
+        _item(approved_by="business"),
+        _item(ref={"kind": "brief_item"}),
+        _item(ref={"kind": "preference", "index": -1}),
+        _item(ref={"index": 0}),  # kind is required
+        {k: v for k, v in _item().items() if k != "ref"},
+        {k: v for k, v in _item().items() if k != "got"},
+        _item(label=""),
+        _item(label="x" * 41),
+        _item(got="x" * 81),
+        _item(reason="x" * 121),
+        _item(business_said="x" * 201),
+        _item(cost_cents=-1),
+        _item(cost_cents=3.5),
+        _item(asked="Mochi cake"),  # the system fills Asked from the brief; the agent may not
+    ],
+)
+def test_report_outcome_rejects_bad_result_items(bad: dict[str, Any]) -> None:
+    assert not is_valid("tools/report_outcome.args.v1.json", _outcome_with_items(bad))
+
+
+def test_report_outcome_result_items_and_follow_up_limits() -> None:
+    name = "tools/report_outcome.args.v1.json"
+    assert is_valid(name, _outcome_with_items(*[_item() for _ in range(12)]))
+    assert not is_valid(name, _outcome_with_items(*[_item() for _ in range(13)]))
+    base = read_json(EXAMPLES / "tools" / "report_outcome.args.v1.valid.json")
+    assert is_valid(name, {**base, "follow_up": "x" * 200})
+    assert not is_valid(name, {**base, "follow_up": "x" * 201})
+
+
+def test_vapi_report_outcome_tool_keeps_result_items() -> None:
+    tools = {t["function"]["name"]: t for t in tool_definitions() if t["type"] == "function"}
+    params = tools["report_outcome"]["function"]["parameters"]
+    assert {"result_items", "follow_up"} <= set(params["properties"])
+    assert "result_items" not in params["required"]
+
+
 def test_tool_dimensions_and_confidence_tiers() -> None:
     dims = {
         "needs_ask_first_field",
@@ -387,9 +457,14 @@ PINNED_STR_ENUMS: dict[str, set[str]] = {
     "DisclosureState": {"approved", "sent_to_agent", "spoken"},
     "TranscriptRole": {"agent", "business", "user"},
     "CallCommandType": {"instruction", "pause", "resume", "end"},
+    "ResultItemStatus": {"as_asked", "changed", "not_met", "extra"},
+    "ResultItemRefKind": {"task_var", "constraint", "preference", "fallback", "extra"},
+    "ResultItemApproval": {"brief", "user", "none"},
 }
 PINNED_MODELS = [
     "ReportOutcomeArgs",
+    "ResultItem",
+    "ResultItemRef",
     "AskUserArgs",
     "ReportDecisionArgs",
     "OutcomeDetails",

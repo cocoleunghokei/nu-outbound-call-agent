@@ -12,6 +12,7 @@
  */
 import { buildBrief, type BuiltBrief } from './brief'
 import { defaultSharing, missingTemplateFields, profileLabel, withProfileField, type CallAnswers } from './missing'
+import { SKIP_LABEL, answerItems, answerLabel, type Clarification } from './clarify'
 import { checkPhone } from './phone'
 import type { BriefConstraint, CallTemplate, ProfileField } from './types'
 
@@ -83,6 +84,13 @@ export type ChatAction =
   | { type: 'saved_not_connected' }
   /** The agent says something without changing the flow, e.g. an API error after Start. */
   | { type: 'note'; text: string }
+  /**
+   * The server saved the brief but could not settle part of it (`clarifications`): ask the user,
+   * one question at a time, before the call is placed. Ignored unless the review is showing.
+   */
+  | { type: 'clarify'; questions: Clarification[] }
+  /** The user's reply to the question being asked: an index into its answers, or "not sure". */
+  | { type: 'clarify_answer'; choice: number | 'skip' }
 
 /**
  * What the review card can send back to the chat: the custom goal, the
@@ -135,6 +143,8 @@ export interface ChatState {
   draft: Partial<CallDraft>
   /** Why the template form could not be reviewed yet, shown under the form. Null when fine. */
   formError: string | null
+  /** The server's questions still to ask; the first is being asked. Start waits until it is empty. */
+  clarify: Clarification[]
   nextId: number
 }
 
@@ -283,6 +293,7 @@ function showHome(state: ChatState, ctx: ChatContext, text: string): ChatState {
     startOutcome: null,
     draft: {},
     formError: null,
+    clarify: [],
   }
 }
 
@@ -300,6 +311,7 @@ export function initialChatState(ctx: ChatContext): ChatState {
     startOutcome: null,
     draft: {},
     formError: null,
+    clarify: [],
     nextId: 1,
   }
   return showHome(
@@ -556,6 +568,18 @@ function addListItem(state: ChatState, key: ListKey, text: string): ChatState {
   return waitForListItem(withItem, key, split + LIST_PROMPTS[key].again(updated.length))
 }
 
+/** The first of the server's questions, as the agent's message with one chip per answer. */
+function askClarification(state: ChatState, first: boolean): ChatState {
+  const [question] = state.clarify
+  if (!question) return state
+  const lead = first ? 'Before I call, one thing I want to check. ' : ''
+  const chips: Chip[] = [
+    ...question.answers.map((a, choice) => ({ label: a.label, action: { type: 'clarify_answer', choice } as const })),
+    { label: SKIP_LABEL, action: { type: 'clarify_answer', choice: 'skip' } as const, quiet: true },
+  ]
+  return { ...say(state, 'agent', `${lead}${question.question}`), chips }
+}
+
 /** What the user says in the chat when they tap Edit on a review row. */
 const EDIT_LABELS: Record<EditTarget, string> = {
   goal: 'Change the goal',
@@ -646,7 +670,7 @@ export function chatReducer(ctx: ChatContext) {
       }
       case 'edit': {
         if (state.stage !== 'draft_ready' || !canEdit(state.draft, action.target)) return state
-        const withUser = say({ ...state, chips: [] }, 'user', EDIT_LABELS[action.target])
+        const withUser = say({ ...state, chips: [], clarify: [] }, 'user', EDIT_LABELS[action.target])
         // A template call is edited in the form, with everything already filled in.
         if (state.draft.template_key) return { ...withUser, stage: 'form', formError: null, placeholder: FORM_PLACEHOLDER }
         return askNext({ ...withUser, stage: 'collecting', draft: editDraft(state.draft, action.target) })
@@ -654,6 +678,7 @@ export function chatReducer(ctx: ChatContext) {
       case 'start': {
         const review = reviewOf(state, ctx)
         if (state.stage !== 'draft_ready' || !review || review.missing_fields.length > 0) return state
+        if (state.clarify.length > 0) return state // the server's questions come first
         const started = say(
           say({ ...state, chips: [] }, 'user', 'Start call'),
           'agent',
@@ -670,6 +695,26 @@ export function chatReducer(ctx: ChatContext) {
           "Saved your brief. Calling isn't connected yet, so I haven't dialed.",
         )
         return { ...saved, stage: 'started', startOutcome: 'saved', chips: [] }
+      }
+      case 'clarify': {
+        if (state.stage !== 'draft_ready') return state
+        // Only questions about items still in the plan: the user may have edited since the save.
+        const usable = action.questions.filter((q) => (state.draft[q.list] ?? []).some((i) => i.text === q.item))
+        if (usable.length === 0) {
+          return say(state, 'agent', "I couldn't match a question to your plan any more. Tap Start to check it again.")
+        }
+        return askClarification({ ...state, clarify: usable }, true)
+      }
+      case 'clarify_answer': {
+        const [question, ...rest] = state.clarify
+        if (!question) return state
+        const items = answerItems(state.draft[question.list] ?? [], question, action.choice)
+        // An answer to an item that is gone changes nothing; the question is just dropped.
+        const draft = items ? { ...state.draft, [question.list]: items } : state.draft
+        const asked = items ? say({ ...state, chips: [] }, 'user', answerLabel(question, action.choice)) : state
+        const next = { ...asked, draft, clarify: rest }
+        if (rest.length > 0) return askClarification(next, false)
+        return { ...say(next, 'agent', "Thanks, that's all I needed. Tap Start when you're ready."), chips: [] }
       }
       case 'note': {
         const text = action.text.trim()
