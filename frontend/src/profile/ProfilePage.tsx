@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import {
   defaultCallingName,
   editInputFrom,
@@ -21,6 +21,8 @@ interface ProfilePageProps {
   onSaved: (profile: LoadedProfile) => void
   /** True when onboarding hasn't been done yet: saving here also completes the profile. */
   notOnboarded?: boolean
+  /** Shown under the heading, above the form: the account and its sign-in. */
+  accountCard?: ReactNode
   /** Injected in tests. */
   loadStore?: () => Promise<ProfileStore>
 }
@@ -52,7 +54,7 @@ function SharingChoice({ label, value, onChange }: { label: string; value: Shari
  * say it freely or must ask first (ON-5). Changes apply to future calls. All checking and
  * saving is in `lib/profile.ts`; this component renders it.
  */
-export function ProfilePage({ profile, userId, onSaved, notOnboarded = false, loadStore = loadSupabaseProfileStore }: ProfilePageProps) {
+export function ProfilePage({ profile, userId, onSaved, notOnboarded = false, accountCard, loadStore = loadSupabaseProfileStore }: ProfilePageProps) {
   const [form, setForm] = useState<ProfileEditInput>(() => {
     const initial = editInputFrom(profile.fields)
     // Stored as E.164; shown the way people write it.
@@ -99,6 +101,7 @@ export function ProfilePage({ profile, userId, onSaved, notOnboarded = false, lo
         <h1>Profile</h1>
         <p className="profile-muted">What the agent knows about you, and what it may say on a call. Changes apply to your next call.</p>
       </header>
+      {accountCard}
       {readOnly && <p className="profile-note">Demo mode: this is sample data, and nothing can be saved.</p>}
       {notOnboarded && !readOnly && (
         <p className="profile-note">You haven't set up your profile yet. Fill in the first four fields and save to place a call.</p>
