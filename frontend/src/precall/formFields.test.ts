@@ -1,5 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { formatAnswer, parseAnswer, suggestionsFor, widgetFor } from './formFields'
+import { dayError, formatAnswer, nowTimeValue, parseAnswer, suggestionsFor, timeError, todayValue, widgetFor } from './formFields'
+
+// Wed Nov 25 2026, 3:07 PM local time.
+const NOW = new Date(2026, 10, 25, 15, 7)
+
+describe('day and time checks', () => {
+  it('writes today and now the way date and time inputs do', () => {
+    expect(todayValue(NOW)).toBe('2026-11-25')
+    expect(nowTimeValue(NOW)).toBe('15:07')
+  })
+
+  it('accepts today and later days, rejects earlier days, ignores an empty day', () => {
+    expect(dayError('2026-11-25', NOW)).toBeNull()
+    expect(dayError('2026-12-01', NOW)).toBeNull()
+    expect(dayError('2026-11-24', NOW)).not.toBeNull()
+    expect(dayError('', NOW)).toBeNull()
+  })
+
+  it('rejects a time that already passed today, and only today', () => {
+    expect(timeError('2026-11-25', '14:00', NOW)).not.toBeNull()
+    expect(timeError('2026-11-25', '15:07', NOW)).toBeNull()
+    expect(timeError('2026-11-25', '19:00', NOW)).toBeNull()
+    expect(timeError('2026-11-26', '09:00', NOW)).toBeNull()
+    expect(timeError('2026-11-25', '', NOW)).toBeNull()
+  })
+})
 
 describe('widgetFor', () => {
   it('gives party size a stepper, day a date picker and time a time picker', () => {

@@ -96,6 +96,39 @@ export function parseAnswer(widget: FieldWidget, text: string, year: number = ne
   return value
 }
 
+function twoDigits(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+/** Today's date in the user's own time zone, as a date input writes it (`2026-11-25`). */
+export function todayValue(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${twoDigits(now.getMonth() + 1)}-${twoDigits(now.getDate())}`
+}
+
+/** The current time in the user's own time zone, as a time input writes it (`15:07`). */
+export function nowTimeValue(now: Date = new Date()): string {
+  return `${twoDigits(now.getHours())}:${twoDigits(now.getMinutes())}`
+}
+
+/**
+ * Why a picked day cannot be booked, or null when it is fine (or still empty).
+ * Only today and later days can be booked. The date input greys older days out with its
+ * `min`; this also catches a date typed in by hand.
+ */
+export function dayError(day: string, now: Date = new Date()): string | null {
+  if (day === '') return null
+  return day < todayValue(now) ? 'Pick today or a later day.' : null
+}
+
+/**
+ * Why a picked time cannot be booked, or null when it is fine. A time only needs checking
+ * when the picked day is today: a time earlier than now has already passed.
+ */
+export function timeError(day: string, time: string, now: Date = new Date()): string | null {
+  if (time === '' || day !== todayValue(now)) return null
+  return time < nowTimeValue(now) ? 'That time has already passed today. Pick a later time.' : null
+}
+
 /** One-tap suggestions for the three lists, for a template. */
 export interface ListSuggestions {
   constraints: string[]
