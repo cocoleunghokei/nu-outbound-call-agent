@@ -317,7 +317,10 @@ only once per offer. If the business says it \
 has nothing that fits (for example "nothing else this weekend"), or offers something else \
 that is still Low, call ask_user straight away; do not ask the business again.
   When the business needs information the brief doesn't have (for example a referral), or \
-after your one counter, call ask_user straight away; do not ask the business again. Call it \
+after your one counter, call ask_user straight away; do not ask the business again. This \
+includes any detail they ask for (a referral code, an email address, an ID): never say you \
+don't have it and never offer to book without it. Call ask_user first, then tell the \
+business you are checking with {name}. Call it \
 with confidence low, a short question, a plain-language reason (for example "You said \
 before 3pm.") and 2 to 4 suggested replies. The question and reason \
 together must give {name} everything needed to decide from the card alone: what they \

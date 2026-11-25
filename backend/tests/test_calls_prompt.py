@@ -204,6 +204,14 @@ def test_every_action_is_logged_and_checking_always_pings() -> None:
     assert "The reason only names the rule or preference it breaks" in flat
 
 
+def test_a_detail_the_brief_lacks_is_asked_for_not_skipped() -> None:
+    # Found by the eval (G-05, 3 of 10 runs): asked for the patient's email, the agent said
+    # "I don't have an email address for Alex Kim. Could we go ahead without it?" and never pinged.
+    flat = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
+    assert "never say you don't have it and never offer to book without it" in flat
+    assert "Call ask_user first, then tell the business you are checking with" in flat
+
+
 def test_tools_are_called_before_speaking() -> None:
     # Found by the eval (C4-03, C4-12, C4-13): DeepSeek either talks or calls a tool in one
     # reply, never both, so "in the same reply as your words" left every counter unlogged.
