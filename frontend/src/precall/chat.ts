@@ -337,10 +337,13 @@ function askNext(state: ChatState): ChatState {
   if (nextList) {
     const prefilled = d[nextList] ?? []
     // Template defaults (PC-2) are already in the list: say so instead of asking from scratch.
-    const text =
-      prefilled.length > 0
-        ? `I've added the usual must-haves for this call: ${prefilled.map((i) => i.text).join('; ')}. Anything else that must be true?`
-        : LIST_PROMPTS[nextList].ask
+    let text = LIST_PROMPTS[nextList].ask
+    if (prefilled.length > 0) {
+      text = `I've added the usual must-haves for this call: ${prefilled.map((i) => i.text).join('; ')}. Anything else that must be true?`
+    } else if (nextList === 'constraints' && d.template_key === null) {
+      // A custom call already told us what it wants: repeat it instead of asking from scratch with unrelated examples.
+      text = `You asked for: "${d.goal}". Does anything else have to be true for this to work?`
+    }
     return waitForListItem(state, nextList, text)
   }
 
