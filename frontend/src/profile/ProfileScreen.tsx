@@ -2,6 +2,7 @@ import { isOnboarded } from '../lib/profile'
 import { fakeProfile } from '../precall/fakeBriefs'
 import { useDataMode } from '../precall/useDataMode'
 import { useProfile } from '../precall/useProfile'
+import { AccountCard } from './AccountCard'
 import { ProfilePage } from './ProfilePage'
 
 /**
@@ -38,6 +39,7 @@ export function ProfileScreen() {
       userId={mode.account.userId}
       onSaved={setProfile}
       notOnboarded={!isOnboarded(profile)}
+      accountCard={<AccountCard account={mode.account} />}
     />
   )
 }
