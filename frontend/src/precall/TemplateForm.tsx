@@ -4,8 +4,12 @@ import {
   STEPPER_DEFAULT,
   STEPPER_MAX,
   STEPPER_MIN,
+  dayError,
   formatAnswer,
+  nowTimeValue,
   parseAnswer,
+  timeError,
+  todayValue,
   suggestionsFor,
   widgetFor,
 } from './formFields'
@@ -89,8 +93,16 @@ export function TemplateForm({ template, profile, draft, error, onSubmit }: Temp
     never_agree: '',
   })
 
+  // The day and time fields are checked as the user picks them, not only on Review plan.
+  const dayField = callFields.find((f) => widgetFor(f.key) === 'date')
+  const timeField = callFields.find((f) => widgetFor(f.key) === 'time')
+  const dayValue = dayField ? (answers[dayField.key] ?? '') : ''
+  const timeValue = timeField ? (answers[timeField.key] ?? '') : ''
+  const dateTimeInvalid = dayError(dayValue) !== null || timeError(dayValue, timeValue) !== null
+
   function submit(event: FormEvent) {
     event.preventDefault()
+    if (dateTimeInvalid) return
     // Text typed in a list box but not added yet still counts.
     const withPending = (key: ListKey) => (pending[key].trim() === '' ? lists[key] : [...lists[key], pending[key]])
     onSubmit({
@@ -160,6 +172,7 @@ export function TemplateForm({ template, profile, draft, error, onSubmit }: Temp
               key={field.key}
               field={field}
               value={answers[field.key] ?? ''}
+              pickedDay={dayValue}
               onChange={(value) => setAnswer(field.key, value)}
             />
           ))}
@@ -190,7 +203,7 @@ export function TemplateForm({ template, profile, draft, error, onSubmit }: Temp
         </p>
       )}
       <div className="precall-foot">
-        <button type="submit" className="precall-btn primary">
+        <button type="submit" className="precall-btn primary" disabled={dateTimeInvalid}>
           Review plan
         </button>
       </div>
@@ -201,10 +214,13 @@ export function TemplateForm({ template, profile, draft, error, onSubmit }: Temp
 function CallField({
   field,
   value,
+  pickedDay,
   onChange,
 }: {
   field: TemplateField
   value: string
+  /** The day input's current value, so the time input knows whether the day is today. */
+  pickedDay?: string
   onChange: (value: string) => void
 }) {
   const widget = widgetFor(field.key)
@@ -226,15 +242,28 @@ function CallField({
       </div>
     )
   }
+  const now = new Date()
+  const today = todayValue(now)
+  // The day field is greyed out before today; the time field is greyed out before now, but only when the day is today.
+  const min = widget === 'date' ? today : widget === 'time' && pickedDay === today ? nowTimeValue(now) : undefined
+  const problem =
+    widget === 'date' ? dayError(value, now) : widget === 'time' ? timeError(pickedDay ?? '', value, now) : null
   return (
     <label className="precall-field">
       <span>{field.question}</span>
       <input
         type={widget === 'text' ? 'text' : widget}
         value={value}
+        min={min}
+        aria-invalid={problem !== null}
         onChange={(e) => onChange(e.target.value)}
         autoComplete="off"
       />
+      {problem && (
+        <span className="precall-fielderr" role="alert">
+          {problem}
+        </span>
+      )}
       {widget === 'text' && (field.suggestions?.length ?? 0) > 0 && (
         <span className="precall-sugg">
           {field.suggestions?.map((text) => (
