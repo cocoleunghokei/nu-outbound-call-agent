@@ -232,6 +232,19 @@ def test_every_action_is_logged_and_checking_always_pings() -> None:
     assert "Never say you are checking with Alex unless you called ask_user first." in prompt
     # Under 70 so the usual overshoot still fits the card's 80 (eval 0411Z: 81 to 91).
     assert "under 70 characters" in prompt
+    # Eval 0120Z: asking for "everything" in the reason pushed it to 81-109 characters, so the
+    # offer's details belong in the question and the reason names only the rule it breaks.
+    flat = prompt.replace("\n", " ")
+    assert "Put the offer's details in the question" in flat
+    assert "The reason only names the rule or preference it breaks" in flat
+
+
+def test_a_detail_the_brief_lacks_is_asked_for_not_skipped() -> None:
+    # Found by the eval (G-05, 3 of 10 runs): asked for the patient's email, the agent said
+    # "I don't have an email address for Alex Kim. Could we go ahead without it?" and never pinged.
+    flat = build_system_prompt(make_brief(), SNAPSHOT).replace("\n", " ")
+    assert "never say you don't have it and never offer to book without it" in flat
+    assert "Call ask_user first, then tell the business you are checking with" in flat
 
 
 def test_tools_are_called_before_speaking() -> None:
